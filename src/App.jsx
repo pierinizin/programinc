@@ -1,5 +1,7 @@
-
 import React, { useEffect, useMemo, useState } from 'react';
+import { supabase } from './lib/supabase';
+import { Auth } from './components/Auth';
+
 import {
   exportProgramacaoModeloAntigo,
   exportProgramacaoXlsx,
@@ -8,8 +10,6 @@ import {
   exportHistoricoXlsx,
 } from './exportProgramacaoXlsx';
 import { exportProgramacaoPdfModelo03 } from './exportProgramacaoPdf';
-
-const STORAGE_KEY = 'incovia-v3';
 
 const TEAM_TYPE_OPTIONS = [
   'Pintura - Mecânica',
@@ -26,10 +26,6 @@ const ROLE_OPTIONS = ['Encarregado', 'Motorista', 'Eletricista', 'Ajudante', 'T�
 const VEHICLE_TYPES = ['Caminhão', 'Caminhonete', 'Cesto', 'Munck'];
 const VEHICLE_STATUS = ['Disponível', 'Em uso', 'Manutenção', 'Inativo'];
 const MAX_TEAM_MEMBERS = 7;
-
-function id() {
-  return Math.random().toString(36).slice(2, 10);
-}
 
 function pad(v) {
   return String(v).padStart(2, '0');
@@ -64,95 +60,18 @@ function initials(name) {
     .toUpperCase();
 }
 
-const seed = (() => {
-  const colaboradores = [
-    { id: id(), nome: 'André Souza', funcao: 'Eletricista', telefone: '(11) 93210-9876', status: 'ativo' },
-    { id: id(), nome: 'Carlos Silva', funcao: 'Eletricista', telefone: '(11) 97654-3210', status: 'ativo' },
-    { id: id(), nome: 'Fernando Gomes', funcao: 'Ajudante', telefone: '(11) 90987-6543', status: 'ativo' },
-    { id: id(), nome: 'Lucas Ferreira', funcao: 'Motorista', telefone: '(11) 94321-0987', status: 'ativo' },
-    { id: id(), nome: 'Mário Santos', funcao: 'Encarregado', telefone: '(11) 99876-5432', status: 'ativo' },
-    { id: id(), nome: 'Roberto Lima', funcao: 'Encarregado', telefone: '(11) 98765-4321', status: 'ativo' },
-  ];
-
-  const veiculos = [
-    { id: id(), placa: 'ABC-1234', modelo: 'VW Delivery 11.180', ano: 2022, tipo: 'Caminhão', status: 'Disponível' },
-    { id: id(), placa: 'DEF-5678', modelo: 'Ford Cargo 816', ano: 2021, tipo: 'Caminhão', status: 'Disponível' },
-    { id: id(), placa: 'GHI-9012', modelo: 'Toyota Hilux', ano: 2023, tipo: 'Caminhonete', status: 'Disponível' },
-  ];
-
-  const programacoes = [
-    {
-      id: id(),
-      data: '2026-03-20',
-      tipoEquipe: 'Pintura - Mecânica',
-      cidade: 'ARAPONGAS',
-      contratante: 'MOTIVA',
-      tipoServico: 'Pintura - Mecânica',
-      encarregadoId: colaboradores.find((x) => x.nome === 'Roberto Lima').id,
-      membroIds: [
-        colaboradores.find((x) => x.nome === 'Roberto Lima').id,
-        colaboradores.find((x) => x.nome === 'André Souza').id,
-        colaboradores.find((x) => x.nome === 'Fernando Gomes').id,
-        colaboradores.find((x) => x.nome === 'Lucas Ferreira').id,
-      ],
-      veiculoIds: [veiculos.find((x) => x.placa === 'DEF-5678').id],
-      statusExecucao: 'CONCLUÍDO',
-      motivoNaoExecucao: '',
-      observacoes: 'Trecho finalizado conforme programação.',
-      horarioInicio: '07:30',
-      horarioSaidaAlmoco: '11:30',
-      horarioRetornoAlmoco: '13:00',
-      horarioSaida: '17:48',
-    },
-    {
-      id: id(),
-      data: '2026-03-20',
-      tipoEquipe: 'Implantação de Tachas',
-      cidade: 'CASCAVEL',
-      contratante: 'MLC',
-      tipoServico: 'Implantação de Tachas',
-      encarregadoId: colaboradores.find((x) => x.nome === 'Mário Santos').id,
-      membroIds: [
-        colaboradores.find((x) => x.nome === 'Mário Santos').id,
-        colaboradores.find((x) => x.nome === 'Fernando Gomes').id,
-        colaboradores.find((x) => x.nome === 'Lucas Ferreira').id,
-      ],
-      veiculoIds: [veiculos.find((x) => x.placa === 'GHI-9012').id],
-      statusExecucao: 'EXECUTANDO',
-      motivoNaoExecucao: '',
-      observacoes: 'Equipe em campo.',
-      horarioInicio: '07:30',
-      horarioSaidaAlmoco: '11:30',
-      horarioRetornoAlmoco: '13:00',
-      horarioSaida: '17:48',
-    },
-  ];
-
-  const faltas = [
-    {
-      id: id(),
-      colaboradorId: colaboradores.find((x) => x.nome === 'André Souza').id,
-      data: '2026-03-19',
-      motivo: 'atestado_medico',
-      observacao: 'Repouso de 1 dia.',
-    },
-  ];
-
-  return { colaboradores, veiculos, programacoes, faltas };
-})();
-
+// Normaliza os dados vindos do banco para garantir que arrays não venham nulos
 function normalizeDb(data) {
-  const source = data || seed;
   return {
-    colaboradores: Array.isArray(source.colaboradores) ? source.colaboradores : [],
-    veiculos: Array.isArray(source.veiculos) ? source.veiculos : [],
-    faltas: Array.isArray(source.faltas) ? source.faltas : [],
-    programacoes: Array.isArray(source.programacoes)
-      ? source.programacoes.map((item) => ({
+    colaboradores: Array.isArray(data?.colaboradores) ? data.colaboradores : [],
+    veiculos: Array.isArray(data?.veiculos) ? data.veiculos : [],
+    faltas: Array.isArray(data?.faltas) ? data.faltas : [],
+    programacoes: Array.isArray(data?.programacoes)
+      ? data.programacoes.map((item) => ({
           ...item,
-          tipoEquipe: item.tipoEquipe || item.nomeEquipe || '',
+          tipoEquipe: item.tipoEquipe || '',
           tipoServico: item.tipoServico || '',
-          statusExecucao: item.statusExecucao === 'FAZENDO' ? 'EXECUTANDO' : (item.statusExecucao || 'EXECUTANDO'),
+          statusExecucao: item.statusExecucao || 'EXECUTANDO',
           motivoNaoExecucao: item.motivoNaoExecucao || '',
           observacoes: item.observacoes || '',
           horarioInicio: item.horarioInicio || '07:30',
@@ -166,19 +85,6 @@ function normalizeDb(data) {
   };
 }
 
-function loadData() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return normalizeDb(raw ? JSON.parse(raw) : seed);
-  } catch {
-    return normalizeDb(seed);
-  }
-}
-
-function saveData(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-}
-
 function emptyProgramacao(date = today()) {
   return {
     id: '',
@@ -187,7 +93,7 @@ function emptyProgramacao(date = today()) {
     cidade: '',
     contratante: '',
     tipoServico: '',
-    encarregadoId: '',
+    encarregadoId: null,
     membroIds: [],
     veiculoIds: [],
     statusExecucao: 'EXECUTANDO',
@@ -209,7 +115,7 @@ function emptyVeiculo() {
 }
 
 function emptyFalta() {
-  return { id: '', colaboradorId: '', data: today(), motivo: 'atestado_medico', observacao: '' };
+  return { id: '', colaboradorId: null, data: today(), motivo: 'atestado_medico', observacao: '' };
 }
 
 function toggle(list, value) {
@@ -220,26 +126,103 @@ function toggleLimited(list, value, encarregadoId) {
   if (list.includes(value)) return list.filter((x) => x !== value);
   const ids = [encarregadoId, ...list, value].filter(Boolean);
   const uniqueIds = Array.from(new Set(ids));
-  if (uniqueIds.length > MAX_TEAM_MEMBERS) return list;
+  if (uniqueIds.length >= MAX_TEAM_MEMBERS) return list;
   return [...list, value];
 }
 
 function App() {
-  const [db, setDb] = useState(loadData);
+  const [session, setSession] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+
+  // --- BUSCA O CARGO DO USUÁRIO ---
+  const fetchUserRole = async (userId) => {
+    const { data } = await supabase
+      .from('perfis')
+      .select('cargo')
+      .eq('id', userId)
+      .single();
+
+    if (data && data.cargo) {
+      setUserRole(data.cargo.toLowerCase()); 
+    } else {
+      setUserRole('visualizador'); 
+    }
+  };
+
+  // --- INICIALIZA A SESSÃO ---
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) fetchUserRole(session.user.id); 
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) {
+        fetchUserRole(session.user.id); 
+      } else {
+        setUserRole(null); 
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // --- ESTADOS DOS DADOS ---
+  const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [] });
   const [page, setPage] = useState('programacao');
-  const [selectedDate, setSelectedDate] = useState('2026-03-20');
+  const [selectedDate, setSelectedDate] = useState(today());
   const [search, setSearch] = useState('');
   const [activeDrawer, setActiveDrawer] = useState(null);
   const [modal, setModal] = useState(null);
-  const [programacaoForm, setProgramacaoForm] = useState(emptyProgramacao('2026-03-20'));
+  const [programacaoForm, setProgramacaoForm] = useState(emptyProgramacao(today()));
   const [colaboradorForm, setColaboradorForm] = useState(emptyColaborador());
   const [veiculoForm, setVeiculoForm] = useState(emptyVeiculo());
   const [faltaForm, setFaltaForm] = useState(emptyFalta());
   const [expandedProgramacaoId, setExpandedProgramacaoId] = useState(null);
 
+  // --- BUSCA DADOS DO SUPABASE ---
+  const fetchDatabase = async () => {
+    const [resCols, resVeics, resProgs, resFaltas] = await Promise.all([
+      supabase.from('colaboradores').select('*'),
+      supabase.from('veiculos').select('*'),
+      supabase.from('programacoes').select('*'),
+      supabase.from('faltas').select('*')
+    ]);
+
+    setDb(normalizeDb({
+      colaboradores: resCols.data || [],
+      veiculos: resVeics.data || [],
+      programacoes: resProgs.data || [],
+      faltas: resFaltas.data || []
+    }));
+  };
+
+  // Carrega os dados assim que logar
+  // Carrega os dados assim que logar E escuta o banco ao vivo
   useEffect(() => {
-    saveData(db);
-  }, [db]);
+    if (!session) return;
+
+    fetchDatabase(); // Carrega a tela pela primeira vez
+
+    // Liga a antena de Realtime do Supabase
+    const canal = supabase
+      .channel('mudancas-incovia')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public' }, // Escuta TUDO (Insert, Update, Delete) em QUALQUER tabela
+        (payload) => {
+          console.log('Alguém mexeu no banco!', payload);
+          fetchDatabase(); // Puxa os dados novos invisivelmente e atualiza a tela
+        }
+      )
+      .subscribe();
+
+    // Desliga a antena se a pessoa fechar o sistema
+    return () => {
+      supabase.removeChannel(canal);
+    };
+  }, [session]);
 
   const maps = useMemo(
     () => ({
@@ -298,10 +281,6 @@ function App() {
 
   const historyItems = colaboradoresComStats.filter((c) => c.nome.toLowerCase().includes(search.toLowerCase()));
 
-  function updateDb(partial) {
-    setDb((prev) => normalizeDb({ ...prev, ...partial }));
-  }
-
   function changePage(nextPage) {
     setPage(nextPage);
     setSearch('');
@@ -309,20 +288,15 @@ function App() {
     setExpandedProgramacaoId(null);
   }
 
-  function updateProgramacaoField(itemId, field, value) {
-    updateDb({
-      programacoes: db.programacoes.map((p) => {
-        if (p.id !== itemId) return p;
-        if (field === 'statusExecucao') {
-          return {
-            ...p,
-            statusExecucao: value,
-            motivoNaoExecucao: value === 'NÃO FOI POSSÍVEL REALIZAR' ? p.motivoNaoExecucao : '',
-          };
-        }
-        return { ...p, [field]: value };
-      }),
-    });
+  // --- FUNÇÕES DE SALVAR NO SUPABASE ---
+
+  async function updateProgramacaoField(itemId, field, value) {
+    const payload = { [field]: value };
+    if (field === 'statusExecucao' && value !== 'NÃO FOI POSSÍVEL REALIZAR') {
+      payload.motivoNaoExecucao = null;
+    }
+    await supabase.from('programacoes').update(payload).eq('id', itemId);
+    fetchDatabase(); // Atualiza a tela
   }
 
   function openProgramacaoModal(item = null) {
@@ -345,29 +319,17 @@ function App() {
     setModal('falta');
   }
 
-  function saveProgramacao() {
-    if (
-      !programacaoForm.tipoEquipe ||
-      !programacaoForm.cidade ||
-      !programacaoForm.contratante ||
-      !programacaoForm.tipoServico ||
-      !programacaoForm.encarregadoId
-    ) {
+  async function saveProgramacao() {
+    if (!programacaoForm.tipoEquipe || !programacaoForm.cidade || !programacaoForm.contratante || !programacaoForm.tipoServico || !programacaoForm.encarregadoId) {
       alert('Preencha os campos principais da programação.');
       return;
     }
-    if (
-      programacaoForm.statusExecucao === 'NÃO FOI POSSÍVEL REALIZAR' &&
-      !programacaoForm.motivoNaoExecucao
-    ) {
+    if (programacaoForm.statusExecucao === 'NÃO FOI POSSÍVEL REALIZAR' && !programacaoForm.motivoNaoExecucao) {
       alert('Selecione o motivo quando não for possível realizar.');
       return;
     }
 
-    const mergedMemberIds = Array.from(
-      new Set([programacaoForm.encarregadoId, ...programacaoForm.membroIds])
-    );
-
+    const mergedMemberIds = Array.from(new Set([programacaoForm.encarregadoId, ...programacaoForm.membroIds])).filter(Boolean);
     if (mergedMemberIds.length > MAX_TEAM_MEMBERS) {
       alert(`Cada equipe pode ter no máximo ${MAX_TEAM_MEMBERS} pessoas.`);
       return;
@@ -380,108 +342,128 @@ function App() {
       contratante: programacaoForm.contratante.toUpperCase(),
     };
 
-    if (payload.id) {
-      updateDb({
-        programacoes: db.programacoes.map((x) => (x.id === payload.id ? payload : x)),
-      });
+    if (!payload.id) delete payload.id; // Deixa o supabase criar o ID UUID
+
+    if (programacaoForm.id) {
+      await supabase.from('programacoes').update(payload).eq('id', programacaoForm.id);
     } else {
-      updateDb({ programacoes: [{ ...payload, id: id() }, ...db.programacoes] });
+      await supabase.from('programacoes').insert([payload]);
     }
+    fetchDatabase();
     setModal(null);
   }
 
-  function saveColaborador() {
+ async function saveColaborador() {
     if (!colaboradorForm.nome || !colaboradorForm.funcao) {
       alert('Preencha nome e função.');
       return;
     }
+    
+    // FILTRO MÁGICO: Mandamos apenas o que o banco conhece!
+    const payload = {
+      nome: colaboradorForm.nome,
+      funcao: colaboradorForm.funcao,
+      telefone: colaboradorForm.telefone,
+      status: colaboradorForm.status
+    };
+
+    let res;
     if (colaboradorForm.id) {
-      updateDb({
-        colaboradores: db.colaboradores.map((x) =>
-          x.id === colaboradorForm.id ? colaboradorForm : x
-        ),
-      });
+      res = await supabase.from('colaboradores').update(payload).eq('id', colaboradorForm.id);
     } else {
-      updateDb({ colaboradores: [{ ...colaboradorForm, id: id() }, ...db.colaboradores] });
+      res = await supabase.from('colaboradores').insert([payload]);
     }
+
+    if (res.error) {
+      alert("Erro ao salvar Colaborador: " + res.error.message);
+      console.error(res.error);
+      return;
+    }
+
+    fetchDatabase();
     setModal(null);
   }
 
-  function saveVeiculo() {
+  async function saveVeiculo() {
     if (!veiculoForm.placa || !veiculoForm.modelo) {
       alert('Preencha placa e modelo.');
       return;
     }
+
+    // FILTRO MÁGICO: Mandamos apenas o que o banco conhece!
+    const payload = {
+      placa: veiculoForm.placa,
+      modelo: veiculoForm.modelo,
+      ano: veiculoForm.ano,
+      tipo: veiculoForm.tipo,
+      status: veiculoForm.status
+    };
+
+    let res;
     if (veiculoForm.id) {
-      updateDb({
-        veiculos: db.veiculos.map((x) => (x.id === veiculoForm.id ? veiculoForm : x)),
-      });
+      res = await supabase.from('veiculos').update(payload).eq('id', veiculoForm.id);
     } else {
-      updateDb({ veiculos: [{ ...veiculoForm, id: id() }, ...db.veiculos] });
+      res = await supabase.from('veiculos').insert([payload]);
     }
+
+    if (res.error) {
+      alert("Erro ao salvar Veículo: " + res.error.message);
+      console.error(res.error);
+      return;
+    }
+
+    fetchDatabase();
     setModal(null);
   }
 
-  function saveFalta() {
+  async function saveFalta() {
     if (!faltaForm.colaboradorId || !faltaForm.data || !faltaForm.motivo) {
       alert('Preencha colaborador, data e motivo.');
       return;
     }
+
+    const payload = { ...faltaForm };
+    if (!payload.id) delete payload.id;
+
     if (faltaForm.id) {
-      updateDb({
-        faltas: db.faltas.map((x) => (x.id === faltaForm.id ? faltaForm : x)),
-      });
+      await supabase.from('faltas').update(payload).eq('id', faltaForm.id);
     } else {
-      updateDb({ faltas: [{ ...faltaForm, id: id() }, ...db.faltas] });
+      await supabase.from('faltas').insert([payload]);
     }
+    fetchDatabase();
     setModal(null);
   }
 
-  function deleteProgramacao(itemId) {
+  // --- FUNÇÕES DE EXCLUIR NO SUPABASE ---
+
+  async function deleteProgramacao(itemId) {
     if (!confirm('Excluir esta programação?')) return;
-    updateDb({ programacoes: db.programacoes.filter((x) => x.id !== itemId) });
+    await supabase.from('programacoes').delete().eq('id', itemId);
+    fetchDatabase();
   }
 
-  function deleteColaborador(itemId) {
-    if (!confirm('Excluir este colaborador?')) return;
-    updateDb({
-      colaboradores: db.colaboradores.filter((x) => x.id !== itemId),
-      faltas: db.faltas.filter((x) => x.colaboradorId !== itemId),
-      programacoes: db.programacoes.map((p) => ({
-        ...p,
-        membroIds: p.membroIds.filter((m) => m !== itemId),
-        encarregadoId: p.encarregadoId === itemId ? '' : p.encarregadoId,
-      })),
-    });
-    if (activeDrawer?.type === 'colaborador' && activeDrawer.item.id === itemId) {
-      setActiveDrawer(null);
-    }
+  async function deleteColaborador(itemId) {
+    if (!confirm('Excluir este colaborador? Todas as faltas atreladas a ele serão apagadas.')) return;
+    await supabase.from('colaboradores').delete().eq('id', itemId);
+    fetchDatabase();
+    if (activeDrawer?.type === 'colaborador' && activeDrawer.item.id === itemId) setActiveDrawer(null);
   }
 
-  function deleteVeiculo(itemId) {
+  async function deleteVeiculo(itemId) {
     if (!confirm('Excluir este veículo?')) return;
-    updateDb({
-      veiculos: db.veiculos.filter((x) => x.id !== itemId),
-      programacoes: db.programacoes.map((p) => ({
-        ...p,
-        veiculoIds: p.veiculoIds.filter((v) => v !== itemId),
-      })),
-    });
-    if (activeDrawer?.type === 'veiculo' && activeDrawer.item.id === itemId) {
-      setActiveDrawer(null);
-    }
+    await supabase.from('veiculos').delete().eq('id', itemId);
+    fetchDatabase();
+    if (activeDrawer?.type === 'veiculo' && activeDrawer.item.id === itemId) setActiveDrawer(null);
   }
 
-  function deleteFalta(itemId) {
+  async function deleteFalta(itemId) {
     if (!confirm('Excluir este registro de falta?')) return;
-    updateDb({ faltas: db.faltas.filter((x) => x.id !== itemId) });
+    await supabase.from('faltas').delete().eq('id', itemId);
+    fetchDatabase();
   }
 
-  function resetDemo() {
-    if (!confirm('Resetar todos os dados locais para o modelo inicial?')) return;
-    setDb(normalizeDb(seed));
-    setActiveDrawer(null);
-    setSearch('');
+  if (!session) {
+    return <Auth />;
   }
 
   return (
@@ -499,19 +481,30 @@ function App() {
           <NavButton active={page === 'programacao'} onClick={() => changePage('programacao')}>
             Programação
           </NavButton>
-          <NavButton active={page === 'colaboradores'} onClick={() => changePage('colaboradores')}>
-            Colaboradores
-          </NavButton>
-          <NavButton active={page === 'veiculos'} onClick={() => changePage('veiculos')}>
-            Veículos
-          </NavButton>
-          <NavButton active={page === 'historico'} onClick={() => changePage('historico')}>
-            Histórico
-          </NavButton>
+          
+          {userRole === 'admin' && (
+            <>
+              <NavButton active={page === 'colaboradores'} onClick={() => changePage('colaboradores')}>
+                Colaboradores
+              </NavButton>
+              <NavButton active={page === 'veiculos'} onClick={() => changePage('veiculos')}>
+                Veículos
+              </NavButton>
+              <NavButton active={page === 'historico'} onClick={() => changePage('historico')}>
+                Histórico
+              </NavButton>
+            </>
+          )}
         </nav>
 
         <div className="sidebar-bottom">
-          <button className="ghost-btn full" onClick={resetDemo}>Resetar dados locais</button>
+          <button 
+            className="ghost-btn full" 
+            style={{ marginTop: '10px', color: '#dc2626', borderColor: '#fca5a5', backgroundColor: '#fef2f2' }} 
+            onClick={() => supabase.auth.signOut()}
+          >
+            Sair ({userRole})
+          </button>
         </div>
       </aside>
 
@@ -534,9 +527,11 @@ function App() {
                 <button className="ghost-btn" onClick={() => exportProgramacaoPdfModelo03(db, selectedDate)}>
                   Exportar Modelo 03
                 </button>
-                <button className="primary-btn" onClick={() => openProgramacaoModal()}>
-                  + Nova Programação
-                </button>
+                {userRole === 'admin' && (
+                  <button className="primary-btn" onClick={() => openProgramacaoModal()}>
+                    + Nova Programação
+                  </button>
+                )}
               </>
             )}
 
@@ -545,12 +540,16 @@ function App() {
                 <button className="ghost-btn" onClick={() => exportPessoasXlsx(db)}>
                   Exportar Colaboradores
                 </button>
-                <button className="ghost-btn" onClick={() => openFaltaModal()}>
-                  Registrar Falta
-                </button>
-                <button className="primary-btn" onClick={() => openColaboradorModal()}>
-                  + Novo
-                </button>
+                {userRole === 'admin' && (
+                  <>
+                    <button className="ghost-btn" onClick={() => openFaltaModal()}>
+                      Registrar Falta
+                    </button>
+                    <button className="primary-btn" onClick={() => openColaboradorModal()}>
+                      + Novo
+                    </button>
+                  </>
+                )}
               </>
             )}
 
@@ -559,9 +558,11 @@ function App() {
                 <button className="ghost-btn" onClick={() => exportVeiculosXlsx(db)}>
                   Exportar Veículos
                 </button>
-                <button className="primary-btn" onClick={() => openVeiculoModal()}>
-                  + Novo Veículo
-                </button>
+                {userRole === 'admin' && (
+                  <button className="primary-btn" onClick={() => openVeiculoModal()}>
+                    + Novo Veículo
+                  </button>
+                )}
               </>
             )}
 
@@ -601,9 +602,11 @@ function App() {
                 {programacoesDoDia.length === 0 ? (
                   <div className="empty-card">
                     <p>Nenhuma equipe programada para este dia.</p>
-                    <button className="ghost-btn" onClick={() => openProgramacaoModal()}>
-                      Criar Programação
-                    </button>
+                    {userRole === 'admin' && (
+                      <button className="ghost-btn" onClick={() => openProgramacaoModal()}>
+                        Criar Programação
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="cards-grid programacao-cards-grid">
@@ -725,6 +728,7 @@ function App() {
                                 <label>
                                   <span>Status</span>
                                   <select
+                                    disabled={userRole !== 'admin'}
                                     value={item.statusExecucao}
                                     onClick={(e) => e.stopPropagation()}
                                     onChange={(e) => updateProgramacaoField(item.id, 'statusExecucao', e.target.value)}
@@ -738,8 +742,8 @@ function App() {
                                 <label className="full-row">
                                   <span>Motivo</span>
                                   <select
-                                    disabled={item.statusExecucao !== 'NÃO FOI POSSÍVEL REALIZAR'}
-                                    value={item.motivoNaoExecucao}
+                                    disabled={userRole !== 'admin' || item.statusExecucao !== 'NÃO FOI POSSÍVEL REALIZAR'}
+                                    value={item.motivoNaoExecucao || ''}
                                     onClick={(e) => e.stopPropagation()}
                                     onChange={(e) => updateProgramacaoField(item.id, 'motivoNaoExecucao', e.target.value)}
                                   >
@@ -751,20 +755,30 @@ function App() {
                                 </label>
 
                                 <label className="full-row">
-                                  <span>Observações</span>
-                                  <textarea
-                                    rows="3"
-                                    value={item.observacoes}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onChange={(e) => updateProgramacaoField(item.id, 'observacoes', e.target.value)}
-                                  />
-                                </label>
+                                <span>Observações</span>
+                                <textarea
+                                  disabled={userRole !== 'admin'}
+                                  rows="3"
+                                  // Mudamos de "value" para "defaultValue" para a digitação ficar livre de travamentos
+                                  defaultValue={item.observacoes} 
+                                  onClick={(e) => e.stopPropagation()}
+                                  
+                                  // Trocamos o onChange pelo onBlur (Salva só quando clicar fora da caixa!)
+                                  onBlur={(e) => {
+                                    if (e.target.value !== item.observacoes) {
+                                      updateProgramacaoField(item.id, 'observacoes', e.target.value);
+                                    }
+                                  }}
+                                />
+                              </label>
                               </div>
 
-                              <div className="card-actions right">
-                                <button className="ghost-btn" onClick={(e) => { e.stopPropagation(); openProgramacaoModal(item); }}>Editar</button>
-                                <button className="danger-btn" onClick={(e) => { e.stopPropagation(); deleteProgramacao(item.id); }}>Excluir</button>
-                              </div>
+                              {userRole === 'admin' && (
+                                <div className="card-actions right">
+                                  <button className="ghost-btn" onClick={(e) => { e.stopPropagation(); openProgramacaoModal(item); }}>Editar</button>
+                                  <button className="danger-btn" onClick={(e) => { e.stopPropagation(); deleteProgramacao(item.id); }}>Excluir</button>
+                                </div>
+                              )}
                             </>
                           )}
                         </div>
@@ -803,8 +817,12 @@ function App() {
                       <div className="meta-row">{item.escalas} escalas · {item.faltas} faltas · ☎ {item.telefone || '-'}</div>
                       <div className="card-actions">
                         <button className="ghost-btn" onClick={() => setActiveDrawer({ type: 'colaborador', item })}>Ver</button>
-                        <button className="ghost-btn" onClick={() => openColaboradorModal(item)}>Editar</button>
-                        <button className="danger-btn" onClick={() => deleteColaborador(item.id)}>Excluir</button>
+                        {userRole === 'admin' && (
+                          <>
+                            <button className="ghost-btn" onClick={() => openColaboradorModal(item)}>Editar</button>
+                            <button className="danger-btn" onClick={() => deleteColaborador(item.id)}>Excluir</button>
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -843,8 +861,12 @@ function App() {
                       </div>
                       <div className="card-actions">
                         <button className="ghost-btn" onClick={() => setActiveDrawer({ type: 'veiculo', item })}>Ver</button>
-                        <button className="ghost-btn" onClick={() => openVeiculoModal(item)}>Editar</button>
-                        <button className="danger-btn" onClick={() => deleteVeiculo(item.id)}>Excluir</button>
+                        {userRole === 'admin' && (
+                          <>
+                            <button className="ghost-btn" onClick={() => openVeiculoModal(item)}>Editar</button>
+                            <button className="danger-btn" onClick={() => deleteVeiculo(item.id)}>Excluir</button>
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -908,6 +930,7 @@ function App() {
                 <ColaboradorDrawer
                   item={activeDrawer.item}
                   db={db}
+                  userRole={userRole}
                   openEdit={() => openColaboradorModal(activeDrawer.item)}
                   openFalta={() => openFaltaModal()}
                   deleteFalta={deleteFalta}
@@ -918,6 +941,7 @@ function App() {
                 <VeiculoDrawer
                   item={activeDrawer.item}
                   db={db}
+                  userRole={userRole}
                   openEdit={() => openVeiculoModal(activeDrawer.item)}
                 />
               )}
@@ -974,7 +998,7 @@ function App() {
                 />
                 <Select
                   label="Encarregado"
-                  value={programacaoForm.encarregadoId}
+                  value={programacaoForm.encarregadoId || ''}
                   onChange={(v) => setProgramacaoForm({ ...programacaoForm, encarregadoId: v })}
                   options={db.colaboradores
                     .filter((x) => x.funcao === 'Encarregado')
@@ -1023,7 +1047,7 @@ function App() {
 
                 <Select
                   label="Motivo"
-                  value={programacaoForm.motivoNaoExecucao}
+                  value={programacaoForm.motivoNaoExecucao || ''}
                   onChange={(v) => setProgramacaoForm({ ...programacaoForm, motivoNaoExecucao: v })}
                   options={REASON_OPTIONS.map((x) => ({ value: x, label: x }))}
                   placeholder="Selecione"
@@ -1146,7 +1170,7 @@ function App() {
               <div className="form-grid two">
                 <Select
                   label="Colaborador"
-                  value={faltaForm.colaboradorId}
+                  value={faltaForm.colaboradorId || ''}
                   onChange={(v) => setFaltaForm({ ...faltaForm, colaboradorId: v })}
                   options={db.colaboradores.map((x) => ({ value: x.id, label: x.nome }))}
                   placeholder="Selecione"
@@ -1256,11 +1280,11 @@ function Select({ label, value, onChange, options, placeholder = '', disabled = 
   );
 }
 
-function TextArea({ label, value, onChange, full = false }) {
+function TextArea({ label, value, onChange, full = false, disabled = false }) {
   return (
     <label className={full ? 'full' : ''}>
       <span>{label}</span>
-      <textarea rows="4" value={value ?? ''} onChange={(e) => onChange(e.target.value)} />
+      <textarea rows="4" value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
     </label>
   );
 }
@@ -1289,7 +1313,7 @@ function MultiSelect({ label, items, selectedIds, labelKey, subtitleKey, subtitl
   );
 }
 
-function ColaboradorDrawer({ item, db, openEdit, openFalta, deleteFalta }) {
+function ColaboradorDrawer({ item, db, userRole, openEdit, openFalta, deleteFalta }) {
   const escalas = db.programacoes
     .filter((p) => p.membroIds.includes(item.id))
     .sort((a, b) => b.data.localeCompare(a.data));
@@ -1317,10 +1341,12 @@ function ColaboradorDrawer({ item, db, openEdit, openFalta, deleteFalta }) {
         <StatCard number={new Set(escalas.map((x) => x.cidade)).size} label="Cidades" subtle />
       </div>
 
-      <div className="card-actions">
-        <button className="ghost-btn" onClick={openEdit}>Editar</button>
-        <button className="ghost-btn" onClick={openFalta}>Nova falta</button>
-      </div>
+      {userRole === 'admin' && (
+        <div className="card-actions">
+          <button className="ghost-btn" onClick={openEdit}>Editar</button>
+          <button className="ghost-btn" onClick={openFalta}>Nova falta</button>
+        </div>
+      )}
 
       <div className="drawer-section">
         <strong>Histórico de Escalas</strong>
@@ -1348,7 +1374,9 @@ function ColaboradorDrawer({ item, db, openEdit, openFalta, deleteFalta }) {
             <div key={f.id} className="mini-card">
               <div className="between">
                 <strong>{f.motivo}</strong>
-                <button className="mini-danger" onClick={() => deleteFalta(f.id)}>Excluir</button>
+                {userRole === 'admin' && (
+                  <button className="mini-danger" onClick={() => deleteFalta(f.id)}>Excluir</button>
+                )}
               </div>
               <div className="meta-row">{new Date(`${f.data}T12:00:00`).toLocaleDateString('pt-BR')}</div>
               <p>{f.observacao || 'Sem observação'}</p>
@@ -1360,7 +1388,7 @@ function ColaboradorDrawer({ item, db, openEdit, openFalta, deleteFalta }) {
   );
 }
 
-function VeiculoDrawer({ item, db, openEdit }) {
+function VeiculoDrawer({ item, db, userRole, openEdit }) {
   const historico = db.programacoes
     .filter((p) => p.veiculoIds.includes(item.id))
     .sort((a, b) => b.data.localeCompare(a.data));
@@ -1384,9 +1412,11 @@ function VeiculoDrawer({ item, db, openEdit }) {
         <StatCard number={new Set(historico.map((x) => x.cidade)).size} label="Cidades" subtle />
       </div>
 
-      <div className="card-actions">
-        <button className="ghost-btn" onClick={openEdit}>Editar</button>
-      </div>
+      {userRole === 'admin' && (
+        <div className="card-actions">
+          <button className="ghost-btn" onClick={openEdit}>Editar</button>
+        </div>
+      )}
 
       <div className="drawer-section">
         <strong>Histórico de Uso</strong>
