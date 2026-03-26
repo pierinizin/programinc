@@ -132,6 +132,8 @@ function toggleLimited(list, value, encarregadoId) {
 function App() {
   const [session, setSession] = useState(null);
   const [userRole, setUserRole] = useState(null);
+  const [isRecovering, setIsRecovering] = useState(false);
+  const [novaSenha, setNovaSenha] = useState('');
 
   const fetchUserRole = async (userId) => {
    const { data } = await supabase
@@ -155,13 +157,17 @@ function App() {
       if (session) fetchUserRole(session.user.id); 
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session) {
-        fetchUserRole(session.user.id); 
-      } else {
-        setUserRole(null); 
-      }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      setIsRecovering(true);
+    }
+
+    setSession(session);
+    if (session) {
+      fetchUserRole(session.user.id); 
+    } else {
+      setUserRole(null); 
+    }
     });
 
     return () => subscription.unsubscribe();
@@ -204,6 +210,46 @@ function App() {
   useEffect(() => {
     if (!session) return;
     fetchDatabase(); 
+
+          if (isRecovering) {
+      return (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
+          <div className="card" style={{ maxWidth: '400px', width: '100%', padding: '40px', textAlign: 'center', borderRadius: '25px' }}>
+            <div style={{ fontSize: '40px', marginBottom: '10px' }}>🔑</div>
+            <h2 style={{ marginBottom: '10px' }}>Nova Senha</h2>
+            <p style={{ color: '#64748b', marginBottom: '25px', fontSize: '14px' }}>Digite a sua nova senha de acesso abaixo.</p>
+            
+            <input
+              type="password"
+              placeholder="Digite a nova senha"
+              value={novaSenha}
+              onChange={(e) => setNovaSenha(e.target.value)}
+              style={{ width: '100%', padding: '15px', borderRadius: '50px', border: '1px solid #cbd5e1', marginBottom: '20px', outline: 'none', textAlign: 'center', fontSize: '16px' }}
+            />
+            
+            <button
+              className="primary-btn full"
+              style={{ borderRadius: '50px', padding: '12px', fontWeight: 'bold' }}
+              onClick={async () => {
+                if (novaSenha.length < 6) return alert("A senha precisa ter pelo menos 6 caracteres!");
+                
+                // Salva a nova senha no banco
+                const { error } = await supabase.auth.updateUser({ password: novaSenha });
+                
+                if (error) {
+                  alert("Erro ao salvar senha: " + error.message);
+                } else {
+                  alert("✅ Senha atualizada com sucesso!");
+                  setIsRecovering(false); // Fecha essa tela e libera o acesso ao App
+                }
+              }}
+            >
+              Salvar Senha e Entrar
+            </button>
+          </div>
+        </div>
+      );
+      }
 
     const canal = supabase
       .channel('mudancas-incovia')
@@ -495,6 +541,19 @@ function App() {
      alert("Erro ao excluir usuário: " + res.error.message);
    } else {
      fetchDatabase();
+   }
+ }
+
+ async function enviarEmailReset(email) {
+   if (!confirm(`Enviar link de redefinição de senha para ${email}?`)) return;
+   
+   // O Supabase dispara o e-mail automático configurado no seu painel
+   const { error } = await supabase.auth.resetPasswordForEmail(email);
+   
+   if (error) {
+     alert("Erro ao enviar e-mail: " + error.message);
+   } else {
+     alert("✅ E-mail de recuperação enviado com sucesso para " + email);
    }
  }
 
