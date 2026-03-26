@@ -60,7 +60,6 @@ function initials(name) {
     .toUpperCase();
 }
 
-// Normaliza os dados vindos do banco para garantir que arrays não venham nulos
 function normalizeDb(data) {
   return {
     colaboradores: Array.isArray(data?.colaboradores) ? data.colaboradores : [],
@@ -134,7 +133,6 @@ function App() {
   const [session, setSession] = useState(null);
   const [userRole, setUserRole] = useState(null);
 
-  // --- BUSCA O CARGO DO USUÁRIO ---
   const fetchUserRole = async (userId) => {
     const { data } = await supabase
       .from('perfis')
@@ -149,7 +147,6 @@ function App() {
     }
   };
 
-  // --- INICIALIZA A SESSÃO ---
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -168,9 +165,8 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // --- ESTADOS DOS DADOS ---
   const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [] });
-  const [page, setPage] = useState('programacao');
+  const [page, setPage] = useState('calendario'); // Mudei para iniciar no calendário!
   const [selectedDate, setSelectedDate] = useState(today());
   const [search, setSearch] = useState('');
   const [activeDrawer, setActiveDrawer] = useState(null);
@@ -181,7 +177,9 @@ function App() {
   const [faltaForm, setFaltaForm] = useState(emptyFalta());
   const [expandedProgramacaoId, setExpandedProgramacaoId] = useState(null);
 
-  // --- BUSCA DADOS DO SUPABASE ---
+  // --- ESTADOS DO CALENDÁRIO ---
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
+
   const fetchDatabase = async () => {
     const [resCols, resVeics, resProgs, resFaltas] = await Promise.all([
       supabase.from('colaboradores').select('*'),
@@ -198,27 +196,21 @@ function App() {
     }));
   };
 
-  // Carrega os dados assim que logar
-  // Carrega os dados assim que logar E escuta o banco ao vivo
   useEffect(() => {
     if (!session) return;
+    fetchDatabase(); 
 
-    fetchDatabase(); // Carrega a tela pela primeira vez
-
-    // Liga a antena de Realtime do Supabase
     const canal = supabase
       .channel('mudancas-incovia')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public' }, // Escuta TUDO (Insert, Update, Delete) em QUALQUER tabela
+        { event: '*', schema: 'public' },
         (payload) => {
-          console.log('Alguém mexeu no banco!', payload);
-          fetchDatabase(); // Puxa os dados novos invisivelmente e atualiza a tela
+          fetchDatabase(); 
         }
       )
       .subscribe();
 
-    // Desliga a antena se a pessoa fechar o sistema
     return () => {
       supabase.removeChannel(canal);
     };
@@ -281,6 +273,31 @@ function App() {
 
   const historyItems = colaboradoresComStats.filter((c) => c.nome.toLowerCase().includes(search.toLowerCase()));
 
+  // --- LÓGICA DO CALENDÁRIO ---
+  function getDaysInMonth(year, month) {
+    const numDays = new Date(year, month + 1, 0).getDate();
+    const firstDay = new Date(year, month, 1).getDay();
+    const days = [];
+    for (let i = 0; i < firstDay; i++) days.push(null); // Espaços vazios antes do dia 1
+    for (let i = 1; i <= numDays; i++) {
+      days.push(`${year}-${pad(month + 1)}-${pad(i)}`);
+    }
+    return days;
+  }
+
+  const calendarDays = useMemo(() => {
+    return getDaysInMonth(calendarMonth.getFullYear(), calendarMonth.getMonth());
+  }, [calendarMonth]);
+
+  function nextMonth() {
+    setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1));
+  }
+
+  function prevMonth() {
+    setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1));
+  }
+
+
   function changePage(nextPage) {
     setPage(nextPage);
     setSearch('');
@@ -288,15 +305,14 @@ function App() {
     setExpandedProgramacaoId(null);
   }
 
-  // --- FUNÇÕES DE SALVAR NO SUPABASE ---
-
+  // --- FUNÇÕES DE BANCO DE DADOS ---
   async function updateProgramacaoField(itemId, field, value) {
     const payload = { [field]: value };
     if (field === 'statusExecucao' && value !== 'NÃO FOI POSSÍVEL REALIZAR') {
       payload.motivoNaoExecucao = null;
     }
     await supabase.from('programacoes').update(payload).eq('id', itemId);
-    fetchDatabase(); // Atualiza a tela
+    fetchDatabase(); 
   }
 
   function openProgramacaoModal(item = null) {
@@ -342,24 +358,31 @@ function App() {
       contratante: programacaoForm.contratante.toUpperCase(),
     };
 
-    if (!payload.id) delete payload.id; // Deixa o supabase criar o ID UUID
+    if (!payload.id) delete payload.id; 
 
+    let res;
     if (programacaoForm.id) {
-      await supabase.from('programacoes').update(payload).eq('id', programacaoForm.id);
+      res = await supabase.from('programacoes').update(payload).eq('id', programacaoForm.id);
     } else {
-      await supabase.from('programacoes').insert([payload]);
+      res = await supabase.from('programacoes').insert([payload]);
     }
+
+    if (res.error) {
+      alert("Erro ao salvar Programação: " + res.error.message);
+      console.error(res.error);
+      return;
+    }
+
     fetchDatabase();
     setModal(null);
   }
 
- async function saveColaborador() {
+  async function saveColaborador() {
     if (!colaboradorForm.nome || !colaboradorForm.funcao) {
       alert('Preencha nome e função.');
       return;
     }
     
-    // FILTRO MÁGICO: Mandamos apenas o que o banco conhece!
     const payload = {
       nome: colaboradorForm.nome,
       funcao: colaboradorForm.funcao,
@@ -390,7 +413,6 @@ function App() {
       return;
     }
 
-    // FILTRO MÁGICO: Mandamos apenas o que o banco conhece!
     const payload = {
       placa: veiculoForm.placa,
       modelo: veiculoForm.modelo,
@@ -425,41 +447,55 @@ function App() {
     const payload = { ...faltaForm };
     if (!payload.id) delete payload.id;
 
+    let res;
     if (faltaForm.id) {
-      await supabase.from('faltas').update(payload).eq('id', faltaForm.id);
+      res = await supabase.from('faltas').update(payload).eq('id', faltaForm.id);
     } else {
-      await supabase.from('faltas').insert([payload]);
+      res = await supabase.from('faltas').insert([payload]);
     }
+
+    if (res.error) {
+      alert("Erro ao salvar Falta: " + res.error.message);
+      console.error(res.error);
+      return;
+    }
+
     fetchDatabase();
     setModal(null);
   }
 
-  // --- FUNÇÕES DE EXCLUIR NO SUPABASE ---
-
   async function deleteProgramacao(itemId) {
     if (!confirm('Excluir esta programação?')) return;
-    await supabase.from('programacoes').delete().eq('id', itemId);
-    fetchDatabase();
+    const res = await supabase.from('programacoes').delete().eq('id', itemId);
+    if (res.error) alert("Erro ao excluir Programação: " + res.error.message);
+    else fetchDatabase();
   }
 
   async function deleteColaborador(itemId) {
     if (!confirm('Excluir este colaborador? Todas as faltas atreladas a ele serão apagadas.')) return;
-    await supabase.from('colaboradores').delete().eq('id', itemId);
-    fetchDatabase();
-    if (activeDrawer?.type === 'colaborador' && activeDrawer.item.id === itemId) setActiveDrawer(null);
+    const res = await supabase.from('colaboradores').delete().eq('id', itemId);
+    if (res.error) alert("Erro ao excluir Colaborador: " + res.error.message);
+    else {
+      fetchDatabase();
+      if (activeDrawer?.type === 'colaborador' && activeDrawer.item.id === itemId) setActiveDrawer(null);
+    }
   }
 
   async function deleteVeiculo(itemId) {
     if (!confirm('Excluir este veículo?')) return;
-    await supabase.from('veiculos').delete().eq('id', itemId);
-    fetchDatabase();
-    if (activeDrawer?.type === 'veiculo' && activeDrawer.item.id === itemId) setActiveDrawer(null);
+    const res = await supabase.from('veiculos').delete().eq('id', itemId);
+    if (res.error) alert("Erro ao excluir Veículo: " + res.error.message);
+    else {
+      fetchDatabase();
+      if (activeDrawer?.type === 'veiculo' && activeDrawer.item.id === itemId) setActiveDrawer(null);
+    }
   }
 
   async function deleteFalta(itemId) {
     if (!confirm('Excluir este registro de falta?')) return;
-    await supabase.from('faltas').delete().eq('id', itemId);
-    fetchDatabase();
+    const res = await supabase.from('faltas').delete().eq('id', itemId);
+    if (res.error) alert("Erro ao excluir Falta: " + res.error.message);
+    else fetchDatabase();
   }
 
   if (!session) {
@@ -478,8 +514,12 @@ function App() {
         </div>
 
         <nav className="menu">
+          <NavButton active={page === 'calendario'} onClick={() => changePage('calendario')}>
+            Visão Geral (Calendário)
+          </NavButton>
+
           <NavButton active={page === 'programacao'} onClick={() => changePage('programacao')}>
-            Programação
+            Programação Diária
           </NavButton>
           
           {userRole === 'admin' && (
@@ -576,6 +616,76 @@ function App() {
 
         <div className={`content-grid ${activeDrawer ? 'with-drawer' : ''}`}>
           <section className="content-column">
+
+            {page === 'calendario' && (
+              <>
+                <div className="page-head">
+                  <div>
+                    <h2>Visão Geral</h2>
+                    <p>Resumo mensal de programações e faltas</p>
+                  </div>
+                </div>
+
+                <div className="date-card" style={{ marginBottom: '20px' }}>
+                  <button className="icon-btn" onClick={prevMonth}>‹</button>
+                  <div>
+                    <h3 className="capitalize">
+                      {calendarMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                    </h3>
+                  </div>
+                  <button className="icon-btn" onClick={nextMonth}>›</button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '10px' }}>
+                  {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(dia => (
+                    <div key={dia} style={{ textAlign: 'center', fontWeight: 'bold', color: '#64748b' }}>{dia}</div>
+                  ))}
+                  
+                  {calendarDays.map((dateStr, index) => {
+                    if (!dateStr) return <div key={`empty-${index}`} />;
+
+                    const dayObj = new Date(`${dateStr}T12:00:00`);
+                    const isToday = dateStr === today();
+                    
+                    const progsNoDia = db.programacoes.filter(p => p.data === dateStr);
+                    const faltasNoDia = db.faltas.filter(f => f.data === dateStr);
+
+                    return (
+                      <div 
+                        key={dateStr} 
+                        className="card"
+                        style={{ 
+                          minHeight: '100px', 
+                          padding: '10px', 
+                          cursor: 'pointer',
+                          border: isToday ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                          backgroundColor: isToday ? '#eff6ff' : '#fff'
+                        }}
+                        onClick={() => setActiveDrawer({ type: 'resumo-dia', date: dateStr })}
+                      >
+                        <div style={{ fontWeight: 'bold', fontSize: '1.2rem', marginBottom: '10px' }}>
+                          {dayObj.getDate()}
+                        </div>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                          {progsNoDia.length > 0 && (
+                            <span className="tag success" style={{ width: 'fit-content' }}>
+                              {progsNoDia.length} equipe{progsNoDia.length > 1 ? 's' : ''}
+                            </span>
+                          )}
+                          {faltasNoDia.length > 0 && (
+                            <span className="tag" style={{ width: 'fit-content', backgroundColor: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5' }}>
+                              {faltasNoDia.length} falta{faltasNoDia.length > 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
             {page === 'programacao' && (
               <>
                 <div className="page-head">
@@ -755,22 +865,19 @@ function App() {
                                 </label>
 
                                 <label className="full-row">
-                                <span>Observações</span>
-                                <textarea
-                                  disabled={userRole !== 'admin'}
-                                  rows="3"
-                                  // Mudamos de "value" para "defaultValue" para a digitação ficar livre de travamentos
-                                  defaultValue={item.observacoes} 
-                                  onClick={(e) => e.stopPropagation()}
-                                  
-                                  // Trocamos o onChange pelo onBlur (Salva só quando clicar fora da caixa!)
-                                  onBlur={(e) => {
-                                    if (e.target.value !== item.observacoes) {
-                                      updateProgramacaoField(item.id, 'observacoes', e.target.value);
-                                    }
-                                  }}
-                                />
-                              </label>
+                                  <span>Observações</span>
+                                  <textarea
+                                    disabled={userRole !== 'admin'}
+                                    rows="3"
+                                    defaultValue={item.observacoes}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onBlur={(e) => {
+                                      if (e.target.value !== item.observacoes) {
+                                        updateProgramacaoField(item.id, 'observacoes', e.target.value);
+                                      }
+                                    }}
+                                  />
+                                </label>
                               </div>
 
                               {userRole === 'admin' && (
@@ -921,10 +1028,24 @@ function App() {
                     ? activeDrawer.item.nome
                     : activeDrawer.type === 'veiculo'
                     ? activeDrawer.item.placa
+                    : activeDrawer.type === 'resumo-dia'
+                    ? formatDateLabel(activeDrawer.date).full
                     : activeDrawer.item.tipoEquipe}
                 </strong>
                 <button className="icon-btn" onClick={() => setActiveDrawer(null)}>×</button>
               </div>
+
+              {activeDrawer.type === 'resumo-dia' && (
+                <ResumoDiaDrawer
+                  date={activeDrawer.date}
+                  db={db}
+                  maps={maps}
+                  onGoToDate={() => {
+                    setSelectedDate(activeDrawer.date);
+                    changePage('programacao');
+                  }}
+                />
+              )}
 
               {activeDrawer.type === 'colaborador' && (
                 <ColaboradorDrawer
@@ -1280,11 +1401,15 @@ function Select({ label, value, onChange, options, placeholder = '', disabled = 
   );
 }
 
-function TextArea({ label, value, onChange, full = false, disabled = false }) {
+function TextArea({ label, value, onChange, full = false, disabled = false, defaultValue, onBlur, onClick }) {
   return (
     <label className={full ? 'full' : ''}>
       <span>{label}</span>
-      <textarea rows="4" value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+      {defaultValue !== undefined ? (
+        <textarea rows="3" disabled={disabled} defaultValue={defaultValue} onBlur={onBlur} onClick={onClick} />
+      ) : (
+        <textarea rows="3" disabled={disabled} value={value ?? ''} onChange={(e) => onChange(e.target.value)} />
+      )}
     </label>
   );
 }
@@ -1308,6 +1433,61 @@ function MultiSelect({ label, items, selectedIds, labelKey, subtitleKey, subtitl
             <span>{selectedIds.includes(item.id) ? '✓' : '+'}</span>
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// --- GAVETA NOVA: RESUMÃO DO DIA ---
+function ResumoDiaDrawer({ date, db, maps, onGoToDate }) {
+  const programacoes = db.programacoes.filter(p => p.data === date);
+  const faltas = db.faltas.filter(f => f.data === date);
+  const totalPessoas = programacoes.reduce((acc, p) => acc + p.membroIds.length, 0);
+
+  return (
+    <div className="drawer-body">
+      <div className="stats-grid three compact">
+        <StatCard number={programacoes.length} label="Equipes" />
+        <StatCard number={totalPessoas} label="Pessoas" subtle />
+        <StatCard number={faltas.length} label="Faltas" danger />
+      </div>
+
+      <div className="card-actions full">
+        <button className="primary-btn full" onClick={onGoToDate}>
+          Ir para Programação Diária
+        </button>
+      </div>
+
+      <div className="drawer-section">
+        <strong>Faltas Registradas</strong>
+        {faltas.length === 0 ? (
+          <p className="small-muted">Nenhuma falta neste dia.</p>
+        ) : (
+          faltas.map((f) => {
+            const pessoa = maps.colaboradores[f.colaboradorId];
+            return (
+              <div key={f.id} className="mini-card" style={{ borderLeft: '4px solid #dc2626' }}>
+                <strong>{pessoa ? pessoa.nome : 'Colaborador excluído'}</strong>
+                <div className="meta-row">{f.motivo}</div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className="drawer-section">
+        <strong>Equipes em Campo</strong>
+        {programacoes.length === 0 ? (
+          <p className="small-muted">Nenhuma equipe escalada.</p>
+        ) : (
+          programacoes.map((p) => (
+            <div key={p.id} className="mini-card" style={{ borderLeft: '4px solid #2563eb' }}>
+              <strong>{p.tipoEquipe}</strong>
+              <div className="meta-row">📍 {p.cidade} · {p.membroIds.length} pessoas</div>
+              <StatusBadge status={p.statusExecucao} />
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
