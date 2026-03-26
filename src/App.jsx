@@ -130,49 +130,12 @@ function toggleLimited(list, value, encarregadoId) {
 }
 
 function App() {
+  // 1. TODOS OS ESTADOS NO TOPO
   const [session, setSession] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [isRecovering, setIsRecovering] = useState(false);
   const [novaSenha, setNovaSenha] = useState('');
-
-  const fetchUserRole = async (userId) => {
-   const { data } = await supabase
-     .from('perfis')
-     .select('cargo')
-     .eq('id', userId)
-     .single();
-
-   // Se o cara tem um cargo definido no banco, a gente usa ele.
-   if (data && data.cargo) {
-     setUserRole(data.cargo.toLowerCase()); 
-   } else {
-     // O SEGREDO ESTÁ AQUI: Se a pessoa acabou de criar a conta, ela cai como PENDENTE!
-     setUserRole('pendente'); 
-   }
- };
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) fetchUserRole(session.user.id); 
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-    if (event === 'PASSWORD_RECOVERY') {
-      setIsRecovering(true);
-    }
-
-    setSession(session);
-    if (session) {
-      fetchUserRole(session.user.id); 
-    } else {
-      setUserRole(null); 
-    }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
+  
   const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [], perfis: [] });
   const [page, setPage] = useState('programacao'); 
   const [selectedDate, setSelectedDate] = useState(today());
@@ -184,82 +147,71 @@ function App() {
   const [veiculoForm, setVeiculoForm] = useState(emptyVeiculo());
   const [faltaForm, setFaltaForm] = useState(emptyFalta());
   const [expandedProgramacaoId, setExpandedProgramacaoId] = useState(null);
-
-  // --- ESTADOS DO CALENDÁRIO ---
   const [calendarMonth, setCalendarMonth] = useState(new Date());
 
-  const fetchDatabase = async () => {
-   // OLHA O resPerfis AQUI NO FINAL DOS COLCHETES:
-   const [resCols, resVeics, resProgs, resFaltas, resPerfis] = await Promise.all([
-     supabase.from('colaboradores').select('*'),
-     supabase.from('veiculos').select('*'),
-     supabase.from('programacoes').select('*'),
-     supabase.from('faltas').select('*'),
-     supabase.from('perfis').select('*')
-   ]);
+  // 2. TODAS AS FUNÇÕES DE DADOS NO MEIO
+  const fetchUserRole = async (userId) => {
+    const { data } = await supabase.from('perfis').select('cargo').eq('id', userId).single();
+    if (data && data.cargo) {
+      setUserRole(data.cargo.toLowerCase()); 
+    } else {
+      setUserRole('pendente'); 
+    }
+  };
 
-   setDb(normalizeDb({
-     colaboradores: resCols.data || [],
-     veiculos: resVeics.data || [],
-     programacoes: resProgs.data || [],
-     faltas: resFaltas.data || [],
-     perfis: resPerfis?.data || []
-   }));
- };
+  const fetchDatabase = async () => {
+    const [resCols, resVeics, resProgs, resFaltas, resPerfis] = await Promise.all([
+      supabase.from('colaboradores').select('*'),
+      supabase.from('veiculos').select('*'),
+      supabase.from('programacoes').select('*'),
+      supabase.from('faltas').select('*'),
+      supabase.from('perfis').select('*')
+    ]);
+
+    setDb(normalizeDb({
+      colaboradores: resCols.data || [],
+      veiculos: resVeics.data || [],
+      programacoes: resProgs.data || [],
+      faltas: resFaltas.data || [],
+      perfis: resPerfis?.data || []
+    }));
+  };
+
+  // 3. TODOS OS USE_EFFECTS
+  useEffect(() => {
+    if (window.location.hash.includes('type=recovery')) {
+      setIsRecovering(true);
+    }
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) fetchUserRole(session.user.id); 
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecovering(true);
+      }
+      setSession(session);
+      if (session) {
+        fetchUserRole(session.user.id); 
+      } else {
+        setUserRole(null); 
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (!session) return;
     fetchDatabase(); 
 
-          if (isRecovering) {
-      return (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
-          <div className="card" style={{ maxWidth: '400px', width: '100%', padding: '40px', textAlign: 'center', borderRadius: '25px' }}>
-            <div style={{ fontSize: '40px', marginBottom: '10px' }}>🔑</div>
-            <h2 style={{ marginBottom: '10px' }}>Nova Senha</h2>
-            <p style={{ color: '#64748b', marginBottom: '25px', fontSize: '14px' }}>Digite a sua nova senha de acesso abaixo.</p>
-            
-            <input
-              type="password"
-              placeholder="Digite a nova senha"
-              value={novaSenha}
-              onChange={(e) => setNovaSenha(e.target.value)}
-              style={{ width: '100%', padding: '15px', borderRadius: '50px', border: '1px solid #cbd5e1', marginBottom: '20px', outline: 'none', textAlign: 'center', fontSize: '16px' }}
-            />
-            
-            <button
-              className="primary-btn full"
-              style={{ borderRadius: '50px', padding: '12px', fontWeight: 'bold' }}
-              onClick={async () => {
-                if (novaSenha.length < 6) return alert("A senha precisa ter pelo menos 6 caracteres!");
-                
-                // Salva a nova senha no banco
-                const { error } = await supabase.auth.updateUser({ password: novaSenha });
-                
-                if (error) {
-                  alert("Erro ao salvar senha: " + error.message);
-                } else {
-                  alert("✅ Senha atualizada com sucesso!");
-                  setIsRecovering(false); // Fecha essa tela e libera o acesso ao App
-                }
-              }}
-            >
-              Salvar Senha e Entrar
-            </button>
-          </div>
-        </div>
-      );
-      }
-
     const canal = supabase
       .channel('mudancas-incovia')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public' },
-        (payload) => {
-          fetchDatabase(); 
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
+        fetchDatabase(); 
+      })
       .subscribe();
 
     return () => {
@@ -267,16 +219,13 @@ function App() {
     };
   }, [session]);
 
-  const maps = useMemo(
-    () => ({
+  // 4. TODOS OS USE_MEMOS
+  const maps = useMemo(() => ({
       colaboradores: Object.fromEntries(db.colaboradores.map((x) => [x.id, x])),
       veiculos: Object.fromEntries(db.veiculos.map((x) => [x.id, x])),
-    }),
-    [db]
-  );
+  }), [db]);
 
-  const programacoesDoDia = useMemo(
-    () =>
+  const programacoesDoDia = useMemo(() =>
       db.programacoes
         .filter((p) => p.data === selectedDate)
         .sort((a, b) => (a.tipoEquipe || '').localeCompare(b.tipoEquipe || '', 'pt-BR')),
@@ -324,21 +273,21 @@ function App() {
 
   const historyItems = colaboradoresComStats.filter((c) => c.nome.toLowerCase().includes(search.toLowerCase()));
 
-  // --- LÓGICA DO CALENDÁRIO ---
+  const calendarDays = useMemo(() => {
+    return getDaysInMonth(calendarMonth.getFullYear(), calendarMonth.getMonth());
+  }, [calendarMonth]);
+
+  // 5. FUNÇÕES DE SUPORTE
   function getDaysInMonth(year, month) {
     const numDays = new Date(year, month + 1, 0).getDate();
     const firstDay = new Date(year, month, 1).getDay();
     const days = [];
-    for (let i = 0; i < firstDay; i++) days.push(null); // Espaços vazios antes do dia 1
+    for (let i = 0; i < firstDay; i++) days.push(null); 
     for (let i = 1; i <= numDays; i++) {
       days.push(`${year}-${pad(month + 1)}-${pad(i)}`);
     }
     return days;
   }
-
-  const calendarDays = useMemo(() => {
-    return getDaysInMonth(calendarMonth.getFullYear(), calendarMonth.getMonth());
-  }, [calendarMonth]);
 
   function nextMonth() {
     setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1));
@@ -348,7 +297,6 @@ function App() {
     setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1));
   }
 
-
   function changePage(nextPage) {
     setPage(nextPage);
     setSearch('');
@@ -356,7 +304,6 @@ function App() {
     setExpandedProgramacaoId(null);
   }
 
-  // --- FUNÇÕES DE BANCO DE DADOS ---
   async function updateProgramacaoField(itemId, field, value) {
     const payload = { [field]: value };
     if (field === 'statusExecucao' && value !== 'NÃO FOI POSSÍVEL REALIZAR') {
@@ -534,28 +481,17 @@ function App() {
 
   async function deletePerfil(id) {
    if (!confirm('Tem certeza que deseja excluir este usuário definitivamente?')) return;
-   
    const res = await supabase.from('perfis').delete().eq('id', id);
-   
-   if (res.error) {
-     alert("Erro ao excluir usuário: " + res.error.message);
-   } else {
-     fetchDatabase();
-   }
- }
+   if (res.error) alert("Erro ao excluir usuário: " + res.error.message);
+   else fetchDatabase();
+  }
 
- async function enviarEmailReset(email) {
+  async function enviarEmailReset(email) {
    if (!confirm(`Enviar link de redefinição de senha para ${email}?`)) return;
-   
-   // O Supabase dispara o e-mail automático configurado no seu painel
    const { error } = await supabase.auth.resetPasswordForEmail(email);
-   
-   if (error) {
-     alert("Erro ao enviar e-mail: " + error.message);
-   } else {
-     alert("✅ E-mail de recuperação enviado com sucesso para " + email);
-   }
- }
+   if (error) alert("Erro ao enviar e-mail: " + error.message);
+   else alert("✅ E-mail de recuperação enviado com sucesso para " + email);
+  }
 
   async function deleteVeiculo(itemId) {
     if (!confirm('Excluir este veículo?')) return;
@@ -573,46 +509,89 @@ function App() {
     if (res.error) alert("Erro ao excluir Falta: " + res.error.message);
     else fetchDatabase();
   }
+
   async function aprovarUsuario(id, novoCargo) {
-   console.log("Tentando aprovar o usuário ID:", id); // Nosso espião
-   
    const res = await supabase.from('perfis').update({ cargo: novoCargo }).eq('id', id);
-   
-   if (res.error) {
-     console.error("🚨 Erro bloqueado pelo Supabase:", res.error);
-     alert("Erro ao aprovar: " + res.error.message);
-   } else {
+   if (res.error) alert("Erro ao aprovar: " + res.error.message);
+   else {
      alert("✅ Acesso liberado com sucesso!");
-     fetchDatabase(); // Atualiza a tela
+     fetchDatabase(); 
    }
- }
+  }
 
+  // ==========================================================
+  // 6. AS TELAS - A ORDEM AQUI IMPORTA DEMAIS PRO REACT!
+  // ==========================================================
+
+  // TELA 1: Recuperação de Senha (vem primeiro)
+  if (isRecovering) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
+        <div className="card" style={{ maxWidth: '400px', width: '100%', padding: '40px', textAlign: 'center', borderRadius: '25px' }}>
+          <div style={{ fontSize: '40px', marginBottom: '10px' }}>🔑</div>
+          <h2 style={{ marginBottom: '10px' }}>Nova Senha</h2>
+          <p style={{ color: '#64748b', marginBottom: '25px', fontSize: '14px' }}>Digite a sua nova senha de acesso abaixo.</p>
+          
+          <input
+            type="password"
+            placeholder="Digite a nova senha"
+            value={novaSenha}
+            onChange={(e) => setNovaSenha(e.target.value)}
+            style={{ width: '100%', padding: '15px', borderRadius: '50px', border: '1px solid #cbd5e1', marginBottom: '20px', outline: 'none', textAlign: 'center', fontSize: '16px' }}
+          />
+          
+          <button
+            className="primary-btn full"
+            style={{ borderRadius: '50px', padding: '12px', fontWeight: 'bold' }}
+            onClick={async () => {
+              if (novaSenha.length < 6) return alert("A senha precisa ter pelo menos 6 caracteres!");
+              
+              const { error } = await supabase.auth.updateUser({ password: novaSenha });
+              
+              if (error) {
+                alert("Erro ao salvar senha: " + error.message);
+              } else {
+                alert("✅ Senha atualizada com sucesso!");
+                window.location.hash = ''; // Limpa a URL do navegador
+                setIsRecovering(false); 
+              }
+            }}
+          >
+            Salvar Senha e Entrar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // TELA 2: Auth / Login
   if (!session) {
-   return <Auth />;
- }
+    return <Auth />;
+  }
 
- // --- TELA DE ESPERA (O CADEADO) ---
- if (userRole === 'pendente') {
-   return (
-     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
-       <div className="card" style={{ textAlign: 'center', maxWidth: '400px', padding: '40px' }}>
-         <div style={{ fontSize: '48px', marginBottom: '20px' }}>🔒</div>
-         <h2>Aguardando Aprovação</h2>
-         <p style={{ color: '#64748b', marginTop: '10px', marginBottom: '30px' }}>
-           Sua conta foi criada, mas o acesso ao sistema Incovia precisa ser liberado por um Administrador. Por favor, aguarde.
-         </p>
-         <button 
-           className="ghost-btn" 
-           onClick={() => supabase.auth.signOut()}
-           style={{ color: '#dc2626' }}
-         >
-           Sair e voltar depois
-         </button>
-       </div>
-     </div>
-   );
- }
+  // TELA 3: Usuário aguardando aprovação
+  if (userRole === 'pendente') {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
+        <div className="card" style={{ textAlign: 'center', maxWidth: '400px', padding: '40px' }}>
+          <div style={{ fontSize: '48px', marginBottom: '20px' }}>🔒</div>
+          <h2>Aguardando Aprovação</h2>
+          <p style={{ color: '#64748b', marginTop: '10px', marginBottom: '30px' }}>
+            Sua conta foi criada, mas o acesso ao sistema Incovia precisa ser liberado por um Administrador. Por favor, aguarde.
+          </p>
+          <button 
+            className="ghost-btn" 
+            onClick={() => supabase.auth.signOut()}
+            style={{ color: '#dc2626' }}
+          >
+            Sair e voltar depois
+          </button>
+        </div>
+      </div>
+    );
+  }
 
+  // TELA 4: Aplicativo Principal (O App.jsx normal)
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -626,16 +605,16 @@ function App() {
 
         <nav className="menu">
  {/* 1. PROGRAMAÇÃO NO TOPO */}
- <NavButton 
-   active={page === 'programacao'} 
+ <NavButton 
+   active={page === 'programacao'} 
    onClick={() => changePage('programacao')}
  >
    Programação
  </NavButton>
 
  {/* 2. CALENDÁRIO LOGO ABAIXO */}
- <NavButton 
-   active={page === 'calendario'} 
+ <NavButton 
+   active={page === 'calendario'} 
    onClick={() => changePage('calendario')}
  >
    Calendários
@@ -697,7 +676,6 @@ function App() {
             <button className="ghost-btn" onClick={() => exportProgramacaoPdfModelo03(db, selectedDate)}>
               Exportar Modelo 03
             </button>
-            {/* Removi a aspa simples ' e o parêntese extra que estavam sobrando aqui embaixo */}
             {(userRole === 'admin' || userRole === 'editor') && (
               <button className="primary-btn" onClick={() => openProgramacaoModal()}>
                 + Nova Programação
@@ -818,7 +796,6 @@ function App() {
             )}
               {page === 'acessos' && userRole === 'admin' && (
               <>
-                {/* --- SEÇÃO DE USUÁRIOS ATIVOS --- */}
               <div className="page-head" style={{ marginTop: '40px' }}>
               <div>
                 <h2>Usuários Ativos</h2>
@@ -834,9 +811,8 @@ function App() {
                       <strong>{perfil.nome || 'Sem Nome'}</strong>
                       <div className="meta-row">{perfil.email}</div>
                     </div>
-                    {/* TAG COLORIDA BASEADA NO CARGO */}
                     <span className={`tag ${
-                      perfil.cargo === 'admin' ? 'danger' : 
+                      perfil.cargo === 'admin' ? 'danger' : 
                       perfil.cargo === 'editor' ? 'primary' : 'success'
                     }`}>
                       {perfil.cargo}
@@ -845,39 +821,37 @@ function App() {
 
                   <div className="section-line" />
 
-                  {/* SELETOR DE CARGO (SÓ O ADMIN PODE MEXER) */}
                   <div className="card-actions full" style={{ padding: '10px' }}>
-                    <select 
-                      value={perfil.cargo} 
-                       style={{ 
-                        width: '100%', 
-                        padding: '10px 15px', 
-                        borderRadius: '50px', // Mantendo o visual redondinho
-                        border: '2px solid #ffc107', // Borda amarela
-                        backgroundColor: '#fffdeb', // Fundo amarelinho bem suave
-                        color: '#b45309', // Texto num tom de caramelo/laranja escuro para leitura
+                    <select 
+                      value={perfil.cargo} 
+                       style={{ 
+                        width: '100%', 
+                        padding: '10px 15px', 
+                        borderRadius: '50px',
+                        border: '2px solid #ffc107',
+                        backgroundColor: '#fffdeb',
+                        color: '#b45309',
                         fontWeight: 'bold',
                         cursor: 'pointer',
                         outline: 'none',
                         textAlign: 'center'
                       }}
                       onChange={(e) => aprovarUsuario(perfil.id, e.target.value)}
-                      disabled={perfil.id === session?.user?.id} // Impede que você tire seu próprio Admin por erro
+                      disabled={perfil.id === session?.user?.id}
                     >
                       <option value="visualizador">Visualizador</option>
                       <option value="editor">Editor</option>
                       <option value="admin">Admin</option>
                     </select>
-                     {/* BOTÃO DE EXCLUIR (Escondido para você mesmo) */}
                       {perfil.id !== session?.user?.id && (
-                        <button 
-                          className="ghost-btn full" 
-                          style={{ 
-                            color: '#dc2626', 
-                            borderColor: '#fca5a5', 
+                        <button 
+                          className="ghost-btn full" 
+                          style={{ 
+                            color: '#dc2626', 
+                            borderColor: '#fca5a5', 
                             backgroundColor: '#fef2f2',
-                            borderRadius: '50px' // Redondinho acompanhando o select
-                          }} 
+                            borderRadius: '50px' 
+                          }} 
                           onClick={() => deletePerfil(perfil.id)}
                         >
                           Excluir Usuário
