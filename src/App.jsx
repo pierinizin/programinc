@@ -21,7 +21,7 @@ const SERVICE_TYPE_OPTIONS = [...TEAM_TYPE_OPTIONS];
 const STATUS_OPTIONS = ['EXECUTANDO', 'CONCLUÍDO', 'NÃO FOI POSSÍVEL REALIZAR'];
 const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'OUTROS'];
 const ROLE_OPTIONS = ['Encarregado', 'Motorista de Veículos Médios', 'Ajudante de produção', 'Operadador de máquina de pintura'];
-const VEHICLE_TYPES = ['Caminhão', 'Caminhonete', 'Cesto', 'Munck'];
+const VEHICLE_TYPES = ['Caminhão', 'Caminhonete', 'Carro', 'Outro'];
 const VEHICLE_STATUS = ['Disponível', 'Em uso', 'Manutenção', 'Inativo'];
 const MAX_TEAM_MEMBERS = 7;
 
