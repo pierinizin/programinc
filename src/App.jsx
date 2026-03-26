@@ -660,10 +660,10 @@ function App() {
                 <button className="ghost-btn" onClick={() => exportVeiculosXlsx(db)}>
                   Exportar Veículos
                 </button>
-                {userRole === 'admin' || userRole === 'editor' && (
-                  <button className="primary-btn" onClick={() => openVeiculoModal()}>
-                    + Novo Veículo
-                  </button>
+                {(userRole?.toLowerCase() === 'admin' || userRole?.toLowerCase() === 'editor') && (
+                <button className="primary-btn" onClick={() => openVeiculoModal()}>
+                  + Novo Veículo
+                </button>
                 )}
               </>
             )}
