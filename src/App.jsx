@@ -804,7 +804,7 @@ function App() {
               </div>
 
               <div className="cards-grid three">
-              {db.perfis.filter(p => p.cargo !== 'pendente').map((perfil) => (
+              {db.perfis.map((perfil) => (
                 <div key={perfil.id} className="card">
                   <div className="card-header between">
                     <div>
@@ -813,9 +813,10 @@ function App() {
                     </div>
                     <span className={`tag ${
                       perfil.cargo === 'admin' ? 'danger' : 
-                      perfil.cargo === 'editor' ? 'primary' : 'success'
+                      perfil.cargo === 'editor' ? 'primary' : 
+                      perfil.cargo === 'pendente' ? 'warning' : 'success'
                     }`}>
-                      {perfil.cargo}
+                      {perfil.cargo || 'pendente'}
                     </span>
                   </div>
 
@@ -823,7 +824,7 @@ function App() {
 
                   <div className="card-actions full" style={{ padding: '10px' }}>
                     <select 
-                      value={perfil.cargo} 
+                      value={perfil.cargo || 'pendente'} 
                        style={{ 
                         width: '100%', 
                         padding: '10px 15px', 
@@ -839,6 +840,7 @@ function App() {
                       onChange={(e) => aprovarUsuario(perfil.id, e.target.value)}
                       disabled={perfil.id === session?.user?.id}
                     >
+                      <option value="pendente">Pendente (Aguardando)</option>
                       <option value="visualizador">Visualizador</option>
                       <option value="editor">Editor</option>
                       <option value="admin">Admin</option>
