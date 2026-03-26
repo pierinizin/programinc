@@ -65,6 +65,7 @@ function normalizeDb(data) {
     colaboradores: Array.isArray(data?.colaboradores) ? data.colaboradores : [],
     veiculos: Array.isArray(data?.veiculos) ? data.veiculos : [],
     faltas: Array.isArray(data?.faltas) ? data.faltas : [],
+    perfis: Array.isArray(data?.perfis) ? data.perfis : [],
     programacoes: Array.isArray(data?.programacoes)
       ? data.programacoes.map((item) => ({
           ...item,
@@ -79,6 +80,7 @@ function normalizeDb(data) {
           horarioSaida: item.horarioSaida || '17:48',
           membroIds: Array.isArray(item.membroIds) ? item.membroIds : [],
           veiculoIds: Array.isArray(item.veiculoIds) ? item.veiculoIds : [],
+          perfis: Array.isArray(data?.perfis) ? data.perfis : [],
         }))
       : [],
   };
@@ -134,18 +136,20 @@ function App() {
   const [userRole, setUserRole] = useState(null);
 
   const fetchUserRole = async (userId) => {
-    const { data } = await supabase
-      .from('perfis')
-      .select('cargo')
-      .eq('id', userId)
-      .single();
+   const { data } = await supabase
+     .from('perfis')
+     .select('cargo')
+     .eq('id', userId)
+     .single();
 
-    if (data && data.cargo) {
-      setUserRole(data.cargo.toLowerCase()); 
-    } else {
-      setUserRole('visualizador'); 
-    }
-  };
+   // Se o cara tem um cargo definido no banco, a gente usa ele.
+   if (data && data.cargo) {
+     setUserRole(data.cargo.toLowerCase()); 
+   } else {
+     // O SEGREDO ESTÁ AQUI: Se a pessoa acabou de criar a conta, ela cai como PENDENTE!
+     setUserRole('pendente'); 
+   }
+ };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -165,7 +169,7 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [] });
+  const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [], perfis: [] });
   const [page, setPage] = useState('calendario'); // Mudei para iniciar no calendário!
   const [selectedDate, setSelectedDate] = useState(today());
   const [search, setSearch] = useState('');
@@ -181,20 +185,23 @@ function App() {
   const [calendarMonth, setCalendarMonth] = useState(new Date());
 
   const fetchDatabase = async () => {
-    const [resCols, resVeics, resProgs, resFaltas] = await Promise.all([
-      supabase.from('colaboradores').select('*'),
-      supabase.from('veiculos').select('*'),
-      supabase.from('programacoes').select('*'),
-      supabase.from('faltas').select('*')
-    ]);
+   // OLHA O resPerfis AQUI NO FINAL DOS COLCHETES:
+   const [resCols, resVeics, resProgs, resFaltas, resPerfis] = await Promise.all([
+     supabase.from('colaboradores').select('*'),
+     supabase.from('veiculos').select('*'),
+     supabase.from('programacoes').select('*'),
+     supabase.from('faltas').select('*'),
+     supabase.from('perfis').select('*')
+   ]);
 
-    setDb(normalizeDb({
-      colaboradores: resCols.data || [],
-      veiculos: resVeics.data || [],
-      programacoes: resProgs.data || [],
-      faltas: resFaltas.data || []
-    }));
-  };
+   setDb(normalizeDb({
+     colaboradores: resCols.data || [],
+     veiculos: resVeics.data || [],
+     programacoes: resProgs.data || [],
+     faltas: resFaltas.data || [],
+     perfis: resPerfis?.data || []
+   }));
+ };
 
   useEffect(() => {
     if (!session) return;
@@ -497,10 +504,45 @@ function App() {
     if (res.error) alert("Erro ao excluir Falta: " + res.error.message);
     else fetchDatabase();
   }
+  async function aprovarUsuario(id, novoCargo) {
+   console.log("Tentando aprovar o usuário ID:", id); // Nosso espião
+   
+   const res = await supabase.from('perfis').update({ cargo: novoCargo }).eq('id', id);
+   
+   if (res.error) {
+     console.error("🚨 Erro bloqueado pelo Supabase:", res.error);
+     alert("Erro ao aprovar: " + res.error.message);
+   } else {
+     alert("✅ Acesso liberado com sucesso!");
+     fetchDatabase(); // Atualiza a tela
+   }
+ }
 
   if (!session) {
-    return <Auth />;
-  }
+   return <Auth />;
+ }
+
+ // --- TELA DE ESPERA (O CADEADO) ---
+ if (userRole === 'pendente') {
+   return (
+     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
+       <div className="card" style={{ textAlign: 'center', maxWidth: '400px', padding: '40px' }}>
+         <div style={{ fontSize: '48px', marginBottom: '20px' }}>🔒</div>
+         <h2>Aguardando Aprovação</h2>
+         <p style={{ color: '#64748b', marginTop: '10px', marginBottom: '30px' }}>
+           Sua conta foi criada, mas o acesso ao sistema Incovia precisa ser liberado por um Administrador. Por favor, aguarde.
+         </p>
+         <button 
+           className="ghost-btn" 
+           onClick={() => supabase.auth.signOut()}
+           style={{ color: '#dc2626' }}
+         >
+           Sair e voltar depois
+         </button>
+       </div>
+     </div>
+   );
+ }
 
   return (
     <div className="app-shell">
@@ -514,28 +556,47 @@ function App() {
         </div>
 
         <nav className="menu">
-          <NavButton active={page === 'calendario'} onClick={() => changePage('calendario')}>
-            Visão Geral (Calendário)
-          </NavButton>
+ {/* 1. PROGRAMAÇÃO NO TOPO */}
+ <NavButton 
+   active={page === 'programacao'} 
+   onClick={() => changePage('programacao')}
+ >
+   Programação
+ </NavButton>
 
-          <NavButton active={page === 'programacao'} onClick={() => changePage('programacao')}>
-            Programação Diária
-          </NavButton>
-          
-          {userRole === 'admin' && (
-            <>
-              <NavButton active={page === 'colaboradores'} onClick={() => changePage('colaboradores')}>
-                Colaboradores
-              </NavButton>
-              <NavButton active={page === 'veiculos'} onClick={() => changePage('veiculos')}>
-                Veículos
-              </NavButton>
-              <NavButton active={page === 'historico'} onClick={() => changePage('historico')}>
-                Histórico
-              </NavButton>
-            </>
-          )}
-        </nav>
+ {/* 2. CALENDÁRIO LOGO ABAIXO */}
+ <NavButton 
+   active={page === 'calendario'} 
+   onClick={() => changePage('calendario')}
+ >
+   Calendários
+ </NavButton>
+
+ {/* DIVISOR (OPCIONAL) */}
+ <div className="section-line" style={{ margin: '10px 0', opacity: 0.3 }} />
+
+ {/* 3. BOTÕES PARA ADMIN/EDITOR */}
+ {(userRole === 'admin' || userRole === 'editor') && (
+   <>
+     <NavButton active={page === 'colaboradores'} onClick={() => changePage('colaboradores')}>
+       Colaboradores
+     </NavButton>
+     <NavButton active={page === 'veiculos'} onClick={() => changePage('veiculos')}>
+       Veículos
+     </NavButton>
+     <NavButton active={page === 'historico'} onClick={() => changePage('historico')}>
+       Histórico
+     </NavButton>
+   </>
+ )}
+
+ {/* 4. APROVAÇÕES SÓ PRO ADMIN NO FINAL */}
+ {userRole === 'admin' && (
+   <NavButton active={page === 'acessos'} onClick={() => changePage('acessos')}>
+      Aprovações
+   </NavButton>
+ )}
+</nav>
 
         <div className="sidebar-bottom">
           <button 
@@ -557,48 +618,49 @@ function App() {
 
           <div className="topbar-actions">
             {page === 'programacao' && (
-              <>
-                <button className="ghost-btn" onClick={() => exportProgramacaoXlsx(db, selectedDate)}>
-                  Exportar Modelo 01
-                </button>
-                <button className="ghost-btn" onClick={() => exportProgramacaoModeloAntigo(db, selectedDate)}>
-                  Exportar Modelo 02
-                </button>
-                <button className="ghost-btn" onClick={() => exportProgramacaoPdfModelo03(db, selectedDate)}>
-                  Exportar Modelo 03
-                </button>
-                {userRole === 'admin' && (
-                  <button className="primary-btn" onClick={() => openProgramacaoModal()}>
-                    + Nova Programação
-                  </button>
-                )}
-              </>
+          <>
+            <button className="ghost-btn" onClick={() => exportProgramacaoXlsx(db, selectedDate)}>
+              Exportar Modelo 01
+            </button>
+            <button className="ghost-btn" onClick={() => exportProgramacaoModeloAntigo(db, selectedDate)}>
+              Exportar Modelo 02
+            </button>
+            <button className="ghost-btn" onClick={() => exportProgramacaoPdfModelo03(db, selectedDate)}>
+              Exportar Modelo 03
+            </button>
+            {/* Removi a aspa simples ' e o parêntese extra que estavam sobrando aqui embaixo */}
+            {(userRole === 'admin' || userRole === 'editor') && (
+              <button className="primary-btn" onClick={() => openProgramacaoModal()}>
+                + Nova Programação
+              </button>
             )}
+          </>
+          )}
 
             {page === 'colaboradores' && (
+          <>
+            <button className="ghost-btn" onClick={() => exportPessoasXlsx(db)}>
+              Exportar Colaboradores
+            </button>
+            {(userRole === 'admin' || userRole === 'editor') && (
               <>
-                <button className="ghost-btn" onClick={() => exportPessoasXlsx(db)}>
-                  Exportar Colaboradores
+                <button className="ghost-btn" onClick={() => openFaltaModal()}>
+                  Registrar Falta
                 </button>
-                {userRole === 'admin' && (
-                  <>
-                    <button className="ghost-btn" onClick={() => openFaltaModal()}>
-                      Registrar Falta
-                    </button>
-                    <button className="primary-btn" onClick={() => openColaboradorModal()}>
-                      + Novo
-                    </button>
-                  </>
-                )}
+                <button className="primary-btn" onClick={() => openColaboradorModal()}>
+                  + Novo
+                </button>
               </>
             )}
+          </>
+          )}
 
             {page === 'veiculos' && (
               <>
                 <button className="ghost-btn" onClick={() => exportVeiculosXlsx(db)}>
                   Exportar Veículos
                 </button>
-                {userRole === 'admin' && (
+                {userRole === 'admin' || userRole === 'editor' && (
                   <button className="primary-btn" onClick={() => openVeiculoModal()}>
                     + Novo Veículo
                   </button>
@@ -685,6 +747,53 @@ function App() {
                 </div>
               </>
             )}
+              {page === 'acessos' && userRole === 'admin' && (
+              <>
+                {/* --- SEÇÃO DE USUÁRIOS ATIVOS --- */}
+              <div className="page-head" style={{ marginTop: '40px' }}>
+              <div>
+                <h2>Usuários Ativos</h2>
+                <p>Gerencie o nível de acesso de cada colaborador</p>
+              </div>
+              </div>
+
+              <div className="cards-grid three">
+              {db.perfis.filter(p => p.cargo !== 'pendente').map((perfil) => (
+                <div key={perfil.id} className="card">
+                  <div className="card-header between">
+                    <div>
+                      <strong>{perfil.nome || 'Sem Nome'}</strong>
+                      <div className="meta-row">{perfil.email}</div>
+                    </div>
+                    {/* TAG COLORIDA BASEADA NO CARGO */}
+                    <span className={`tag ${
+                      perfil.cargo === 'admin' ? 'danger' : 
+                      perfil.cargo === 'editor' ? 'primary' : 'success'
+                    }`}>
+                      {perfil.cargo}
+                    </span>
+                  </div>
+
+                  <div className="section-line" />
+
+                  {/* SELETOR DE CARGO (SÓ O ADMIN PODE MEXER) */}
+                  <div className="card-actions full" style={{ padding: '10px' }}>
+                    <select 
+                      value={perfil.cargo} 
+                      style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                      onChange={(e) => aprovarUsuario(perfil.id, e.target.value)}
+                      disabled={perfil.id === session?.user?.id} // Impede que você tire seu próprio Admin por erro
+                    >
+                      <option value="visualizador">Visualizador (Apenas vê)</option>
+                      <option value="editor">Editor (Lança programação)</option>
+                      <option value="admin">Admin (Total)</option>
+                    </select>
+                  </div>
+                </div>
+              ))}
+              </div>
+              </>
+              )}
 
             {page === 'programacao' && (
               <>
@@ -712,7 +821,7 @@ function App() {
                 {programacoesDoDia.length === 0 ? (
                   <div className="empty-card">
                     <p>Nenhuma equipe programada para este dia.</p>
-                    {userRole === 'admin' && (
+                    {userRole === 'admin' || userRole === 'editor' && (
                       <button className="ghost-btn" onClick={() => openProgramacaoModal()}>
                         Criar Programação
                       </button>

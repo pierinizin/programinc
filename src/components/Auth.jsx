@@ -1,95 +1,108 @@
 import React, { useState } from 'react';
-import { supabase } from '../lib/supabase'; // Ajuste o caminho se a sua pasta lib estiver em outro lugar
+import { supabase } from '../lib/supabase';
 
 export function Auth() {
  const [loading, setLoading] = useState(false);
+ const [isLogin, setIsLogin] = useState(true);
+ 
+ // Nossos 3 campos
  const [email, setEmail] = useState('');
  const [password, setPassword] = useState('');
- const [message, setMessage] = useState('');
+ const [nome, setNome] = useState(''); // <-- O estado do NOME aqui!
 
- // Função para Entrar (Login)
- const handleLogin = async (e) => {
-   e.preventDefault(); // Evita que a página recarregue
-   setLoading(true);
-   setMessage('');
-
-   const { error } = await supabase.auth.signInWithPassword({
-     email,
-     password,
-   });
-
-   if (error) {
-     setMessage(`Erro: ${error.message}`);
-   } else {
-     setMessage('Login realizado com sucesso! Bem-vindo.');
-   }
-   setLoading(false);
- };
-
- // Função para Cadastrar (Sign Up)
- const handleSignUp = async (e) => {
+ const handleAuth = async (e) => {
    e.preventDefault();
    setLoading(true);
-   setMessage('');
 
-   const { error } = await supabase.auth.signUp({
-     email,
-     password,
-   });
-
-   if (error) {
-     setMessage(`Erro: ${error.message}`);
+   if (isLogin) {
+     // MODO LOGIN
+     const { error } = await supabase.auth.signInWithPassword({ email, password });
+     if (error) alert("Erro ao entrar: " + error.message);
    } else {
-     setMessage('Cadastro realizado! Verifique o painel do Supabase.');
+     // MODO CADASTRO
+     if (!nome) {
+       alert("Preencha o Nome Completo!");
+       setLoading(false);
+       return;
+     }
+     
+     // Enviando o email, senha e o NOME junto!
+     const { error } = await supabase.auth.signUp({
+       email,
+       password,
+       options: {
+         data: { nome: nome }
+       }
+     });
+     
+     if (error) {
+       alert("Erro ao cadastrar: " + error.message);
+     } else {
+       alert("Conta criada com sucesso! Aguarde a aprovação de um Administrador.");
+       setIsLogin(true); // Volta pra tela de login
+     }
    }
    setLoading(false);
  };
 
  return (
-   <div style={{ maxWidth: '400px', margin: '50px auto', padding: '20px', border: '1px solid #ccc', borderRadius: '8px', fontFamily: 'sans-serif' }}>
-     <h2 style={{ textAlign: 'center' }}>Acesso ao Sistema</h2>
-     
-     <form style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-       <div>
-         <label style={{ display: 'block', marginBottom: '5px' }}>E-mail:</label>
-         <input
-           type="email"
-           value={email}
-           onChange={(e) => setEmail(e.target.value)}
-           style={{ width: '100%', padding: '10px', boxSizing: 'border-box' }}
-           placeholder="seu@email.com"
-           required
-         />
-       </div>
-
-       <div>
-         <label style={{ display: 'block', marginBottom: '5px' }}>Senha:</label>
-         <input
-           type="password"
-           value={password}
-           onChange={(e) => setPassword(e.target.value)}
-           style={{ width: '100%', padding: '10px', boxSizing: 'border-box' }}
-           placeholder="Mínimo de 6 caracteres"
-           required
-         />
-       </div>
+   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
+     <div className="card" style={{ width: '100%', maxWidth: '400px', padding: '30px' }}>
+       <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>
+         {isLogin ? 'Incovia - Acesso' : 'Criar Conta'}
+       </h2>
        
-       {/* Mostra as mensagens de erro ou sucesso */}
-       {message && (
-         <div style={{ padding: '10px', backgroundColor: message.includes('Erro') ? '#fee2e2' : '#dcfce7', color: message.includes('Erro') ? '#991b1b' : '#166534', borderRadius: '4px' }}>
-           {message}
-         </div>
-       )}
+       <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+         
+         {/* O CAMPO DE NOME: Só aparece quando o cara clica em "Cadastre-se" */}
+         {!isLogin && (
+           <label className="full-row" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+             <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#64748b' }}>Nome Completo</span>
+             <input 
+               type="text" 
+               value={nome} 
+               onChange={(e) => setNome(e.target.value)} 
+               required 
+               style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px' }}
+             />
+           </label>
+         )}
 
-       <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-         <button onClick={handleLogin} disabled={loading} style={{ flex: 1, padding: '10px', cursor: 'pointer', backgroundColor: '#000', color: '#fff', border: 'none', borderRadius: '4px' }}>
-           {loading ? 'Aguarde...' : 'Entrar'}
+         <label className="full-row" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+           <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#64748b' }}>E-mail</span>
+           <input 
+             type="email" 
+             value={email} 
+             onChange={(e) => setEmail(e.target.value)} 
+             required 
+             style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px' }}
+           />
+         </label>
+         
+         <label className="full-row" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+           <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#64748b' }}>Senha</span>
+           <input 
+             type="password" 
+             value={password} 
+             onChange={(e) => setPassword(e.target.value)} 
+             required 
+             style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px' }}
+           />
+         </label>
+
+         <button className="primary-btn" type="submit" disabled={loading} style={{ marginTop: '10px' }}>
+           {loading ? 'Carregando...' : (isLogin ? 'Entrar' : 'Cadastrar')}
          </button>
-         <button onClick={handleSignUp} disabled={loading} style={{ flex: 1, padding: '10px', cursor: 'pointer', backgroundColor: '#fff', color: '#000', border: '1px solid #000', borderRadius: '4px' }}>
-           {loading ? 'Aguarde...' : 'Cadastrar'}
-         </button>
-       </div>
-     </form>
+       </form>
+
+       <button 
+         className="ghost-btn full" 
+         onClick={() => setIsLogin(!isLogin)} 
+         style={{ marginTop: '15px' }}
+       >
+         {isLogin ? 'Não tem conta? Cadastre-se' : 'Já tem conta? Faça Login'}
+       </button>
+     </div>
    </div>
  );
 }
