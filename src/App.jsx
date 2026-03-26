@@ -20,7 +20,7 @@ const TEAM_TYPE_OPTIONS = [
 const SERVICE_TYPE_OPTIONS = [...TEAM_TYPE_OPTIONS];
 const STATUS_OPTIONS = ['EXECUTANDO', 'CONCLUÍDO', 'NÃO FOI POSSÍVEL REALIZAR'];
 const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'OUTROS'];
-const ROLE_OPTIONS = ['Encarregado', 'Motorista', 'Eletricista', 'Ajudante', 'Técnico'];
+const ROLE_OPTIONS = ['Encarregado', 'Motorista de Veículos Médios', 'Ajudante de produção', 'Operdado de máquina de pintura'];
 const VEHICLE_TYPES = ['Caminhão', 'Caminhonete', 'Cesto', 'Munck'];
 const VEHICLE_STATUS = ['Disponível', 'Em uso', 'Manutenção', 'Inativo'];
 const MAX_TEAM_MEMBERS = 7;
@@ -106,7 +106,7 @@ function emptyProgramacao(date = today()) {
 }
 
 function emptyColaborador() {
-  return { id: '', nome: '', funcao: 'Ajudante', telefone: '', status: 'ativo' };
+  return { id: '', nome: '', funcao: 'Ajudante de produção', telefone: '', status: 'ativo' };
 }
 
 function emptyVeiculo() {
@@ -168,7 +168,7 @@ function App() {
   }, []);
 
   const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [], perfis: [] });
-  const [page, setPage] = useState('calendario'); // Mudei para iniciar no calendário!
+  const [page, setPage] = useState('programacao'); 
   const [selectedDate, setSelectedDate] = useState(today());
   const [search, setSearch] = useState('');
   const [activeDrawer, setActiveDrawer] = useState(null);
@@ -486,6 +486,18 @@ function App() {
     }
   }
 
+  async function deletePerfil(id) {
+   if (!confirm('Tem certeza que deseja excluir este usuário definitivamente?')) return;
+   
+   const res = await supabase.from('perfis').delete().eq('id', id);
+   
+   if (res.error) {
+     alert("Erro ao excluir usuário: " + res.error.message);
+   } else {
+     fetchDatabase();
+   }
+ }
+
   async function deleteVeiculo(itemId) {
     if (!confirm('Excluir este veículo?')) return;
     const res = await supabase.from('veiculos').delete().eq('id', itemId);
@@ -602,7 +614,7 @@ function App() {
             style={{ marginTop: '10px', color: '#dc2626', borderColor: '#fca5a5', backgroundColor: '#fef2f2' }} 
             onClick={() => supabase.auth.signOut()}
           >
-            Sair ({userRole})
+            Sair
           </button>
         </div>
       </aside>
@@ -778,14 +790,40 @@ function App() {
                   <div className="card-actions full" style={{ padding: '10px' }}>
                     <select 
                       value={perfil.cargo} 
-                      style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                       style={{ 
+                        width: '100%', 
+                        padding: '10px 15px', 
+                        borderRadius: '50px', // Mantendo o visual redondinho
+                        border: '2px solid #ffc107', // Borda amarela
+                        backgroundColor: '#fffdeb', // Fundo amarelinho bem suave
+                        color: '#b45309', // Texto num tom de caramelo/laranja escuro para leitura
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        outline: 'none',
+                        textAlign: 'center'
+                      }}
                       onChange={(e) => aprovarUsuario(perfil.id, e.target.value)}
                       disabled={perfil.id === session?.user?.id} // Impede que você tire seu próprio Admin por erro
                     >
-                      <option value="visualizador">Visualizador (Apenas vê)</option>
-                      <option value="editor">Editor (Lança programação)</option>
-                      <option value="admin">Admin (Total)</option>
+                      <option value="visualizador">Visualizador</option>
+                      <option value="editor">Editor</option>
+                      <option value="admin">Admin</option>
                     </select>
+                     {/* BOTÃO DE EXCLUIR (Escondido para você mesmo) */}
+                      {perfil.id !== session?.user?.id && (
+                        <button 
+                          className="ghost-btn full" 
+                          style={{ 
+                            color: '#dc2626', 
+                            borderColor: '#fca5a5', 
+                            backgroundColor: '#fef2f2',
+                            borderRadius: '50px' // Redondinho acompanhando o select
+                          }} 
+                          onClick={() => deletePerfil(perfil.id)}
+                        >
+                          Excluir Usuário
+                        </button>
+                      )}
                   </div>
                 </div>
               ))}
