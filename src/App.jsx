@@ -12,8 +12,6 @@ import {
 import { exportProgramacaoPdfModelo03 } from './exportProgramacaoPdf';
 
 const TEAM_TYPE_OPTIONS = [
-  'Pintura - Mecânica',
-  'Pintura - Manual',
   'Pintura - Mecânica e Manual',
   'Implantação de Tachas',
   'Implantação de Defensa',
@@ -1209,7 +1207,7 @@ function App() {
                   onChange={(v) => setProgramacaoForm({ ...programacaoForm, data: v })}
                 />
                 <Input
-                  label="Cidade"
+                  label="Local de Obra"
                   value={programacaoForm.cidade}
                   onChange={(v) => setProgramacaoForm({ ...programacaoForm, cidade: v })}
                 />
