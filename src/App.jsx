@@ -59,29 +59,29 @@ function initials(name) {
 }
 
 function normalizeDb(data) {
-  return {
-    colaboradores: Array.isArray(data?.colaboradores) ? data.colaboradores : [],
-    veiculos: Array.isArray(data?.veiculos) ? data.veiculos : [],
-    faltas: Array.isArray(data?.faltas) ? data.faltas : [],
-    perfis: Array.isArray(data?.perfis) ? data.perfis : [],
-    programacoes: Array.isArray(data?.programacoes)
-      ? data.programacoes.map((item) => ({
-          ...item,
-          tipoEquipe: item.tipoEquipe || '',
-          tipoServico: item.tipoServico || '',
-          statusExecucao: item.statusExecucao || 'EXECUTANDO',
-          motivoNaoExecucao: item.motivoNaoExecucao || '',
-          observacoes: item.observacoes || '',
-          horarioInicio: item.horarioInicio || '07:30',
-          horarioSaidaAlmoco: item.horarioSaidaAlmoco || '11:30',
-          horarioRetornoAlmoco: item.horarioRetornoAlmoco || '13:00',
-          horarioSaida: item.horarioSaida || '17:48',
-          membroIds: Array.isArray(item.membroIds) ? item.membroIds : [],
-          veiculoIds: Array.isArray(item.veiculoIds) ? item.veiculoIds : [],
-          perfis: Array.isArray(data?.perfis) ? data.perfis : [],
-        }))
-      : [],
-  };
+ return {
+   colaboradores: Array.isArray(data?.colaboradores) ? data.colaboradores.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')) : [],
+   veiculos: Array.isArray(data?.veiculos) ? data.veiculos.sort((a, b) => a.placa.localeCompare(b.placa, 'pt-BR')) : [],
+   faltas: Array.isArray(data?.faltas) ? data.faltas : [],
+   perfis: Array.isArray(data?.perfis) ? data.perfis : [],
+   programacoes: Array.isArray(data?.programacoes)
+     ? data.programacoes.map((item) => ({
+         ...item,
+         tipoEquipe: item.tipoEquipe || '',
+         tipoServico: item.tipoServico || '',
+         statusExecucao: item.statusExecucao || 'EXECUTANDO',
+         motivoNaoExecucao: item.motivoNaoExecucao || '',
+         observacoes: item.observacoes || '',
+         horarioInicio: item.horarioInicio || '07:30',
+         horarioSaidaAlmoco: item.horarioSaidaAlmoco || '11:30',
+         horarioRetornoAlmoco: item.horarioRetornoAlmoco || '13:00',
+         horarioSaida: item.horarioSaida || '17:48',
+         membroIds: Array.isArray(item.membroIds) ? item.membroIds : [],
+         veiculoIds: Array.isArray(item.veiculoIds) ? item.veiculoIds : [],
+         perfis: Array.isArray(data?.perfis) ? data.perfis : [],
+       }))
+     : [],
+ };
 }
 
 function emptyProgramacao(date = today()) {
@@ -317,6 +317,10 @@ function App() {
     setProgramacaoForm(item ? { ...item } : emptyProgramacao(selectedDate));
     setModal('programacao');
   }
+  function duplicateProgramacao(item) {
+   setProgramacaoForm({ ...item, id: '' });
+   setModal('programacao');
+ }
 
   function openColaboradorModal(item = null) {
     setColaboradorForm(item ? { ...item } : emptyColaborador());
@@ -1063,6 +1067,7 @@ function App() {
                               {userRole === 'admin' && (
                                 <div className="card-actions right">
                                   <button className="ghost-btn" onClick={(e) => { e.stopPropagation(); openProgramacaoModal(item); }}>Editar</button>
+                                  <button className="ghost-btn" onClick={(e) => { e.stopPropagation(); duplicateProgramacao(item); }}>Duplicar</button>
                                   <button className="danger-btn" onClick={(e) => { e.stopPropagation(); deleteProgramacao(item.id); }}>Excluir</button>
                                 </div>
                               )}
@@ -1595,27 +1600,48 @@ function TextArea({ label, value, onChange, full = false, disabled = false, defa
 }
 
 function MultiSelect({ label, items, selectedIds, labelKey, subtitleKey, subtitleBuilder, onToggle, full = false }) {
-  return (
-    <div className={full ? 'full' : ''}>
-      <span className="input-label">{label}</span>
-      <div className="multi-box">
-        {items.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={`multi-row ${selectedIds.includes(item.id) ? 'selected' : ''}`}
-            onClick={() => onToggle(item.id)}
-          >
-            <div>
-              <strong>{item[labelKey]}</strong>
-              <small>{subtitleBuilder ? subtitleBuilder(item) : item[subtitleKey]}</small>
-            </div>
-            <span>{selectedIds.includes(item.id) ? '✓' : '+'}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+ const [busca, setBusca] = useState('');
+ 
+ const filtrados = items.filter(item => {
+   const texto = `${item[labelKey]} ${subtitleBuilder ? subtitleBuilder(item) : item[subtitleKey]}`.toLowerCase();
+   return texto.includes(busca.toLowerCase());
+ });
+
+ return (
+   <div className={full ? 'full' : ''}>
+     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+       <span className="input-label" style={{ margin: 0 }}>{label}</span>
+       
+       {items.length > 5 && (
+         <input 
+           type="text" 
+           placeholder="🔍 Buscar..." 
+           value={busca}
+           onChange={(e) => setBusca(e.target.value)}
+           style={{ padding: '5px 10px', borderRadius: '50px', border: '1px solid #cbd5e1', fontSize: '12px', width: '130px', outline: 'none' }}
+         />
+       )}
+     </div>
+     
+     <div className="multi-box">
+       {filtrados.map((item) => (
+         <button
+           key={item.id}
+           type="button"
+           className={`multi-row ${selectedIds.includes(item.id) ? 'selected' : ''}`}
+           onClick={() => onToggle(item.id)}
+         >
+           <div>
+             <strong>{item[labelKey]}</strong>
+             <small>{subtitleBuilder ? subtitleBuilder(item) : item[subtitleKey]}</small>
+           </div>
+           <span>{selectedIds.includes(item.id) ? '✓' : '+'}</span>
+         </button>
+       ))}
+       {filtrados.length === 0 && <span style={{ padding: '10px', fontSize: '12px', color: '#64748b' }}>Nenhum encontrado.</span>}
+     </div>
+   </div>
+ );
 }
 
 // --- GAVETA NOVA: RESUMÃO DO DIA ---
