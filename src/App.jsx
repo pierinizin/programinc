@@ -361,6 +361,7 @@ function App() {
     };
 
     if (!payload.id) delete payload.id; 
+    delete payload.perfis;
 
     let res;
     if (programacaoForm.id) {
