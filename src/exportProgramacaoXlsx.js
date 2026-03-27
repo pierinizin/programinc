@@ -339,46 +339,59 @@ export function exportProgramacaoModeloAntigo(db, dateStr) {
 }
 
 export function exportPessoasXlsx(db) {
-  const pessoas = [...(db.colaboradores || [])].sort((a, b) =>
-    (a.nome || '').localeCompare(b.nome || '', 'pt-BR')
-  );
+ const pessoas = [...(db.colaboradores || [])].sort((a, b) =>
+   (a.nome || '').localeCompare(b.nome || '', 'pt-BR')
+ );
 
-  const rows = [];
-  rows.push(row([{ value: 'INCOVIA - CADASTRO DE PESSOAS', style: 'title', mergeAcross: 5 }]));
-  rows.push(row([
-    { value: 'Exportado em', style: 'label' },
-    { value: new Date().toLocaleString('pt-BR'), style: 'value', mergeAcross: 4 },
-  ]));
-  rows.push(row([{ value: '' }]));
-  rows.push(row([
-    { value: 'NOME', style: 'header' },
-    { value: 'FUNÇÃO', style: 'header' },
-    { value: 'TELEFONE', style: 'header' },
-    { value: 'STATUS', style: 'header' },
-    { value: 'FALTAS', style: 'header' },
-    { value: 'ESCALAS', style: 'header' },
-  ]));
+ const rows = [];
+ // Aumentei o mergeAcross de 5 para 6 para cobrir a coluna nova
+ rows.push(row([{ value: 'INCOVIA - CADASTRO DE PESSOAS', style: 'title', mergeAcross: 6 }]));
+ rows.push(row([
+   { value: 'Exportado em', style: 'label' },
+   { value: new Date().toLocaleString('pt-BR'), style: 'value', mergeAcross: 5 },
+ ]));
+ rows.push(row([{ value: '' }]));
+ rows.push(row([
+   { value: 'NOME', style: 'header' },
+   { value: 'FUNÇÃO', style: 'header' },
+   { value: 'TELEFONE', style: 'header' },
+   { value: 'STATUS', style: 'header' },
+   { value: 'FALTAS', style: 'header' },
+   { value: 'ESCALAS', style: 'header' },
+   { value: 'DATAS DAS FALTAS', style: 'header' }, // 🔥 COLUNA NOVA ADICIONADA AQUI
+ ]));
 
-  if (!pessoas.length) {
-    rows.push(row([{ value: 'Nenhuma pessoa cadastrada.', style: 'empty', mergeAcross: 5 }]));
-  }
+ if (!pessoas.length) {
+   rows.push(row([{ value: 'Nenhuma pessoa cadastrada.', style: 'empty', mergeAcross: 6 }]));
+ }
 
-  pessoas.forEach((pessoa) => {
-    const escalas = (db.programacoes || []).filter((p) => (p.membroIds || []).includes(pessoa.id)).length;
-    const faltas = (db.faltas || []).filter((f) => f.colaboradorId === pessoa.id).length;
+ pessoas.forEach((pessoa) => {
+   const escalas = (db.programacoes || []).filter((p) => (p.membroIds || []).includes(pessoa.id)).length;
+   
+   // Pegamos a lista inteira de faltas do colaborador, e não só o número
+   const registrosFaltas = (db.faltas || []).filter((f) => f.colaboradorId === pessoa.id);
+   const qtdFaltas = registrosFaltas.length;
 
-    rows.push(row([
-      { value: pessoa.nome || '', style: 'cell' },
-      { value: pessoa.funcao || '', style: 'cell' },
-      { value: pessoa.telefone || '', style: 'cell' },
-      { value: pessoa.status || '', style: 'cellCenter' },
-      { value: faltas, type: 'Number', style: 'cellCenter' },
-      { value: escalas, type: 'Number', style: 'cellCenter' },
-    ]));
-  });
+   // Convertendo AAAA-MM-DD para DD/MM/AAAA e juntando tudo com vírgula
+   const datasFaltasFormatadas = registrosFaltas.map((f) => {
+     if (!f.data) return '';
+     const [ano, mes, dia] = f.data.split('-');
+     return `${dia}/${mes}/${ano}`;
+   }).filter(Boolean).join(', ');
 
-  const xml = workbook('Pessoas', rows);
-  downloadExcelXml(xml, 'cadastro-pessoas.xls');
+   rows.push(row([
+     { value: pessoa.nome || '', style: 'cell' },
+     { value: pessoa.funcao || '', style: 'cell' },
+     { value: pessoa.telefone || '', style: 'cell' },
+     { value: pessoa.status || '', style: 'cellCenter' },
+     { value: qtdFaltas, type: 'Number', style: 'cellCenter' },
+     { value: escalas, type: 'Number', style: 'cellCenter' },
+     { value: datasFaltasFormatadas, style: 'cell' }, // 🔥 DADO INSERIDO AQUI
+   ]));
+ });
+
+ const xml = workbook('Pessoas', rows);
+ downloadExcelXml(xml, 'cadastro-pessoas.xls');
 }
 
 export function exportVeiculosXlsx(db) {

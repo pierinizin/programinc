@@ -484,12 +484,17 @@ function App() {
     }
   }
 
-  async function deletePerfil(id) {
-   if (!confirm('Tem certeza que deseja excluir este usuário definitivamente?')) return;
-   const res = await supabase.from('perfis').delete().eq('id', id);
-   if (res.error) alert("Erro ao excluir usuário: " + res.error.message);
-   else fetchDatabase();
+async function deletePerfil(id) {
+  if (!confirm('Tem certeza que deseja excluir este usuário definitivamente do sistema?')) return;
+  const { error } = await supabase.rpc('deletar_usuario_completo', { uid: id });
+
+  if (error) {
+    alert("Erro ao excluir usuário: " + error.message);
+  } else {
+    alert("✅ Usuário e credenciais excluídos com sucesso!");
+    fetchDatabase();
   }
+ }
 
   async function enviarEmailReset(email) {
    if (!confirm(`Enviar link de redefinição de senha para ${email}?`)) return;
@@ -1010,65 +1015,71 @@ function App() {
                                 })}
                               </div>
 
-                              <div className="section-line" />
-                              <div className="time-grid">
-                                <FieldPair label="Início" value={item.horarioInicio} />
-                                <FieldPair label="Saída almoço" value={item.horarioSaidaAlmoco} />
-                                <FieldPair label="Retorno almoço" value={item.horarioRetornoAlmoco} />
-                                <FieldPair label="Saída" value={item.horarioSaida} />
-                              </div>
+                              {/* 🔥 INÍCIO DA TRAVA DO VISUALIZADOR 🔥 */}
+                              {userRole !== 'visualizador' && (
+                                <>
+                                  <div className="section-line" />
+                                  <div className="time-grid">
+                                    <FieldPair label="Início" value={item.horarioInicio} />
+                                    <FieldPair label="Saída almoço" value={item.horarioSaidaAlmoco} />
+                                    <FieldPair label="Retorno almoço" value={item.horarioRetornoAlmoco} />
+                                    <FieldPair label="Saída" value={item.horarioSaida} />
+                                  </div>
 
-                              <div className="section-line" />
-                              <div className="programacao-edit-grid">
-                                <label>
-                                  <span>Status</span>
-                                  <select
-                                    disabled={userRole !== 'admin'}
-                                    value={item.statusExecucao}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onChange={(e) => updateProgramacaoField(item.id, 'statusExecucao', e.target.value)}
-                                  >
-                                    {STATUS_OPTIONS.map((x) => (
-                                      <option key={x}>{x}</option>
-                                    ))}
-                                  </select>
-                                </label>
+                                  <div className="section-line" />
+                                  <div className="programacao-edit-grid">
+                                    <label>
+                                      <span>Status</span>
+                                      <select
+                                        disabled={userRole !== 'admin'}
+                                        value={item.statusExecucao}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onChange={(e) => updateProgramacaoField(item.id, 'statusExecucao', e.target.value)}
+                                      >
+                                        {STATUS_OPTIONS.map((x) => (
+                                          <option key={x}>{x}</option>
+                                        ))}
+                                      </select>
+                                    </label>
 
-                                <label className="full-row">
-                                  <span>Motivo</span>
-                                  <select
-                                    disabled={userRole !== 'admin' || item.statusExecucao !== 'NÃO FOI POSSÍVEL REALIZAR'}
-                                    value={item.motivoNaoExecucao || ''}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onChange={(e) => updateProgramacaoField(item.id, 'motivoNaoExecucao', e.target.value)}
-                                  >
-                                    <option value="">Selecione</option>
-                                    {REASON_OPTIONS.map((x) => (
-                                      <option key={x}>{x}</option>
-                                    ))}
-                                  </select>
-                                </label>
+                                    <label className="full-row">
+                                      <span>Motivo</span>
+                                      <select
+                                        disabled={userRole !== 'admin' || item.statusExecucao !== 'NÃO FOI POSSÍVEL REALIZAR'}
+                                        value={item.motivoNaoExecucao || ''}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onChange={(e) => updateProgramacaoField(item.id, 'motivoNaoExecucao', e.target.value)}
+                                      >
+                                        <option value="">Selecione</option>
+                                        {REASON_OPTIONS.map((x) => (
+                                          <option key={x}>{x}</option>
+                                        ))}
+                                      </select>
+                                    </label>
 
-                                <label className="full-row">
-                                  <span>Observações</span>
-                                  <textarea
-                                    disabled={userRole !== 'admin'}
-                                    rows="3"
-                                    defaultValue={item.observacoes}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onBlur={(e) => {
-                                      if (e.target.value !== item.observacoes) {
-                                        updateProgramacaoField(item.id, 'observacoes', e.target.value);
-                                      }
-                                    }}
-                                  />
-                                </label>
-                              </div>
+                                    <label className="full-row">
+                                      <span>Observações</span>
+                                      <textarea
+                                        disabled={userRole !== 'admin'}
+                                        rows="3"
+                                        defaultValue={item.observacoes}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onBlur={(e) => {
+                                          if (e.target.value !== item.observacoes) {
+                                            updateProgramacaoField(item.id, 'observacoes', e.target.value);
+                                          }
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
+                                </>
+                              )}
+                              {/* 🔥 FIM DA TRAVA DO VISUALIZADOR 🔥 */}
 
                               {userRole === 'admin' && (
                                 <div className="card-actions right">
-                                  <button className="ghost-btn" onClick={(e) => { e.stopPropagation(); openProgramacaoModal(item); }}>Editar</button>
                                   <button className="ghost-btn" onClick={(e) => { e.stopPropagation(); duplicateProgramacao(item); }}>Duplicar</button>
+                                  <button className="ghost-btn" onClick={(e) => { e.stopPropagation(); openProgramacaoModal(item); }}>Editar</button>
                                   <button className="danger-btn" onClick={(e) => { e.stopPropagation(); deleteProgramacao(item.id); }}>Excluir</button>
                                 </div>
                               )}
@@ -1601,48 +1612,58 @@ function TextArea({ label, value, onChange, full = false, disabled = false, defa
 }
 
 function MultiSelect({ label, items, selectedIds, labelKey, subtitleKey, subtitleBuilder, onToggle, full = false }) {
- const [busca, setBusca] = useState('');
- 
- const filtrados = items.filter(item => {
-   const texto = `${item[labelKey]} ${subtitleBuilder ? subtitleBuilder(item) : item[subtitleKey]}`.toLowerCase();
-   return texto.includes(busca.toLowerCase());
- });
+  const [busca, setBusca] = useState('');
+  
+  const filtrados = items.filter(item => {
+    const texto = `${item[labelKey]} ${subtitleBuilder ? subtitleBuilder(item) : item[subtitleKey]}`.toLowerCase();
+    return texto.includes(busca.toLowerCase());
+  });
 
- return (
-   <div className={full ? 'full' : ''}>
-     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-       <span className="input-label" style={{ margin: 0 }}>{label}</span>
-       
-       {items.length > 5 && (
-         <input 
-           type="text" 
-           placeholder="🔍 Buscar..." 
-           value={busca}
-           onChange={(e) => setBusca(e.target.value)}
-           style={{ padding: '5px 10px', borderRadius: '50px', border: '1px solid #cbd5e1', fontSize: '12px', width: '130px', outline: 'none' }}
-         />
-       )}
-     </div>
-     
-     <div className="multi-box">
-       {filtrados.map((item) => (
-         <button
-           key={item.id}
-           type="button"
-           className={`multi-row ${selectedIds.includes(item.id) ? 'selected' : ''}`}
-           onClick={() => onToggle(item.id)}
-         >
-           <div>
-             <strong>{item[labelKey]}</strong>
-             <small>{subtitleBuilder ? subtitleBuilder(item) : item[subtitleKey]}</small>
-           </div>
-           <span>{selectedIds.includes(item.id) ? '✓' : '+'}</span>
-         </button>
-       ))}
-       {filtrados.length === 0 && <span style={{ padding: '10px', fontSize: '12px', color: '#64748b' }}>Nenhum encontrado.</span>}
-     </div>
-   </div>
- );
+  return (
+    <div className={full ? 'full' : ''}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <span className="input-label" style={{ margin: 0, fontWeight: 'bold' }}>{label}</span>
+        
+        <input 
+          type="text" 
+          placeholder="🔍 Buscar..." 
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          style={{ 
+            padding: '8px 15px', 
+            borderRadius: '50px', 
+            border: '2px solid #cbd5e1', 
+            fontSize: '13px', 
+            width: '180px', 
+            outline: 'none',
+            backgroundColor: '#f8fafc'
+          }}
+        />
+      </div>
+      
+      <div className="multi-box" style={{ maxHeight: '250px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
+        {filtrados.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`multi-row ${selectedIds.includes(item.id) ? 'selected' : ''}`}
+            onClick={() => onToggle(item.id)}
+          >
+            <div>
+              <strong>{item[labelKey]}</strong>
+              <small>{subtitleBuilder ? subtitleBuilder(item) : item[subtitleKey]}</small>
+            </div>
+            <span>{selectedIds.includes(item.id) ? '✓' : '+'}</span>
+          </button>
+        ))}
+        {filtrados.length === 0 && (
+          <div style={{ padding: '15px', textAlign: 'center', color: '#64748b' }}>
+            Nenhum resultado para "{busca}"
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // --- GAVETA NOVA: RESUMÃO DO DIA ---
@@ -1687,13 +1708,18 @@ function ResumoDiaDrawer({ date, db, maps, onGoToDate }) {
         {programacoes.length === 0 ? (
           <p className="small-muted">Nenhuma equipe escalada.</p>
         ) : (
-          programacoes.map((p) => (
-            <div key={p.id} className="mini-card" style={{ borderLeft: '4px solid #2563eb' }}>
-              <strong>{p.tipoEquipe}</strong>
-              <div className="meta-row">📍 {p.cidade} · {p.membroIds.length} pessoas</div>
-              <StatusBadge status={p.statusExecucao} />
-            </div>
-          ))
+          programacoes.map((p) => {
+            const encarregado = maps.colaboradores[p.encarregadoId];
+            const nomeEncarregado = encarregado ? encarregado.nome.split(' ')[0] : 'Sem Líder';
+
+            return (
+              <div key={p.id} className="mini-card" style={{ borderLeft: '4px solid #2563eb' }}>
+                <strong>{p.tipoEquipe}</strong>
+                <div className="meta-row">📍 {p.cidade} · Líder: {nomeEncarregado} · {p.membroIds.length} pessoas</div>
+                <StatusBadge status={p.statusExecucao} />
+              </div>
+            );
+          })
         )}
       </div>
     </div>
