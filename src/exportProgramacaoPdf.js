@@ -172,9 +172,11 @@ export function exportProgramacaoPdfModelo03(db, dateStr) {
             color: #6d7a93;
           }
 
+          /* AQUI COMEÇA A MÁGICA DA GRADE DINÂMICA */
           .cards {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            /* Usa no mínimo 3 colunas, mas cria mais se precisar pra caber */
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 12px;
           }
 
@@ -209,83 +211,39 @@ export function exportProgramacaoPdfModelo03(db, dateStr) {
             padding: 6px 10px;
           }
 
-          .status-running {
-            background: #fff4cb;
-            border: 1px solid #e2bf4d;
-            color: #8a6b00;
-          }
+          .status-running { background: #fff4cb; border: 1px solid #e2bf4d; color: #8a6b00; }
+          .status-done { background: #dff8e8; border: 1px solid #98d3ac; color: #1f7a42; }
+          .status-blocked { background: #fde7e7; border: 1px solid #e9b1b1; color: #b42318; }
 
-          .status-done {
-            background: #dff8e8;
-            border: 1px solid #98d3ac;
-            color: #1f7a42;
-          }
+          .meta-line { font-size: 12px; color: #5f6f8c; margin-bottom: 12px; }
+          .label { font-size: 11px; font-weight: 800; letter-spacing: 0.14em; color: #33415c; margin-bottom: 4px; }
+          .value { font-size: 14px; font-weight: 600; margin-bottom: 12px; line-height: 1.4; }
+          .members { min-height: 42px; }
+          .tags { margin-bottom: 12px; }
+          .tag { display: inline-block; background: #eef2f7; color: #0f2344; border-radius: 12px; padding: 6px 10px; font-size: 13px; font-weight: 700; margin: 0 6px 6px 0; }
+          .muted { color: #7c8aa4; font-size: 13px; }
+          .empty { border: 1px dashed #d6bf7a; border-radius: 18px; padding: 30px; text-align: center; color: #6d7a93; font-size: 15px; }
+          .footer { margin-top: 16px; text-align: right; font-size: 11px; color: #6d7a93; }
 
-          .status-blocked {
-            background: #fde7e7;
-            border: 1px solid #e9b1b1;
-            color: #b42318;
-          }
-
-          .meta-line {
-            font-size: 12px;
-            color: #5f6f8c;
-            margin-bottom: 12px;
-          }
-
-          .label {
-            font-size: 11px;
-            font-weight: 800;
-            letter-spacing: 0.14em;
-            color: #33415c;
-            margin-bottom: 4px;
-          }
-
-          .value {
-            font-size: 14px;
-            font-weight: 600;
-            margin-bottom: 12px;
-            line-height: 1.4;
-          }
-
-          .members {
-            min-height: 42px;
-          }
-
-          .tags {
-            margin-bottom: 12px;
-          }
-
-          .tag {
-            display: inline-block;
-            background: #eef2f7;
-            color: #0f2344;
-            border-radius: 12px;
-            padding: 6px 10px;
-            font-size: 13px;
-            font-weight: 700;
-            margin: 0 6px 6px 0;
-          }
-
-          .muted {
-            color: #7c8aa4;
-            font-size: 13px;
-          }
-
-          .empty {
-            border: 1px dashed #d6bf7a;
-            border-radius: 18px;
-            padding: 30px;
-            text-align: center;
-            color: #6d7a93;
-            font-size: 15px;
-          }
-
-          .footer {
-            margin-top: 16px;
-            text-align: right;
-            font-size: 11px;
-            color: #6d7a93;
+          /* 🔥 TRAVA PARA FORÇAR A CABER EM 1 FOLHA NA IMPRESSÃO 🔥 */
+          @media print {
+            @page {
+              margin: 5mm; /* Diminui a margem do papel pra ganhar espaço */
+            }
+            body {
+              height: 100vh; /* Trava o tamanho máximo pra 1 tela/folha */
+              overflow: hidden; /* Corta qualquer coisa que tente ir pra página 2 */
+              zoom: 0.85; /* Dá uma leve encolhida em tudo pra caber mais quadrantes */
+            }
+            .cards {
+              /* Força 4 colunas em vez de 3 quando for imprimir */
+              grid-template-columns: repeat(4, 1fr); 
+              gap: 8px; /* Diminui o espaço entre os cartões */
+            }
+            .pdf-card {
+              min-height: unset; /* Tira a altura mínima pra eles ficarem mais compactos */
+              padding: 10px;
+            }
           }
         </style>
       </head>

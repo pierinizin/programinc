@@ -676,23 +676,30 @@ async function deletePerfil(id) {
 
           <div className="topbar-actions">
             {page === 'programacao' && (
-          <>
-            <button className="ghost-btn" onClick={() => exportProgramacaoXlsx(db, selectedDate)}>
-              Exportar Modelo 01
-            </button>
-            <button className="ghost-btn" onClick={() => exportProgramacaoModeloAntigo(db, selectedDate)}>
-              Exportar Modelo 02
-            </button>
-            <button className="ghost-btn" onClick={() => exportProgramacaoPdfModelo03(db, selectedDate)}>
-              Exportar Modelo 03
-            </button>
-            {(userRole === 'admin' || userRole === 'editor') && (
-              <button className="primary-btn" onClick={() => openProgramacaoModal()}>
-                + Nova Programação
-              </button>
+              <>
+                {/* O visualizador NÃO vê esta parte */}
+                {userRole !== 'visualizador' && (
+                  <>
+                    <button className="ghost-btn" onClick={() => exportProgramacaoXlsx(db, selectedDate)}>
+                      Exportar Modelo 01
+                    </button>
+                    <button className="ghost-btn" onClick={() => exportProgramacaoModeloAntigo(db, selectedDate)}>
+                      Exportar Modelo 02
+                    </button>
+                    <button className="ghost-btn" onClick={() => exportProgramacaoPdfModelo03(db, selectedDate)}>
+                      Exportar Modelo 03
+                    </button>
+                  </>
+                )}
+                
+                {/* Apenas Admin e Editor veem este botão */}
+                {(userRole === 'admin' || userRole === 'editor') && (
+                  <button className="primary-btn" onClick={() => openProgramacaoModal()}>
+                    + Nova Programação
+                  </button>
+                )}
+              </>
             )}
-          </>
-          )}
 
             {page === 'colaboradores' && (
           <>
