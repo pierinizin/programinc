@@ -619,6 +619,58 @@ select:disabled { background: #f5f5f5; color: #98a2b3; }
 .person-list.fixed-ten .list-row {
   padding: 6px;
 }
+
+/* ==========================================================
+   🛡️ BLINDAGEM DE RESOLUÇÃO (Monitores menores e Laptops)
+   ========================================================== */
+
+/* 1. MÁGICA DO GRID FLUIDO: O navegador decide quantas colunas cabem */
+.programacao-cards-grid {
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)) !important;
+}
+
+.cards-grid.three {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)) !important;
+}
+
+/* 2. TRAVA DE TRANSBORDAMENTO: Impede a caixa de explodir de tamanho */
+.card, .simple-card, .stat-card, .history-row {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* 3. AJUSTE DOS NOMES LONGOS NA LISTA DE 2 COLUNAS */
+.list-row {
+  min-width: 0; 
+  overflow: hidden; /* Corta o que vazar */
+}
+
+.list-row-main {
+  min-width: 0;
+  flex: 1; /* Ocupa só o espaço que tem direito */
+}
+
+/* Coloca os 3 pontinhos (...) se o nome do colaborador for gigante */
+.list-row-main span:last-child {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis; 
+}
+
+/* Trava a etiqueta de função (tag) pra não esmagar o nome do cara */
+.list-row .tag {
+  flex-shrink: 0;
+  max-width: 100px; 
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Quebra palavras se o endereço ou o contratante forem textos muito longos */
+.compact-summary-text, .meta-row, .service-line {
+  word-break: break-word;
+}
 /* ==========================================================
    📱 MÁGICA DO CELULAR (Só afeta telas menores que 768px)
    ========================================================== */
