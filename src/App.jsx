@@ -661,9 +661,7 @@ async function deletePerfil(id) {
 
         <div className="sidebar-bottom">
           <button 
-            className="ghost-btn full logout-btn" 
-            onClick={() => supabase.auth.signOut()}
-            title="Sair do sistema"
+            className="ghost-btn logout-btn" onClick={() => supabase.auth.signOut()} title="Sair do sistema"
           >
             {/* Ícone de Log Out (Porta com seta) */}
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
