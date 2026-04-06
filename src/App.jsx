@@ -274,6 +274,18 @@ function App() {
     return getDaysInMonth(calendarMonth.getFullYear(), calendarMonth.getMonth());
   }, [calendarMonth]);
 
+  useEffect(() => {
+    if (window.innerWidth <= 768 && activeDrawer) {
+      setTimeout(() => {
+        const drawerEl = document.querySelector('.drawer');
+        if (drawerEl) {
+          const y = drawerEl.getBoundingClientRect().top + window.scrollY - 20;
+          window.scrollTo({ top: y, behavior: 'smooth' });
+        }
+      }, 100);
+    }
+  }, [activeDrawer]);
+
   function getDaysInMonth(year, month) {
     const numDays = new Date(year, month + 1, 0).getDate();
     const firstDay = new Date(year, month, 1).getDay();
@@ -298,8 +310,17 @@ function App() {
     setSearch('');
     setActiveDrawer(null);
     setExpandedProgramacaoId(null);
-  }
 
+    setTimeout(() => {
+      if (window.innerWidth <= 768) {
+        const mainEl = document.querySelector('.main-area');
+        if (mainEl) {
+          const y = mainEl.getBoundingClientRect().top + window.scrollY - 10;
+          window.scrollTo({ top: y, behavior: 'smooth' });
+        }
+      }
+    }, 100);
+  }
   async function updateProgramacaoField(itemId, field, value) {
     const payload = { [field]: value };
     if (field === 'statusExecucao' && value !== 'NÃO FOI POSSÍVEL REALIZAR') {
@@ -610,7 +631,12 @@ async function deletePerfil(id) {
            Calendários
          </NavButton>
 
-         <div className="section-line" style={{ margin: '10px 0', opacity: 0.3 }} />
+        <div className="section-line" style={{ margin: '10px 0', opacity: 0.3 }} />
+
+         {/* NOVO TÍTULO AQUI */}
+         {(userRole === 'admin' || userRole === 'editor') && (
+           <div className="menu-group-title">Painel do Administrador</div>
+         )}
 
          {(userRole === 'admin' || userRole === 'editor') && (
            <>
