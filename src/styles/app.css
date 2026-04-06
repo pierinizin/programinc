@@ -530,3 +530,80 @@ textarea { resize: vertical; }
   .page-head h1 { font-size: 40px; }
   .date-weekday { font-size: 28px; }
 }
+@media screen and (max-width: 768px) {
+  
+  /* 1. Transforma o layout principal (Menu lateral vai pro topo) */
+  .app-shell {
+    flex-direction: column;
+  }
+  
+  .sidebar {
+    width: 100%;
+    min-height: auto;
+    border-right: none;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  /* 2. Grades que eram 3 ou 2 colunas no PC, viram 1 coluna no Celular */
+  .cards-grid, 
+  .cards-grid.three, 
+  .form-grid.two, 
+  .stats-grid.three,
+  .compact-summary-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* 3. Ajusta o cabeçalho dos cartões (Títulos e Status) pra não espremer */
+  .card-header.between, 
+  .drawer-head.between {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  /* 4. Modais (Telas de Cadastro) e Gavetas ocupam a tela toda */
+  .modal {
+    width: 95%;
+    margin: 10px auto;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .drawer {
+    width: 100%;
+    border-left: none;
+    border-top: 2px solid #e2e8f0;
+  }
+
+  /* 5. Ajuste fino nas barras do topo */
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 15px;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .topbar-actions button {
+    width: 100%; /* Botões do topo ocupam a largura toda pra ficar fácil de clicar */
+  }
+
+  /* 6. Corrige os botões de ação dentro dos modais e cartões */
+  .modal-actions.full, 
+  .card-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .modal-actions.full button, 
+  .card-actions button {
+    width: 100%;
+    margin-bottom: 5px;
+  }
+}
