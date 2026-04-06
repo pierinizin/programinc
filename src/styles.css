@@ -609,6 +609,16 @@ select:disabled { background: #f5f5f5; color: #98a2b3; }
   width: 18px;
   height: 18px;
 }
+.person-list.fixed-ten {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr); /* Divide a equipe em duas colunas */
+  gap: 8px;
+}
+
+/* Os botõezinhos da lista ficam um pouco mais compactos para caber bonito */
+.person-list.fixed-ten .list-row {
+  padding: 6px;
+}
 /* ==========================================================
    📱 MÁGICA DO CELULAR (Só afeta telas menores que 768px)
    ========================================================== */
@@ -750,5 +760,8 @@ select:disabled { background: #f5f5f5; color: #98a2b3; }
     min-width: 20px !important;
     height: 20px !important;
     margin: 0 !important;
+  }
+  .person-list.fixed-ten {
+    grid-template-columns: 1fr !important;
   }
 }

@@ -23,7 +23,7 @@ const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'OUTROS'];
 const ROLE_OPTIONS = ['Encarregado', 'Motorista de Veículos Médios', 'Ajudante de produção', 'Operadador de máquina de pintura'];
 const VEHICLE_TYPES = ['Caminhão', 'Caminhonete', 'Carro', 'Outro'];
 const VEHICLE_STATUS = ['Disponível', 'Em uso', 'Manutenção', 'Inativo'];
-const MAX_TEAM_MEMBERS = 7;
+const MAX_TEAM_MEMBERS = 10;
 
 function pad(v) {
   return String(v).padStart(2, '0');
@@ -126,7 +126,7 @@ function toggleLimited(list, value, encarregadoId) {
   if (list.includes(value)) return list.filter((x) => x !== value);
   const ids = [encarregadoId, ...list, value].filter(Boolean);
   const uniqueIds = Array.from(new Set(ids));
-  if (uniqueIds.length >= MAX_TEAM_MEMBERS) return list;
+  if (uniqueIds.length > MAX_TEAM_MEMBERS) return list;
   return [...list, value];
 }
 
@@ -985,7 +985,7 @@ async function deletePerfil(id) {
                             <>
                               <div className="section-line" />
                               <div className="section-label">Equipe ({item.membroIds.length}/{MAX_TEAM_MEMBERS})</div>
-                              <div className="person-list fixed-seven">
+                              <div className="person-list fixed-ten">
                                 {Array.from({ length: MAX_TEAM_MEMBERS }).map((_, idx) => {
                                   const memberId = item.membroIds[idx];
                                   const person = memberId ? maps.colaboradores[memberId] : null;

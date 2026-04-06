@@ -233,7 +233,13 @@ export function exportProgramacaoPdfModelo03(db, dateStr) {
 
           /* TRAVAS DE ALTURA PARA ALINHAMENTO COM MAIS ESPAÇO */
           .engineer-line { color: #1a365d; min-height: 16px; }
-          .members-box { min-height: 60px; max-height: 75px; overflow: hidden; } /* Agora cabem ~4 linhas completas de nomes */
+          .members-box { 
+            min-height: 65px; 
+            max-height: 85px; /* Aumentamos 10px aqui pra garantir os 10 nomes */
+            overflow: hidden; 
+            font-size: 10px;  /* Diminuímos a fonte 1px pra caber todo mundo */
+            line-height: 1.35;
+          }
           .vehicles-box { min-height: 35px; } /* Cabe folgadamente os veículos */
           .service-box { min-height: 16px; margin-bottom: 0; }
 
