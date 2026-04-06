@@ -93,6 +93,7 @@ function emptyProgramacao(date = today()) {
     contratante: '',
     tipoServico: '',
     encarregadoId: null,
+    engenheiro: '',
     membroIds: [],
     veiculoIds: [],
     statusExecucao: 'EXECUTANDO',
@@ -388,11 +389,11 @@ function App() {
     
     const payload = {
       nome: colaboradorForm.nome,
+      apelido: colaboradorForm.apelido, 
       funcao: colaboradorForm.funcao,
       telefone: colaboradorForm.telefone,
       status: colaboradorForm.status
-    };
-
+    }
     let res;
     if (colaboradorForm.id) {
       res = await supabase.from('colaboradores').update(payload).eq('id', colaboradorForm.id);
@@ -919,9 +920,9 @@ async function deletePerfil(id) {
                   <div className="cards-grid programacao-cards-grid">
                     {programacoesDoDia.map((item) => {
                       const isExpanded = expandedProgramacaoId === item.id;
-                      const members = item.membroIds
-                        .map((memberId) => maps.colaboradores[memberId])
-                        .filter(Boolean);
+                     const members = item.membroIds
+                      .map((memberId) => maps.colaboradores[memberId])
+                      .filter(Boolean);
                       const vehicles = item.veiculoIds
                         .map((vehicleId) => maps.veiculos[vehicleId])
                         .filter(Boolean);
@@ -945,7 +946,7 @@ async function deletePerfil(id) {
                               <span className="section-label">Membros</span>
                               <div className="compact-summary-text">
                                 {members.length
-                                  ? members.map((person) => person.nome.split(' ')[0]).join(' · ')
+                                  ? members.map((person) => (person.apelido && person.apelido.trim() !== '') ? person.apelido : person.nome.split(' ')[0]).join(' · ')
                                   : 'Sem equipe'}
                               </div>
                             </div>
@@ -1012,7 +1013,7 @@ async function deletePerfil(id) {
                                     >
                                       <div className="list-row-main">
                                         <span className="avatar small">{initials(person.nome).slice(0, 1)}</span>
-                                        <span>{person.nome}</span>
+                                        <span>{(person.apelido && person.apelido.trim() !== '') ? person.apelido : person.nome}</span>
                                       </div>
                                       <span className="tag">
                                         {memberId === item.encarregadoId ? 'Encarregado' : person.funcao}
@@ -1313,6 +1314,12 @@ async function deletePerfil(id) {
                   value={programacaoForm.contratante}
                   onChange={(v) => setProgramacaoForm({ ...programacaoForm, contratante: v })}
                 />
+                <Input
+                label="Engenheiro Responsável"
+                value={programacaoForm.engenheiro}
+                onChange={(v) => setProgramacaoForm({ ...programacaoForm, engenheiro: v })}
+                full
+              />
                 <Select
                   label="Tipo de serviço"
                   value={programacaoForm.tipoServico}
@@ -1433,6 +1440,11 @@ async function deletePerfil(id) {
                   onChange={(v) => setColaboradorForm({ ...colaboradorForm, funcao: v })}
                   options={ROLE_OPTIONS.map((x) => ({ value: x, label: x }))}
                 />
+                <Input 
+                label="Apelido (Como aparecerá nos relatórios)" 
+                value={colaboradorForm.apelido} 
+                onChange={(v) => setColaboradorForm({ ...colaboradorForm, apelido: v })} 
+              />
                 <Input
                   label="Telefone"
                   value={colaboradorForm.telefone}

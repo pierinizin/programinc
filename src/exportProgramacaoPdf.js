@@ -31,7 +31,10 @@ function getMaps(db) {
 
 function createCardHtml(item, maps) {
   const members = (item.membroIds || [])
-    .map((id) => maps.colaboradores[id]?.nome)
+    .map((id) => {
+      const p = maps.colaboradores[id];
+      return p ? (p.apelido && p.apelido.trim() !== '' ? p.apelido : p.nome) : null;
+    })
     .filter(Boolean)
     .join(' • ');
 
@@ -52,18 +55,23 @@ function createCardHtml(item, maps) {
         <span class="status ${statusTone}">${esc(item.statusExecucao || '')}</span>
       </div>
 
-      <div class="meta-line">📍 ${esc((item.cidade || '').toLowerCase())} • 🏢 ${esc(item.contratante || '')}</div>
+      <div class="meta-line">📍 ${esc((item.cidade || '').toUpperCase())} • 🏢 ${esc(item.contratante || '')}</div>
+
+      <div class="label">ENGENHEIRO</div>
+      <div class="value engineer-line">${esc(item.engenheiro || 'Não informado')}</div>
 
       <div class="label">MEMBROS</div>
-      <div class="value members">${esc(members || 'Sem membros')}</div>
+      <div class="value members-box">${esc(members || 'Sem membros')}</div>
 
       <div class="label">VEÍCULOS</div>
-      <div class="tags">
-        ${vehicles.length ? vehicles.map((plate) => `<span class="tag">${esc(plate)}</span>`).join('') : '<span class="muted">Sem veículo</span>'}
+      <div class="value vehicles-box">
+        <div class="tags">
+          ${vehicles.length ? vehicles.map((plate) => `<span class="tag">${esc(plate)}</span>`).join('') : '<span class="muted">Sem veículo</span>'}
+        </div>
       </div>
 
       <div class="label">TIPO DE SERVIÇO</div>
-      <div class="value">Tipo de serviço: ${esc(item.tipoServico || '-')}</div>
+      <div class="value service-box">${esc(item.tipoServico || '-')}</div>
     </article>
   `;
 }
@@ -73,9 +81,57 @@ export function exportProgramacaoPdfModelo03(db, dateStr) {
   const maps = getMaps(db);
   const totalPessoas = programacoes.reduce((sum, item) => sum + (item.membroIds || []).length, 0);
 
-  const cards = programacoes.length
-    ? programacoes.map((item) => createCardHtml(item, maps)).join('')
-    : '<div class="empty">Nenhuma programação para a data selecionada.</div>';
+  // 1. FATIANDO AS EQUIPES DE 6 EM 6 (3 colunas x 2 linhas)
+  const pages = [];
+  for (let i = 0; i < programacoes.length; i += 6) {
+    pages.push(programacoes.slice(i, i + 6));
+  }
+
+  // 2. CONSTRUINDO AS PÁGINAS ISOLADAS
+  const pagesHtml = pages.map((pageItems, pageIndex) => {
+    
+    const cardsHtml = pageItems.map(item => createCardHtml(item, maps)).join('');
+    const pageBreakClass = pageIndex < pages.length - 1 ? 'page-break' : '';
+
+    return `
+      <div class="pdf-page ${pageBreakClass}">
+        
+        <div class="header-container">
+          <div class="brand">
+            <div class="brand-box">I</div>
+            <div class="brand-text">
+              <small>PAINEL OPERACIONAL</small>
+              <strong>Incovia</strong>
+              <span>Programação Diária • PDF Modelo 03</span>
+            </div>
+          </div>
+
+          <div class="stats">
+            <div class="stat">
+              <strong style="text-transform: capitalize;">${esc(formatDateLabel(dateStr))}</strong>
+              <span>Data da programação</span>
+            </div>
+            <div class="stat">
+              <strong>${programacoes.length}</strong>
+              <span>Total de equipes</span>
+            </div>
+            <div class="stat">
+              <strong>${totalPessoas}</strong>
+              <span>Total de pessoas</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="pdf-grid">
+          ${cardsHtml}
+        </div>
+        
+        <div class="footer">
+           Página ${pageIndex + 1} de ${pages.length} • INCOVIA • Gerado em ${esc(new Date().toLocaleString('pt-BR'))}
+        </div>
+      </div>
+    `;
+  }).join('');
 
   const html = `
     <!doctype html>
@@ -86,7 +142,7 @@ export function exportProgramacaoPdfModelo03(db, dateStr) {
         <style>
           @page {
             size: A4 landscape;
-            margin: 12mm;
+            margin: 0;
           }
 
           * { box-sizing: border-box; }
@@ -98,187 +154,109 @@ export function exportProgramacaoPdfModelo03(db, dateStr) {
             background: #fff;
           }
 
-          body { padding: 0; }
-          .page { width: 100%; }
+          /* --- CONTROLE DE FOLHA A4 --- */
+          .pdf-page {
+            width: 297mm;  /* Largura exata do A4 deitado */
+            height: 210mm; /* Altura exata do A4 deitado */
+            padding: 10mm; /* Margem interna confortável */
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+          }
 
-          .header {
+          /* --- FORÇA A QUEBRA DE PÁGINA NA IMPRESSORA --- */
+          .page-break {
+            page-break-after: always;
+            break-after: page;
+          }
+
+          /* --- ESTILO DO CABEÇALHO --- */
+          .header-container {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
             gap: 16px;
             border-bottom: 2px solid #f0d58a;
             padding-bottom: 12px;
-            margin-bottom: 14px;
+            margin-bottom: 16px;
+            flex-shrink: 0; 
           }
 
-          .brand {
-            display: flex;
-            align-items: center;
+          .brand { display: flex; align-items: center; gap: 12px; }
+          .brand-box { width: 42px; height: 42px; border-radius: 10px; background: #f4c21a; display: grid; place-items: center; font-weight: 800; font-size: 22px; }
+          .brand-text small { display: block; font-size: 11px; letter-spacing: 0.18em; color: #9d7a00; margin-bottom: 2px; }
+          .brand-text strong { display: block; font-size: 26px; margin-bottom: 2px; }
+          .brand-text span { font-size: 13px; color: #5f6f8c; }
+
+          .stats { display: flex; gap: 10px; }
+          .stat { border: 1px solid #ead18b; border-radius: 12px; padding: 10px 14px; background: #fffaf0; min-width: 140px; }
+          .stat strong { display: block; font-size: 20px; margin-bottom: 2px; }
+          .stat span { font-size: 11px; color: #6d7a93; }
+
+          /* --- GRADE PERFEITA DE 3 COLUNAS x 2 LINHAS --- */
+          .pdf-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr); 
+            grid-template-rows: repeat(2, 1fr);    /* Agora são 2 linhas para dar respiro! */
             gap: 12px;
+            flex-grow: 1; 
+            min-height: 0;
           }
 
-          .brand-box {
-            width: 42px;
-            height: 42px;
-            border-radius: 12px;
-            background: #f4c21a;
-            display: grid;
-            place-items: center;
-            font-weight: 800;
-            font-size: 22px;
-          }
-
-          .brand-text small {
-            display: block;
-            font-size: 11px;
-            letter-spacing: 0.18em;
-            color: #9d7a00;
-            margin-bottom: 3px;
-          }
-
-          .brand-text strong {
-            display: block;
-            font-size: 28px;
-            margin-bottom: 4px;
-          }
-
-          .brand-text span {
-            font-size: 14px;
-            color: #5f6f8c;
-          }
-
-          .stats {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(120px, 1fr));
-            gap: 10px;
-            min-width: 420px;
-          }
-
-          .stat {
-            border: 1px solid #ead18b;
-            border-radius: 16px;
-            padding: 10px 12px;
-            background: #fffaf0;
-          }
-
-          .stat strong {
-            display: block;
-            font-size: 24px;
-            margin-bottom: 4px;
-          }
-
-          .stat span {
-            font-size: 12px;
-            color: #6d7a93;
-          }
-
-          /* AQUI COMEÇA A MÁGICA DA GRADE DINÂMICA */
-          .cards {
-            display: grid;
-            /* Usa no mínimo 3 colunas, mas cria mais se precisar pra caber */
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 12px;
-          }
-
+          /* --- PADRONIZAÇÃO DOS CARTÕES --- */
           .pdf-card {
-            break-inside: avoid;
             border: 1px solid #ead18b;
-            border-radius: 18px;
-            padding: 14px;
+            border-radius: 12px;
+            padding: 14px 16px;
             background: #fff;
-            min-height: 180px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            height: 100%;
           }
 
           .pdf-card-head {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 12px;
+            display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
+            min-height: 40px; 
             margin-bottom: 8px;
           }
+          .pdf-card-head h3 { margin: 0; font-size: 16px; line-height: 1.2; }
 
-          .pdf-card-head h3 {
-            margin: 0;
-            font-size: 18px;
-            line-height: 1.2;
-          }
-
-          .status {
-            white-space: nowrap;
-            font-size: 11px;
-            font-weight: 700;
-            border-radius: 999px;
-            padding: 6px 10px;
-          }
-
+          .status { white-space: nowrap; font-size: 10px; font-weight: 800; border-radius: 999px; padding: 5px 8px; }
           .status-running { background: #fff4cb; border: 1px solid #e2bf4d; color: #8a6b00; }
           .status-done { background: #dff8e8; border: 1px solid #98d3ac; color: #1f7a42; }
           .status-blocked { background: #fde7e7; border: 1px solid #e9b1b1; color: #b42318; }
 
-          .meta-line { font-size: 12px; color: #5f6f8c; margin-bottom: 12px; }
-          .label { font-size: 11px; font-weight: 800; letter-spacing: 0.14em; color: #33415c; margin-bottom: 4px; }
-          .value { font-size: 14px; font-weight: 600; margin-bottom: 12px; line-height: 1.4; }
-          .members { min-height: 42px; }
-          .tags { margin-bottom: 12px; }
-          .tag { display: inline-block; background: #eef2f7; color: #0f2344; border-radius: 12px; padding: 6px 10px; font-size: 13px; font-weight: 700; margin: 0 6px 6px 0; }
-          .muted { color: #7c8aa4; font-size: 13px; }
-          .empty { border: 1px dashed #d6bf7a; border-radius: 18px; padding: 30px; text-align: center; color: #6d7a93; font-size: 15px; }
-          .footer { margin-top: 16px; text-align: right; font-size: 11px; color: #6d7a93; }
+          .meta-line { font-size: 11px; color: #5f6f8c; margin-bottom: 12px; font-weight: bold; }
+          .label { font-size: 10px; font-weight: 800; letter-spacing: 0.12em; color: #8c98a4; margin-bottom: 4px; }
+          .value { font-size: 12px; font-weight: 600; margin-bottom: 12px; line-height: 1.4; }
 
-          /* 🔥 TRAVA PARA FORÇAR A CABER EM 1 FOLHA NA IMPRESSÃO 🔥 */
-          @media print {
-            @page {
-              margin: 5mm; /* Diminui a margem do papel pra ganhar espaço */
-            }
-            body {
-              height: 100vh; /* Trava o tamanho máximo pra 1 tela/folha */
-              overflow: hidden; /* Corta qualquer coisa que tente ir pra página 2 */
-              zoom: 0.85; /* Dá uma leve encolhida em tudo pra caber mais quadrantes */
-            }
-            .cards {
-              /* Força 4 colunas em vez de 3 quando for imprimir */
-              grid-template-columns: repeat(4, 1fr); 
-              gap: 8px; /* Diminui o espaço entre os cartões */
-            }
-            .pdf-card {
-              min-height: unset; /* Tira a altura mínima pra eles ficarem mais compactos */
-              padding: 10px;
-            }
+          /* TRAVAS DE ALTURA PARA ALINHAMENTO COM MAIS ESPAÇO */
+          .engineer-line { color: #1a365d; min-height: 16px; }
+          .members-box { min-height: 60px; max-height: 75px; overflow: hidden; } /* Agora cabem ~4 linhas completas de nomes */
+          .vehicles-box { min-height: 35px; } /* Cabe folgadamente os veículos */
+          .service-box { min-height: 16px; margin-bottom: 0; }
+
+          .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+          .tag { background: #eef2f7; color: #0f2344; border-radius: 8px; padding: 5px 8px; font-size: 11px; font-weight: 700; }
+          .muted { color: #7c8aa4; font-size: 11px; }
+
+          .no-data { text-align: center; padding: 40px; color: #6d7a93; font-style: italic; }
+          
+          /* RODAPÉ E PAGINAÇÃO */
+          .footer { 
+            margin-top: 12px; 
+            text-align: right; 
+            font-size: 10px; 
+            color: #6d7a93; 
+            flex-shrink: 0; 
+            border-top: 1px solid #eee;
+            padding-top: 6px;
           }
         </style>
       </head>
       <body>
-        <main class="page">
-          <section class="header">
-            <div class="brand">
-              <div class="brand-box">I</div>
-              <div class="brand-text">
-                <small>PAINEL OPERACIONAL</small>
-                <strong>Incovia</strong>
-                <span>Programação Diária • PDF Modelo 03</span>
-              </div>
-            </div>
-
-            <div class="stats">
-              <div class="stat">
-                <strong>${esc(formatDateLabel(dateStr))}</strong>
-                <span>Data da programação</span>
-              </div>
-              <div class="stat">
-                <strong>${programacoes.length}</strong>
-                <span>Total de equipes</span>
-              </div>
-              <div class="stat">
-                <strong>${totalPessoas}</strong>
-                <span>Total de pessoas</span>
-              </div>
-            </div>
-          </section>
-
-          <section class="cards">${cards}</section>
-
-          <div class="footer">INCOVIA • Modelo 03 • Gerado em ${esc(new Date().toLocaleString('pt-BR'))}</div>
-        </main>
+        ${programacoes.length === 0 ? '<div class="no-data">Nenhuma programação para a data selecionada.</div>' : pagesHtml}
       </body>
     </html>
   `;

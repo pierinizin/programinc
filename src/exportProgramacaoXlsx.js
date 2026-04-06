@@ -268,7 +268,16 @@ export function exportProgramacaoModeloAntigo(db, dateStr) {
     rows.push(`
       <tr>
         ${teams.map((item) => {
-          const membroId = (item.membroIds || [])[i];
+         const membros = (item.membroIds || [])
+          .map((id) => {
+            const p = colaboradoresMap[id];
+            return p ? (p.apelido || p.nome) : null;
+          })
+          .filter(Boolean);
+
+        const encarregado = colaboradoresMap[item.encarregadoId] 
+          ? (colaboradoresMap[item.encarregadoId].apelido || colaboradoresMap[item.encarregadoId].nome) 
+          : '';
           const nome = membroId ? (colaboradoresMap[membroId]?.nome || '').toUpperCase() : '';
           return td(nome, membroId && faltasSet.has(membroId) ? cellRedStyle : cellStyle);
         }).join('')}
@@ -482,6 +491,9 @@ export function exportHistoricoXlsx(db) {
     rows.push(row([
       { value: formatDateBR(item.data), style: 'cell' },
       { value: getTeamLabel(item), style: 'cell' },
+      { value: item.engenheiro || '', style: 'cell' }, // Nova coluna
+      { value: item.tipoServico || '', style: 'cell' },
+      { value: (item.cidade || '').toUpperCase(), style: 'cell' },
       { value: item.tipoServico || '', style: 'cell' },
       { value: item.cidade || '', style: 'cell' },
       { value: item.contratante || '', style: 'cell' },
