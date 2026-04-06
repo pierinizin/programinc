@@ -394,7 +394,7 @@ function App() {
       telefone: colaboradorForm.telefone,
       status: colaboradorForm.status
     }
-    let res;
+    let res;  
     if (colaboradorForm.id) {
       res = await supabase.from('colaboradores').update(payload).eq('id', colaboradorForm.id);
     } else {
