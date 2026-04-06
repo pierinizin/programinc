@@ -593,7 +593,22 @@ select:disabled { background: #f5f5f5; color: #98a2b3; }
   text-transform: uppercase;
   margin: 15px 0 5px 15px; /* Alinha certinho com os botões */
 }
+/* Botão de Sair Base */
+.logout-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+  color: #dc2626;
+  border-color: #fca5a5;
+  background-color: #fef2f2;
+}
 
+.logout-btn svg {
+  width: 18px;
+  height: 18px;
+}
 /* ==========================================================
    📱 MÁGICA DO CELULAR (Só afeta telas menores que 768px)
    ========================================================== */
@@ -701,5 +716,33 @@ select:disabled { background: #f5f5f5; color: #98a2b3; }
     overflow: hidden;
     text-overflow: ellipsis;
     text-align: center;
+  }
+  .sidebar {
+    position: relative; /* Permite que o botão flutue aqui dentro */
+  }
+
+  .sidebar-bottom {
+    position: absolute;
+    top: 18px;
+    right: 15px;
+    margin: 0;
+  }
+
+  .logout-btn {
+    width: 40px !important;
+    height: 40px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 50% !important; /* Deixa o botão redondo */
+  }
+
+  .logout-text {
+    display: none; /* Esconde a palavra "Sair" */
+  }
+
+  .logout-btn svg {
+    width: 20px;
+    height: 20px;
+    margin-left: 3px; /* Centraliza o ícone visualmente no círculo */
   }
 }
