@@ -530,9 +530,74 @@ textarea { resize: vertical; }
   .page-head h1 { font-size: 40px; }
   .date-weekday { font-size: 28px; }
 }
+/* ==========================================================
+   📅 ESTRUTURA DO CALENDÁRIO
+   ========================================================== */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.calendar-header {
+  text-align: center;
+  font-weight: bold;
+  color: #64748b;
+  padding-bottom: 10px;
+}
+
+.calendar-day {
+  min-height: 100px;
+  padding: 10px;
+  cursor: pointer;
+  border: 1px solid #e2e8f0;
+  background-color: #fff;
+  border-radius: 8px; 
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.calendar-day:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+}
+
+.calendar-day.today {
+  border: 2px solid #2563eb;
+  background-color: #eff6ff;
+}
+
+.calendar-day.selected {
+  border: 2px solid #f59e0b; 
+  background-color: #fffdeb; 
+  transform: scale(0.98); 
+}
+
+.calendar-day .day-number {
+  font-weight: bold;
+  font-size: 1.2rem;
+  margin-bottom: 8px;
+}
+
+.calendar-tags {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.calendar-tags .tag.danger-cal {
+  background-color: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+}
+
+/* ==========================================================
+   📱 MÁGICA DO CELULAR (Só afeta telas menores que 768px)
+   ========================================================== */
 @media screen and (max-width: 768px) {
   
-  /* 1. Transforma o layout principal (Menu lateral vai pro topo) */
   .app-shell {
     flex-direction: column;
   }
@@ -544,7 +609,6 @@ textarea { resize: vertical; }
     border-bottom: 1px solid #e2e8f0;
   }
 
-  /* 2. Grades que eram 3 ou 2 colunas no PC, viram 1 coluna no Celular */
   .cards-grid, 
   .cards-grid.three, 
   .form-grid.two, 
@@ -553,7 +617,6 @@ textarea { resize: vertical; }
     grid-template-columns: 1fr !important;
   }
 
-  /* 3. Ajusta o cabeçalho dos cartões (Títulos e Status) pra não espremer */
   .card-header.between, 
   .drawer-head.between {
     flex-direction: column;
@@ -561,7 +624,6 @@ textarea { resize: vertical; }
     gap: 10px;
   }
 
-  /* 4. Modais (Telas de Cadastro) e Gavetas ocupam a tela toda */
   .modal {
     width: 95%;
     margin: 10px auto;
@@ -575,7 +637,6 @@ textarea { resize: vertical; }
     border-top: 2px solid #e2e8f0;
   }
 
-  /* 5. Ajuste fino nas barras do topo */
   .topbar {
     flex-direction: column;
     align-items: flex-start;
@@ -583,18 +644,23 @@ textarea { resize: vertical; }
     padding: 15px;
   }
 
+  /* BOTÕES LADO A LADO NO CELULAR PRA NÃO FORMAR TORRE */
   .topbar-actions {
     width: 100%;
     display: flex;
-    flex-direction: column;
+    flex-direction: row; 
+    flex-wrap: wrap; 
     gap: 8px;
   }
 
   .topbar-actions button {
-    width: 100%; /* Botões do topo ocupam a largura toda pra ficar fácil de clicar */
+    width: auto;
+    flex: 1; 
+    min-width: 140px; 
+    padding: 8px 10px;
+    font-size: 13px; 
   }
 
-  /* 6. Corrige os botões de ação dentro dos modais e cartões */
   .modal-actions.full, 
   .card-actions {
     flex-direction: column;
@@ -605,5 +671,34 @@ textarea { resize: vertical; }
   .card-actions button {
     width: 100%;
     margin-bottom: 5px;
+  }
+
+  /* AJUSTES DO CALENDÁRIO NO CELULAR */
+  .calendar-grid {
+    gap: 4px; 
+  }
+
+  .calendar-day {
+    min-height: 60px; 
+    padding: 4px;
+  }
+
+  .calendar-day .day-number {
+    font-size: 0.9rem;
+    margin-bottom: 4px;
+    text-align: center;
+  }
+
+  .calendar-header {
+    font-size: 0.75rem; 
+  }
+
+  .calendar-tags .tag {
+    font-size: 9px;
+    padding: 2px 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
   }
 }

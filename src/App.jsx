@@ -107,7 +107,7 @@ function emptyProgramacao(date = today()) {
 }
 
 function emptyColaborador() {
-  return { id: '', nome: '', funcao: 'Ajudante de produção', telefone: '', status: 'ativo' };
+  return { id: '', nome: '', apelido: '', funcao: 'Ajudante de produção', telefone: '', status: 'ativo' };
 }
 
 function emptyVeiculo() {
@@ -131,7 +131,6 @@ function toggleLimited(list, value, encarregadoId) {
 }
 
 function App() {
-  // 1. TODOS OS ESTADOS NO TOPO
   const [session, setSession] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [isRecovering, setIsRecovering] = useState(false);
@@ -150,7 +149,6 @@ function App() {
   const [expandedProgramacaoId, setExpandedProgramacaoId] = useState(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
 
-  // 2. TODAS AS FUNÇÕES DE DADOS NO MEIO
   const fetchUserRole = async (userId) => {
     const { data } = await supabase.from('perfis').select('cargo').eq('id', userId).single();
     if (data && data.cargo) {
@@ -178,7 +176,6 @@ function App() {
     }));
   };
 
-  // 3. TODOS OS USE_EFFECTS
   useEffect(() => {
     if (window.location.hash.includes('type=recovery')) {
       setIsRecovering(true);
@@ -220,7 +217,6 @@ function App() {
     };
   }, [session]);
 
-  // 4. TODOS OS USE_MEMOS
   const maps = useMemo(() => ({
       colaboradores: Object.fromEntries(db.colaboradores.map((x) => [x.id, x])),
       veiculos: Object.fromEntries(db.veiculos.map((x) => [x.id, x])),
@@ -278,7 +274,6 @@ function App() {
     return getDaysInMonth(calendarMonth.getFullYear(), calendarMonth.getMonth());
   }, [calendarMonth]);
 
-  // 5. FUNÇÕES DE SUPORTE
   function getDaysInMonth(year, month) {
     const numDays = new Date(year, month + 1, 0).getDate();
     const firstDay = new Date(year, month, 1).getDay();
@@ -394,7 +389,7 @@ function App() {
       telefone: colaboradorForm.telefone,
       status: colaboradorForm.status
     }
-    let res;  
+    let res;
     if (colaboradorForm.id) {
       res = await supabase.from('colaboradores').update(payload).eq('id', colaboradorForm.id);
     } else {
@@ -530,11 +525,6 @@ async function deletePerfil(id) {
    }
   }
 
-  // ==========================================================
-  // 6. AS TELAS - A ORDEM AQUI IMPORTA DEMAIS PRO REACT!
-  // ==========================================================
-
-  // TELA 1: Recuperação de Senha (vem primeiro)
   if (isRecovering) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
@@ -575,12 +565,10 @@ async function deletePerfil(id) {
     );
   }
 
-  // TELA 2: Auth / Login
   if (!session) {
     return <Auth />;
   }
 
-  // TELA 3: Usuário aguardando aprovação
   if (userRole === 'pendente') {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
@@ -602,7 +590,6 @@ async function deletePerfil(id) {
     );
   }
 
-  // TELA 4: Aplicativo Principal (O App.jsx normal)
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -615,47 +602,36 @@ async function deletePerfil(id) {
         </div>
 
         <nav className="menu">
- {/* 1. PROGRAMAÇÃO NO TOPO */}
- <NavButton 
-   active={page === 'programacao'} 
-   onClick={() => changePage('programacao')}
- >
-   Programação
- </NavButton>
+         <NavButton active={page === 'programacao'} onClick={() => changePage('programacao')}>
+           Programação
+         </NavButton>
 
- {/* 2. CALENDÁRIO LOGO ABAIXO */}
- <NavButton 
-   active={page === 'calendario'} 
-   onClick={() => changePage('calendario')}
- >
-   Calendários
- </NavButton>
+         <NavButton active={page === 'calendario'} onClick={() => changePage('calendario')}>
+           Calendários
+         </NavButton>
 
- {/* DIVISOR (OPCIONAL) */}
- <div className="section-line" style={{ margin: '10px 0', opacity: 0.3 }} />
+         <div className="section-line" style={{ margin: '10px 0', opacity: 0.3 }} />
 
- {/* 3. BOTÕES PARA ADMIN/EDITOR */}
- {(userRole === 'admin' || userRole === 'editor') && (
-   <>
-     <NavButton active={page === 'colaboradores'} onClick={() => changePage('colaboradores')}>
-       Colaboradores
-     </NavButton>
-     <NavButton active={page === 'veiculos'} onClick={() => changePage('veiculos')}>
-       Veículos
-     </NavButton>
-     <NavButton active={page === 'historico'} onClick={() => changePage('historico')}>
-       Histórico
-     </NavButton>
-   </>
- )}
+         {(userRole === 'admin' || userRole === 'editor') && (
+           <>
+             <NavButton active={page === 'colaboradores'} onClick={() => changePage('colaboradores')}>
+               Colaboradores
+             </NavButton>
+             <NavButton active={page === 'veiculos'} onClick={() => changePage('veiculos')}>
+               Veículos
+             </NavButton>
+             <NavButton active={page === 'historico'} onClick={() => changePage('historico')}>
+               Histórico
+             </NavButton>
+           </>
+         )}
 
- {/* 4. APROVAÇÕES SÓ PRO ADMIN NO FINAL */}
- {userRole === 'admin' && (
-   <NavButton active={page === 'acessos'} onClick={() => changePage('acessos')}>
-      Aprovações
-   </NavButton>
- )}
-</nav>
+         {userRole === 'admin' && (
+           <NavButton active={page === 'acessos'} onClick={() => changePage('acessos')}>
+              Aprovações
+           </NavButton>
+         )}
+        </nav>
 
         <div className="sidebar-bottom">
           <button 
@@ -678,7 +654,6 @@ async function deletePerfil(id) {
           <div className="topbar-actions">
             {page === 'programacao' && (
               <>
-                {/* O visualizador NÃO vê esta parte */}
                 {userRole !== 'visualizador' && (
                   <>
                     <button className="ghost-btn" onClick={() => exportProgramacaoXlsx(db, selectedDate)}>
@@ -693,7 +668,6 @@ async function deletePerfil(id) {
                   </>
                 )}
                 
-                {/* Apenas Admin e Editor veem este botão */}
                 {(userRole === 'admin' || userRole === 'editor') && (
                   <button className="primary-btn" onClick={() => openProgramacaoModal()}>
                     + Nova Programação
@@ -763,9 +737,9 @@ async function deletePerfil(id) {
                   <button className="icon-btn" onClick={nextMonth}>›</button>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '10px' }}>
+                <div className="calendar-grid">
                   {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(dia => (
-                    <div key={dia} style={{ textAlign: 'center', fontWeight: 'bold', color: '#64748b' }}>{dia}</div>
+                    <div key={dia} className="calendar-header">{dia}</div>
                   ))}
                   
                   {calendarDays.map((dateStr, index) => {
@@ -773,6 +747,7 @@ async function deletePerfil(id) {
 
                     const dayObj = new Date(`${dateStr}T12:00:00`);
                     const isToday = dateStr === today();
+                    const isSelected = activeDrawer?.type === 'resumo-dia' && activeDrawer.date === dateStr;
                     
                     const progsNoDia = db.programacoes.filter(p => p.data === dateStr);
                     const faltasNoDia = db.faltas.filter(f => f.data === dateStr);
@@ -780,29 +755,22 @@ async function deletePerfil(id) {
                     return (
                       <div 
                         key={dateStr} 
-                        className="card"
-                        style={{ 
-                          minHeight: '100px', 
-                          padding: '10px', 
-                          cursor: 'pointer',
-                          border: isToday ? '2px solid #2563eb' : '1px solid #e2e8f0',
-                          backgroundColor: isToday ? '#eff6ff' : '#fff'
-                        }}
+                        className={`calendar-day ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''}`}
                         onClick={() => setActiveDrawer({ type: 'resumo-dia', date: dateStr })}
                       >
-                        <div style={{ fontWeight: 'bold', fontSize: '1.2rem', marginBottom: '10px' }}>
+                        <div className="day-number">
                           {dayObj.getDate()}
                         </div>
                         
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                        <div className="calendar-tags">
                           {progsNoDia.length > 0 && (
-                            <span className="tag success" style={{ width: 'fit-content' }}>
-                              {progsNoDia.length} equipe{progsNoDia.length > 1 ? 's' : ''}
+                            <span className="tag success" title={`${progsNoDia.length} equipes`}>
+                              {progsNoDia.length} eqp
                             </span>
                           )}
                           {faltasNoDia.length > 0 && (
-                            <span className="tag" style={{ width: 'fit-content', backgroundColor: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5' }}>
-                              {faltasNoDia.length} falta{faltasNoDia.length > 1 ? 's' : ''}
+                            <span className="tag danger-cal" title={`${faltasNoDia.length} faltas`}>
+                              {faltasNoDia.length} falt
                             </span>
                           )}
                         </div>
@@ -1023,7 +991,6 @@ async function deletePerfil(id) {
                                 })}
                               </div>
 
-                              {/* 🔥 INÍCIO DA TRAVA DO VISUALIZADOR 🔥 */}
                               {userRole !== 'visualizador' && (
                                 <>
                                   <div className="section-line" />
@@ -1082,7 +1049,6 @@ async function deletePerfil(id) {
                                   </div>
                                 </>
                               )}
-                              {/* 🔥 FIM DA TRAVA DO VISUALIZADOR 🔥 */}
 
                               {userRole === 'admin' && (
                                 <div className="card-actions right">
@@ -1685,7 +1651,6 @@ function MultiSelect({ label, items, selectedIds, labelKey, subtitleKey, subtitl
   );
 }
 
-// --- GAVETA NOVA: RESUMÃO DO DIA ---
 function ResumoDiaDrawer({ date, db, maps, onGoToDate }) {
   const programacoes = db.programacoes.filter(p => p.data === date);
   const faltas = db.faltas.filter(f => f.data === date);
