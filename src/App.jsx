@@ -18,7 +18,7 @@ const TEAM_TYPE_OPTIONS = [
 ];
 
 const STATUS_OPTIONS = ['EXECUTANDO', 'CONCLUÍDO', 'NÃO FOI POSSÍVEL REALIZAR'];
-const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'VIAGEM', 'OUTROS'];
+const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'VIAGEM', 'FOLGA', 'OUTROS'];
 const ROLE_OPTIONS = ['Encarregado', 'Motorista de Veículos Médios', 'Ajudante de produção', 'Operadador de máquina de pintura'];
 const VEHICLE_TYPES = ['Caminhão', 'Caminhonete', 'Carro', 'Outro'];
 const VEHICLE_STATUS = ['Disponível', 'Em uso', 'Manutenção', 'Inativo'];
@@ -985,7 +985,7 @@ function App() {
                           <div className="card-header between start compact-program-head">
                             <div>
                               <h3>{item.tipoEquipe}</h3>
-                              <div className="meta-row">📍 {item.cidade.toLowerCase()} · 🏢 {item.contratante}</div>
+                              <div className="meta-row">📍 {item.cidade.toUpperCase()} · 🏢 {item.contratante}</div>
                             </div>
                             <StatusBadge status={item.statusExecucao} />
                           </div>
