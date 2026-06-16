@@ -17,9 +17,8 @@ const TEAM_TYPE_OPTIONS = [
   'Implantação de Defensa',
 ];
 
-const SERVICE_TYPE_OPTIONS = [...TEAM_TYPE_OPTIONS];
 const STATUS_OPTIONS = ['EXECUTANDO', 'CONCLUÍDO', 'NÃO FOI POSSÍVEL REALIZAR'];
-const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'OUTROS'];
+const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'VIAGEM', 'OUTROS'];
 const ROLE_OPTIONS = ['Encarregado', 'Motorista de Veículos Médios', 'Ajudante de produção', 'Operadador de máquina de pintura'];
 const VEHICLE_TYPES = ['Caminhão', 'Caminhonete', 'Carro', 'Outro'];
 const VEHICLE_STATUS = ['Disponível', 'Em uso', 'Manutenção', 'Inativo'];
@@ -58,6 +57,54 @@ function initials(name) {
     .toUpperCase();
 }
 
+// NOVO CÁLCULO DE HORAS (SEPARANDO IN ITINERE E OBRA)
+function calculateWorkedHours(saidaBase, inicioObra, saidaAlmoco, retornoAlmoco, fimObra, chegadaBase) {
+  if (!saidaBase || !inicioObra || !saidaAlmoco || !retornoAlmoco || !fimObra || !chegadaBase) {
+    return { obra: '00:00h', inItinere: '00:00h', total: '00:00h' };
+  }
+  
+  const parseTime = (timeStr) => {
+    const [h, m] = timeStr.split(':').map(Number);
+    return h * 60 + m;
+  };
+
+  const tSaidaBase = parseTime(saidaBase);
+  const tInicioObra = parseTime(inicioObra);
+  const tSaidaAlmoco = parseTime(saidaAlmoco);
+  const tRetornoAlmoco = parseTime(retornoAlmoco);
+  const tFimObra = parseTime(fimObra);
+  const tChegadaBase = parseTime(chegadaBase);
+
+  // Função para evitar bugs se a equipe trabalhar até a madrugada do outro dia
+  const adjustTime = (t1, t2) => t2 < t1 ? t2 + (24 * 60) : t2;
+  
+  const tInicioObraAdj = adjustTime(tSaidaBase, tInicioObra);
+  const tSaidaAlmocoAdj = adjustTime(tInicioObraAdj, tSaidaAlmoco);
+  const tRetornoAlmocoAdj = adjustTime(tSaidaAlmocoAdj, tRetornoAlmoco);
+  const tFimObraAdj = adjustTime(tRetornoAlmocoAdj, tFimObra);
+  const tChegadaBaseAdj = adjustTime(tFimObraAdj, tChegadaBase);
+
+  // Cálculo In Itinere (Deslocamento Ida + Volta)
+  const inItinereIda = Math.max(0, tInicioObraAdj - tSaidaBase);
+  const inItinereVolta = Math.max(0, tChegadaBaseAdj - tFimObraAdj);
+  const totalInItinere = inItinereIda + inItinereVolta;
+
+  // Cálculo Tempo Efetivo de Obra
+  const obraManha = Math.max(0, tSaidaAlmocoAdj - tInicioObraAdj);
+  const obraTarde = Math.max(0, tFimObraAdj - tRetornoAlmocoAdj);
+  const totalObra = obraManha + obraTarde;
+
+  const totalGeral = totalInItinere + totalObra;
+
+  const format = (mins) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}h`;
+
+  return {
+    obra: format(totalObra),
+    inItinere: format(totalInItinere),
+    total: format(totalGeral)
+  };
+}
+
 function normalizeDb(data) {
  return {
    colaboradores: Array.isArray(data?.colaboradores) ? data.colaboradores.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')) : [],
@@ -68,14 +115,16 @@ function normalizeDb(data) {
      ? data.programacoes.map((item) => ({
          ...item,
          tipoEquipe: item.tipoEquipe || '',
-         tipoServico: item.tipoServico || '',
          statusExecucao: item.statusExecucao || 'EXECUTANDO',
          motivoNaoExecucao: item.motivoNaoExecucao || '',
          observacoes: item.observacoes || '',
-         horarioInicio: item.horarioInicio || '07:30',
+         // Novos Mapeamentos de Horários
+         horarioInicio: item.horarioInicio || '06:30', // Saída Base (mantém a coluna antiga)
+         horarioInicioObra: item.horarioInicioObra || '07:30', // Nova Coluna
          horarioSaidaAlmoco: item.horarioSaidaAlmoco || '11:30',
          horarioRetornoAlmoco: item.horarioRetornoAlmoco || '13:00',
-         horarioSaida: item.horarioSaida || '17:48',
+         horarioFimObra: item.horarioFimObra || '17:00', // Nova Coluna
+         horarioSaida: item.horarioSaida || '18:00', // Saída de Retorno (mantém a coluna antiga)
          membroIds: Array.isArray(item.membroIds) ? item.membroIds : [],
          veiculoIds: Array.isArray(item.veiculoIds) ? item.veiculoIds : [],
          perfis: Array.isArray(data?.perfis) ? data.perfis : [],
@@ -91,7 +140,6 @@ function emptyProgramacao(date = today()) {
     tipoEquipe: '',
     cidade: '',
     contratante: '',
-    tipoServico: '',
     encarregadoId: null,
     engenheiro: '',
     membroIds: [],
@@ -99,10 +147,12 @@ function emptyProgramacao(date = today()) {
     statusExecucao: 'EXECUTANDO',
     motivoNaoExecucao: '',
     observacoes: '',
-    horarioInicio: '07:30',
+    horarioInicio: '06:30',
+    horarioInicioObra: '07:30',
     horarioSaidaAlmoco: '11:30',
     horarioRetornoAlmoco: '13:00',
-    horarioSaida: '17:48',
+    horarioFimObra: '17:00',
+    horarioSaida: '18:00',
   };
 }
 
@@ -321,6 +371,7 @@ function App() {
       }
     }, 100);
   }
+
   async function updateProgramacaoField(itemId, field, value) {
     const payload = { [field]: value };
     if (field === 'statusExecucao' && value !== 'NÃO FOI POSSÍVEL REALIZAR') {
@@ -334,10 +385,11 @@ function App() {
     setProgramacaoForm(item ? { ...item } : emptyProgramacao(selectedDate));
     setModal('programacao');
   }
+
   function duplicateProgramacao(item) {
    setProgramacaoForm({ ...item, id: '' });
    setModal('programacao');
- }
+  }
 
   function openColaboradorModal(item = null) {
     setColaboradorForm(item ? { ...item } : emptyColaborador());
@@ -355,7 +407,7 @@ function App() {
   }
 
   async function saveProgramacao() {
-    if (!programacaoForm.tipoEquipe || !programacaoForm.cidade || !programacaoForm.contratante || !programacaoForm.tipoServico || !programacaoForm.encarregadoId) {
+    if (!programacaoForm.tipoEquipe || !programacaoForm.cidade || !programacaoForm.contratante || !programacaoForm.encarregadoId) {
       alert('Preencha os campos principais da programação.');
       return;
     }
@@ -379,6 +431,7 @@ function App() {
 
     if (!payload.id) delete payload.id; 
     delete payload.perfis;
+    delete payload.tipoServico;
 
     let res;
     if (programacaoForm.id) {
@@ -501,17 +554,17 @@ function App() {
     }
   }
 
-async function deletePerfil(id) {
-  if (!confirm('Tem certeza que deseja excluir este usuário definitivamente do sistema?')) return;
-  const { error } = await supabase.rpc('deletar_usuario_completo', { uid: id });
+  async function deletePerfil(id) {
+    if (!confirm('Tem certeza que deseja excluir este usuário definitivamente do sistema?')) return;
+    const { error } = await supabase.rpc('deletar_usuario_completo', { uid: id });
 
-  if (error) {
-    alert("Erro ao excluir usuário: " + error.message);
-  } else {
-    alert("✅ Usuário e credenciais excluídos com sucesso!");
-    fetchDatabase();
+    if (error) {
+      alert("Erro ao excluir usuário: " + error.message);
+    } else {
+      alert("✅ Usuário e credenciais excluídos com sucesso!");
+      fetchDatabase();
+    }
   }
- }
 
   async function enviarEmailReset(email) {
    if (!confirm(`Enviar link de redefinição de senha para ${email}?`)) return;
@@ -574,7 +627,7 @@ async function deletePerfil(id) {
                 alert("Erro ao salvar senha: " + error.message);
               } else {
                 alert("✅ Senha atualizada com sucesso!");
-                window.location.hash = ''; // Limpa a URL do navegador
+                window.location.hash = ''; 
                 setIsRecovering(false); 
               }
             }}
@@ -633,7 +686,6 @@ async function deletePerfil(id) {
 
         <div className="section-line" style={{ margin: '10px 0', opacity: 0.3 }} />
 
-         {/* NOVO TÍTULO AQUI */}
          {(userRole === 'admin' || userRole === 'editor') && (
            <div className="menu-group-title">Painel do Administrador</div>
          )}
@@ -663,7 +715,6 @@ async function deletePerfil(id) {
           <button 
             className="ghost-btn logout-btn" onClick={() => supabase.auth.signOut()} title="Sair do sistema"
           >
-            {/* Ícone de Log Out (Porta com seta) */}
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
               <polyline points="16 17 21 12 16 7"></polyline>
@@ -971,10 +1022,27 @@ async function deletePerfil(id) {
                               </div>
                             </div>
 
-                            <div className="compact-summary-block full-row">
-                              <span className="section-label">Tipo de serviço</span>
-                              <div className="service-line compact-service-line">Tipo de serviço: {item.tipoServico}</div>
-                            </div>
+                            {/* CÁLCULO DE HORAS - MOSTRANDO IN ITINERE E TEMPO DE OBRA */}
+                            {item.statusExecucao === 'CONCLUÍDO' && (() => {
+                              const hours = calculateWorkedHours(
+                                item.horarioInicio, 
+                                item.horarioInicioObra, 
+                                item.horarioSaidaAlmoco, 
+                                item.horarioRetornoAlmoco, 
+                                item.horarioFimObra, 
+                                item.horarioSaida
+                              );
+                              return (
+                                <div className="compact-summary-block full-row">
+                                  <span className="section-label">Registro de Tempos</span>
+                                  <div className="service-line compact-service-line" style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', color: '#059669', fontWeight: 'bold' }}>
+                                    <span>🚗 In Itinere: {hours.inItinere}</span>
+                                    <span>🚧 Na Obra: {hours.obra}</span>
+                                    <span>⏱ Total: {hours.total}</span>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
 
                           <div className="compact-expand-hint">
@@ -1024,11 +1092,15 @@ async function deletePerfil(id) {
                               {userRole !== 'visualizador' && (
                                 <>
                                   <div className="section-line" />
-                                  <div className="time-grid">
-                                    <FieldPair label="Início" value={item.horarioInicio} />
-                                    <FieldPair label="Saída almoço" value={item.horarioSaidaAlmoco} />
-                                    <FieldPair label="Retorno almoço" value={item.horarioRetornoAlmoco} />
-                                    <FieldPair label="Saída" value={item.horarioSaida} />
+                                  
+                                  {/* GRID COM OS 6 HORÁRIOS */}
+                                  <div className="time-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                                    <FieldPair label="Saída (Base)" value={item.horarioInicio} />
+                                    <FieldPair label="Início Obra" value={item.horarioInicioObra} />
+                                    <FieldPair label="Saída Almoço" value={item.horarioSaidaAlmoco} />
+                                    <FieldPair label="Retorno Almoço" value={item.horarioRetornoAlmoco} />
+                                    <FieldPair label="Fim Obra" value={item.horarioFimObra} />
+                                    <FieldPair label="Saída (Retorno)" value={item.horarioSaida} />
                                   </div>
 
                                   <div className="section-line" />
@@ -1316,14 +1388,7 @@ async function deletePerfil(id) {
                 onChange={(v) => setProgramacaoForm({ ...programacaoForm, engenheiro: v })}
                 full
               />
-                <Select
-                  label="Tipo de serviço"
-                  value={programacaoForm.tipoServico}
-                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, tipoServico: v })}
-                  options={SERVICE_TYPE_OPTIONS.map((x) => ({ value: x, label: x }))}
-                  placeholder="Selecione"
-                  full
-                />
+                
                 <Select
                   label="Encarregado"
                   value={programacaoForm.encarregadoId || ''}
@@ -1346,27 +1411,40 @@ async function deletePerfil(id) {
                   options={STATUS_OPTIONS.map((x) => ({ value: x, label: x }))}
                 />
 
-                <div className="full modal-time-grid">
+                {/* PAINEL DE EDIÇÃO DOS 6 HORÁRIOS */}
+                <div className="full modal-time-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
                   <Input
-                    label="Início"
+                    label="Saída (Base)"
                     type="time"
                     value={programacaoForm.horarioInicio}
                     onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioInicio: v })}
                   />
                   <Input
-                    label="Saída almoço"
+                    label="Início Obra"
+                    type="time"
+                    value={programacaoForm.horarioInicioObra}
+                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioInicioObra: v })}
+                  />
+                  <Input
+                    label="Saída Almoço"
                     type="time"
                     value={programacaoForm.horarioSaidaAlmoco}
                     onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioSaidaAlmoco: v })}
                   />
                   <Input
-                    label="Retorno almoço"
+                    label="Retorno Almoço"
                     type="time"
                     value={programacaoForm.horarioRetornoAlmoco}
                     onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioRetornoAlmoco: v })}
                   />
                   <Input
-                    label="Saída"
+                    label="Fim Obra"
+                    type="time"
+                    value={programacaoForm.horarioFimObra}
+                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioFimObra: v })}
+                  />
+                  <Input
+                    label="Saída (Retorno)"
                     type="time"
                     value={programacaoForm.horarioSaida}
                     onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioSaida: v })}
@@ -1855,7 +1933,7 @@ function VeiculoDrawer({ item, db, userRole, openEdit }) {
               <strong>{e.tipoEquipe}</strong>
               <div className="meta-row">{new Date(`${e.data}T12:00:00`).toLocaleDateString('pt-BR')} · {e.cidade}</div>
               <div className="meta-row">
-                Horários: {e.horarioInicio} / {e.horarioSaidaAlmoco} / {e.horarioRetornoAlmoco} / {e.horarioSaida}
+                Horários: {e.horarioInicio} às {e.horarioSaida} (Obra: {e.horarioInicioObra} - {e.horarioFimObra})
               </div>
             </div>
           ))
