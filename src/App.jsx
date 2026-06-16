@@ -18,7 +18,7 @@ const TEAM_TYPE_OPTIONS = [
 ];
 
 const STATUS_OPTIONS = ['EXECUTANDO', 'CONCLUÍDO', 'NÃO FOI POSSÍVEL REALIZAR'];
-const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'VIAGEM', 'FOLGA', 'OUTROS'];
+const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'VIAGEM', 'OUTROS'];
 const ROLE_OPTIONS = ['Encarregado', 'Motorista de Veículos Médios', 'Ajudante de produção', 'Operadador de máquina de pintura'];
 const VEHICLE_TYPES = ['Caminhão', 'Caminhonete', 'Carro', 'Outro'];
 const VEHICLE_STATUS = ['Disponível', 'Em uso', 'Manutenção', 'Inativo'];
@@ -57,7 +57,7 @@ function initials(name) {
     .toUpperCase();
 }
 
-// NOVO CÁLCULO DE HORAS (SEPARANDO IN ITINERE E OBRA)
+// CÁLCULO DE HORAS (SEPARANDO IN ITINERE E OBRA)
 function calculateWorkedHours(saidaBase, inicioObra, saidaAlmoco, retornoAlmoco, fimObra, chegadaBase) {
   if (!saidaBase || !inicioObra || !saidaAlmoco || !retornoAlmoco || !fimObra || !chegadaBase) {
     return { obra: '00:00h', inItinere: '00:00h', total: '00:00h' };
@@ -75,7 +75,7 @@ function calculateWorkedHours(saidaBase, inicioObra, saidaAlmoco, retornoAlmoco,
   const tFimObra = parseTime(fimObra);
   const tChegadaBase = parseTime(chegadaBase);
 
-  // Função para evitar bugs se a equipe trabalhar até a madrugada do outro dia
+  // Evita bugs se a equipe trabalhar além da meia-noite
   const adjustTime = (t1, t2) => t2 < t1 ? t2 + (24 * 60) : t2;
   
   const tInicioObraAdj = adjustTime(tSaidaBase, tInicioObra);
@@ -118,13 +118,12 @@ function normalizeDb(data) {
          statusExecucao: item.statusExecucao || 'EXECUTANDO',
          motivoNaoExecucao: item.motivoNaoExecucao || '',
          observacoes: item.observacoes || '',
-         // Novos Mapeamentos de Horários
-         horarioInicio: item.horarioInicio || '06:30', // Saída Base (mantém a coluna antiga)
-         horarioInicioObra: item.horarioInicioObra || '07:30', // Nova Coluna
+         horarioInicio: item.horarioInicio || '06:30',
+         horarioInicioObra: item.horarioInicioObra || '07:30',
          horarioSaidaAlmoco: item.horarioSaidaAlmoco || '11:30',
          horarioRetornoAlmoco: item.horarioRetornoAlmoco || '13:00',
-         horarioFimObra: item.horarioFimObra || '17:00', // Nova Coluna
-         horarioSaida: item.horarioSaida || '18:00', // Saída de Retorno (mantém a coluna antiga)
+         horarioFimObra: item.horarioFimObra || '17:00',
+         horarioSaida: item.horarioSaida || '18:00',
          membroIds: Array.isArray(item.membroIds) ? item.membroIds : [],
          veiculoIds: Array.isArray(item.veiculoIds) ? item.veiculoIds : [],
          perfis: Array.isArray(data?.perfis) ? data.perfis : [],
@@ -987,7 +986,7 @@ function App() {
                               <h3>{item.tipoEquipe}</h3>
                               <div className="meta-row">📍 {item.cidade.toUpperCase()} · 🏢 {item.contratante}</div>
                             </div>
-                            <StatusBadge status={item.statusExecucao} />
+                            <StatusBadge status={item.statusExecucao} motivo={item.motivoNaoExecucao} />
                           </div>
 
                           <div className="compact-summary-grid">
@@ -1022,7 +1021,6 @@ function App() {
                               </div>
                             </div>
 
-                            {/* CÁLCULO DE HORAS - MOSTRANDO IN ITINERE E TEMPO DE OBRA */}
                             {item.statusExecucao === 'CONCLUÍDO' && (() => {
                               const hours = calculateWorkedHours(
                                 item.horarioInicio, 
@@ -1093,7 +1091,6 @@ function App() {
                                 <>
                                   <div className="section-line" />
                                   
-                                  {/* GRID COM OS 6 HORÁRIOS */}
                                   <div className="time-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
                                     <FieldPair label="Saída (Base)" value={item.horarioInicio} />
                                     <FieldPair label="Início Obra" value={item.horarioInicioObra} />
@@ -1652,9 +1649,15 @@ function StatCard({ number, label, subtle = false, danger = false }) {
   );
 }
 
-function StatusBadge({ status }) {
+// ETÍQUETA DE STATUS CORRIGIDA
+function StatusBadge({ status, motivo }) {
   const cls = status === 'CONCLUÍDO' ? 'green' : status === 'EXECUTANDO' ? 'yellow' : 'red';
-  return <span className={`status-badge ${cls}`}>{status}</span>;
+  
+  const textoExibido = (status === 'NÃO FOI POSSÍVEL REALIZAR' && motivo) 
+    ? motivo.toUpperCase() 
+    : status;
+
+  return <span className={`status-badge ${cls}`}>{textoExibido}</span>;
 }
 
 function FieldPair({ label, value }) {
@@ -1807,8 +1810,8 @@ function ResumoDiaDrawer({ date, db, maps, onGoToDate }) {
             return (
               <div key={p.id} className="mini-card" style={{ borderLeft: '4px solid #2563eb' }}>
                 <strong>{p.tipoEquipe}</strong>
-                <div className="meta-row">📍 {p.cidade} · Líder: {nomeEncarregado} · {p.membroIds.length} pessoas</div>
-                <StatusBadge status={p.statusExecucao} />
+                <div className="meta-row">📍 {p.cidade.toUpperCase()} · Líder: {nomeEncarregado} · {p.membroIds.length} pessoas</div>
+                <StatusBadge status={p.statusExecucao} motivo={p.motivoNaoExecucao} />
               </div>
             );
           })
@@ -1862,9 +1865,9 @@ function ColaboradorDrawer({ item, db, userRole, openEdit, openFalta, deleteFalt
             <div key={e.id} className="mini-card">
               <strong>{e.tipoEquipe}</strong>
               <div className="meta-row">
-                {new Date(`${e.data}T12:00:00`).toLocaleDateString('pt-BR')} · {e.cidade} · {e.contratante}
+                {new Date(`${e.data}T12:00:00`).toLocaleDateString('pt-BR')} · {e.cidade.toUpperCase()} · {e.contratante}
               </div>
-              <StatusBadge status={e.statusExecucao} />
+              <StatusBadge status={e.statusExecucao} motivo={e.motivoNaoExecucao} />
             </div>
           ))
         )}
@@ -1931,7 +1934,7 @@ function VeiculoDrawer({ item, db, userRole, openEdit }) {
           historico.map((e) => (
             <div key={e.id} className="mini-card">
               <strong>{e.tipoEquipe}</strong>
-              <div className="meta-row">{new Date(`${e.data}T12:00:00`).toLocaleDateString('pt-BR')} · {e.cidade}</div>
+              <div className="meta-row">{new Date(`${e.data}T12:00:00`).toLocaleDateString('pt-BR')} · {e.cidade.toUpperCase()}</div>
               <div className="meta-row">
                 Horários: {e.horarioInicio} às {e.horarioSaida} (Obra: {e.horarioInicioObra} - {e.horarioFimObra})
               </div>
