@@ -268,17 +268,13 @@ export function exportProgramacaoModeloAntigo(db, dateStr) {
     rows.push(`
       <tr>
         ${teams.map((item) => {
-         const membros = (item.membroIds || [])
-          .map((id) => {
-            const p = colaboradoresMap[id];
-            return p ? (p.apelido || p.nome) : null;
-          })
-          .filter(Boolean);
-
-        const encarregado = colaboradoresMap[item.encarregadoId] 
-          ? (colaboradoresMap[item.encarregadoId].apelido || colaboradoresMap[item.encarregadoId].nome) 
-          : '';
-          const nome = membroId ? (colaboradoresMap[membroId]?.nome || '').toUpperCase() : '';
+          // Encarregado sempre na primeira linha, depois o restante da equipe.
+          const ordenados = Array.from(
+            new Set([item.encarregadoId, ...(item.membroIds || [])].filter(Boolean))
+          );
+          const membroId = ordenados[i];
+          const pessoa = membroId ? colaboradoresMap[membroId] : null;
+          const nome = pessoa ? String(pessoa.apelido || pessoa.nome || '').toUpperCase() : '';
           return td(nome, membroId && faltasSet.has(membroId) ? cellRedStyle : cellStyle);
         }).join('')}
       </tr>

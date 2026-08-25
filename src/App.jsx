@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from './lib/supabase';
 import { Auth } from './components/Auth';
 
@@ -19,7 +19,7 @@ const TEAM_TYPE_OPTIONS = [
 
 const STATUS_OPTIONS = ['EXECUTANDO', 'CONCLUÍDO', 'NÃO FOI POSSÍVEL REALIZAR'];
 const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'VIAGEM', 'OUTROS'];
-const ROLE_OPTIONS = ['Encarregado', 'Motorista de Veículos Médios', 'Ajudante de produção', 'Operadador de máquina de pintura'];
+const ROLE_OPTIONS = ['Encarregado', 'Motorista de Veículos Médios', 'Ajudante de produção', 'Operador de máquina de pintura'];
 const VEHICLE_TYPES = ['Caminhão', 'Caminhonete', 'Carro', 'Outro'];
 const VEHICLE_STATUS = ['Disponível', 'Em uso', 'Manutenção', 'Inativo'];
 const MAX_TEAM_MEMBERS = 10;
@@ -59,10 +59,12 @@ function initials(name) {
 
 // CÁLCULO DE HORAS (SEPARANDO IN ITINERE E OBRA)
 function calculateWorkedHours(saidaBase, inicioObra, saidaAlmoco, retornoAlmoco, fimObra, chegadaBase) {
+  // Sem os seis horários não dá para calcular. Devolvemos incompleto = true em vez
+  // de "00:00h", que parecia um valor válido e mascarava registro faltando.
   if (!saidaBase || !inicioObra || !saidaAlmoco || !retornoAlmoco || !fimObra || !chegadaBase) {
-    return { obra: '00:00h', inItinere: '00:00h', total: '00:00h' };
+    return { incompleto: true, obra: '—', inItinere: '—', total: '—' };
   }
-  
+
   const parseTime = (timeStr) => {
     const [h, m] = timeStr.split(':').map(Number);
     return h * 60 + m;
@@ -99,6 +101,7 @@ function calculateWorkedHours(saidaBase, inicioObra, saidaAlmoco, retornoAlmoco,
   const format = (mins) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}h`;
 
   return {
+    incompleto: false,
     obra: format(totalObra),
     inItinere: format(totalInItinere),
     total: format(totalGeral)
@@ -107,8 +110,13 @@ function calculateWorkedHours(saidaBase, inicioObra, saidaAlmoco, retornoAlmoco,
 
 function normalizeDb(data) {
  return {
-   colaboradores: Array.isArray(data?.colaboradores) ? data.colaboradores.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')) : [],
-   veiculos: Array.isArray(data?.veiculos) ? data.veiculos.sort((a, b) => a.placa.localeCompare(b.placa, 'pt-BR')) : [],
+   // [...].sort() para não mutar o array recebido
+   colaboradores: Array.isArray(data?.colaboradores)
+     ? [...data.colaboradores].sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'))
+     : [],
+   veiculos: Array.isArray(data?.veiculos)
+     ? [...data.veiculos].sort((a, b) => String(a.placa || '').localeCompare(String(b.placa || ''), 'pt-BR'))
+     : [],
    faltas: Array.isArray(data?.faltas) ? data.faltas : [],
    perfis: Array.isArray(data?.perfis) ? data.perfis : [],
    programacoes: Array.isArray(data?.programacoes)
@@ -126,7 +134,6 @@ function normalizeDb(data) {
          horarioSaida: item.horarioSaida || '18:00',
          membroIds: Array.isArray(item.membroIds) ? item.membroIds : [],
          veiculoIds: Array.isArray(item.veiculoIds) ? item.veiculoIds : [],
-         perfis: Array.isArray(data?.perfis) ? data.perfis : [],
        }))
      : [],
  };
@@ -165,6 +172,38 @@ function emptyVeiculo() {
 
 function emptyFalta() {
   return { id: '', colaboradorId: null, data: today(), motivo: 'atestado_medico', observacao: '' };
+}
+
+// Traduz o erro cru do Postgres/Supabase numa mensagem que faz sentido para
+// quem está usando o sistema. O erro completo continua indo para o console.
+function reportarErro(contexto, error) {
+  if (!error) return;
+  console.error(`[${contexto}]`, error);
+
+  const codigo = error.code || '';
+  let mensagem;
+
+  if (codigo === '42501' || /row-level security|permission denied/i.test(error.message || '')) {
+    mensagem = 'Você não tem permissão para esta ação.';
+  } else if (codigo === '23505') {
+    mensagem = 'Já existe um registro com esses dados (valor duplicado).';
+  } else if (codigo === '23503') {
+    mensagem = 'Este registro está sendo usado em outro lugar e não pode ser removido.';
+  } else if (codigo === '23514') {
+    mensagem = 'Algum campo está com valor inválido.';
+  } else if (/fetch|network/i.test(error.message || '')) {
+    mensagem = 'Sem conexão com o servidor. Verifique a internet e tente de novo.';
+  } else {
+    mensagem = 'Não foi possível concluir. Tente novamente.';
+  }
+
+  alert(`${contexto}: ${mensagem}`);
+}
+
+// Com RLS ligada, uma operação sem permissão volta com 0 linhas afetadas e
+// SEM erro. Sem este aviso o botão parecia simplesmente não funcionar.
+function semPermissao(acao) {
+  alert(`Você não tem permissão para ${acao}.`);
 }
 
 function toggle(list, value) {
@@ -216,6 +255,12 @@ function App() {
       supabase.from('perfis').select('*')
     ]);
 
+    // Com RLS ligada, uma tabela sem permissão volta com error e data null.
+    // Registramos no console em vez de silenciar tudo como lista vazia.
+    [resCols, resVeics, resProgs, resFaltas, resPerfis].forEach((res) => {
+      if (res?.error) console.error('Erro ao carregar dados:', res.error.message);
+    });
+
     setDb(normalizeDb({
       colaboradores: resCols.data || [],
       veiculos: resVeics.data || [],
@@ -224,6 +269,11 @@ function App() {
       perfis: resPerfis?.data || []
     }));
   };
+
+  // Mantém sempre a versão mais recente de fetchDatabase acessível de dentro
+  // do efeito de realtime, sem precisar recriar a subscription a cada render.
+  const fetchDatabaseRef = useRef(fetchDatabase);
+  fetchDatabaseRef.current = fetchDatabase;
 
   useEffect(() => {
     if (window.location.hash.includes('type=recovery')) {
@@ -250,21 +300,35 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (!session) return;
-    fetchDatabase(); 
+  // Realtime: antes escutava schema inteiro e refazia as 5 queries a cada evento,
+  // o que virava cascata com várias pessoas editando. Agora escuta só as tabelas
+  // que interessam e agrupa eventos próximos num único refetch.
+  const userId = session?.user?.id;
 
-    const canal = supabase
-      .channel('mudancas-incovia')
-      .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
-        fetchDatabase(); 
-      })
-      .subscribe();
+  useEffect(() => {
+    if (!userId) return undefined;
+    fetchDatabaseRef.current();
+
+    let timer = null;
+    const agendarRefetch = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        fetchDatabaseRef.current();
+      }, 300);
+    };
+
+    const canal = supabase.channel('mudancas-incovia');
+    ['colaboradores', 'veiculos', 'programacoes', 'faltas', 'perfis'].forEach((table) => {
+      canal.on('postgres_changes', { event: '*', schema: 'public', table }, agendarRefetch);
+    });
+    canal.subscribe();
 
     return () => {
+      if (timer) clearTimeout(timer);
       supabase.removeChannel(canal);
     };
-  }, [session]);
+  }, [userId]);
 
   const maps = useMemo(() => ({
       colaboradores: Object.fromEntries(db.colaboradores.map((x) => [x.id, x])),
@@ -376,8 +440,22 @@ function App() {
     if (field === 'statusExecucao' && value !== 'NÃO FOI POSSÍVEL REALIZAR') {
       payload.motivoNaoExecucao = null;
     }
-    await supabase.from('programacoes').update(payload).eq('id', itemId);
-    fetchDatabase(); 
+
+    // Update otimista: a interface responde na hora e só volta atrás se o
+    // servidor recusar (útil em conexão ruim de campo).
+    const anterior = db.programacoes;
+    setDb((atual) => ({
+      ...atual,
+      programacoes: atual.programacoes.map((p) => (p.id === itemId ? { ...p, ...payload } : p)),
+    }));
+
+    const res = await supabase.from('programacoes').update(payload).eq('id', itemId);
+    if (res.error) {
+      setDb((atual) => ({ ...atual, programacoes: anterior }));
+      reportarErro('Erro ao atualizar Programação', res.error);
+      return;
+    }
+    fetchDatabase();
   }
 
   function openProgramacaoModal(item = null) {
@@ -428,8 +506,9 @@ function App() {
       contratante: programacaoForm.contratante.toUpperCase(),
     };
 
-    if (!payload.id) delete payload.id; 
-    delete payload.perfis;
+    if (!payload.id) delete payload.id;
+    // 'perfis' não é mais injetado em cada programação pelo normalizeDb,
+    // então não precisa ser removido aqui.
     delete payload.tipoServico;
 
     let res;
@@ -440,8 +519,7 @@ function App() {
     }
 
     if (res.error) {
-      alert("Erro ao salvar Programação: " + res.error.message);
-      console.error(res.error);
+      reportarErro('Erro ao salvar Programação', res.error);
       return;
     }
 
@@ -470,7 +548,7 @@ function App() {
     }
 
     if (res.error) {
-      alert("Erro ao salvar Colaborador: " + res.error.message);
+      reportarErro('Erro ao salvar Colaborador', res.error);
       console.error(res.error);
       return;
     }
@@ -501,7 +579,7 @@ function App() {
     }
 
     if (res.error) {
-      alert("Erro ao salvar Veículo: " + res.error.message);
+      reportarErro('Erro ao salvar Veículo', res.error);
       console.error(res.error);
       return;
     }
@@ -527,7 +605,7 @@ function App() {
     }
 
     if (res.error) {
-      alert("Erro ao salvar Falta: " + res.error.message);
+      reportarErro('Erro ao salvar Falta', res.error);
       console.error(res.error);
       return;
     }
@@ -538,16 +616,18 @@ function App() {
 
   async function deleteProgramacao(itemId) {
     if (!confirm('Excluir esta programação?')) return;
-    const res = await supabase.from('programacoes').delete().eq('id', itemId);
-    if (res.error) alert("Erro ao excluir Programação: " + res.error.message);
-    else fetchDatabase();
+    const res = await supabase.from('programacoes').delete().eq('id', itemId).select();
+    if (res.error) return reportarErro('Erro ao excluir Programação', res.error);
+    if (!res.data?.length) return semPermissao('excluir esta programação');
+    fetchDatabase();
   }
 
   async function deleteColaborador(itemId) {
     if (!confirm('Excluir este colaborador? Todas as faltas atreladas a ele serão apagadas.')) return;
-    const res = await supabase.from('colaboradores').delete().eq('id', itemId);
-    if (res.error) alert("Erro ao excluir Colaborador: " + res.error.message);
-    else {
+    const res = await supabase.from('colaboradores').delete().eq('id', itemId).select();
+    if (res.error) return reportarErro('Erro ao excluir Colaborador', res.error);
+    if (!res.data?.length) return semPermissao('excluir este colaborador');
+    {
       fetchDatabase();
       if (activeDrawer?.type === 'colaborador' && activeDrawer.item.id === itemId) setActiveDrawer(null);
     }
@@ -558,7 +638,7 @@ function App() {
     const { error } = await supabase.rpc('deletar_usuario_completo', { uid: id });
 
     if (error) {
-      alert("Erro ao excluir usuário: " + error.message);
+      reportarErro('Erro ao excluir usuário', error);
     } else {
       alert("✅ Usuário e credenciais excluídos com sucesso!");
       fetchDatabase();
@@ -566,17 +646,24 @@ function App() {
   }
 
   async function enviarEmailReset(email) {
+   if (!email) {
+     alert('Este usuário não tem e-mail cadastrado.');
+     return;
+   }
    if (!confirm(`Enviar link de redefinição de senha para ${email}?`)) return;
-   const { error } = await supabase.auth.resetPasswordForEmail(email);
-   if (error) alert("Erro ao enviar e-mail: " + error.message);
+   const { error } = await supabase.auth.resetPasswordForEmail(email, {
+     redirectTo: window.location.origin,
+   });
+   if (error) reportarErro('Erro ao enviar e-mail', error);
    else alert("✅ E-mail de recuperação enviado com sucesso para " + email);
   }
 
   async function deleteVeiculo(itemId) {
     if (!confirm('Excluir este veículo?')) return;
-    const res = await supabase.from('veiculos').delete().eq('id', itemId);
-    if (res.error) alert("Erro ao excluir Veículo: " + res.error.message);
-    else {
+    const res = await supabase.from('veiculos').delete().eq('id', itemId).select();
+    if (res.error) return reportarErro('Erro ao excluir Veículo', res.error);
+    if (!res.data?.length) return semPermissao('excluir este veículo');
+    {
       fetchDatabase();
       if (activeDrawer?.type === 'veiculo' && activeDrawer.item.id === itemId) setActiveDrawer(null);
     }
@@ -584,17 +671,23 @@ function App() {
 
   async function deleteFalta(itemId) {
     if (!confirm('Excluir este registro de falta?')) return;
-    const res = await supabase.from('faltas').delete().eq('id', itemId);
-    if (res.error) alert("Erro ao excluir Falta: " + res.error.message);
-    else fetchDatabase();
+    const res = await supabase.from('faltas').delete().eq('id', itemId).select();
+    if (res.error) return reportarErro('Erro ao excluir Falta', res.error);
+    if (!res.data?.length) return semPermissao('excluir este registro de falta');
+    fetchDatabase();
   }
 
   async function aprovarUsuario(id, novoCargo) {
-   const res = await supabase.from('perfis').update({ cargo: novoCargo }).eq('id', id);
-   if (res.error) alert("Erro ao aprovar: " + res.error.message);
+   // Alterar 'cargo' direto na tabela é bloqueado pela RLS de propósito:
+   // quem valida se você é admin tem que ser o servidor, não o React.
+   const { error } = await supabase.rpc('definir_cargo_usuario', {
+     uid: id,
+     novo_cargo: novoCargo,
+   });
+   if (error) reportarErro('Erro ao alterar acesso', error);
    else {
-     alert("✅ Acesso liberado com sucesso!");
-     fetchDatabase(); 
+     alert("✅ Acesso atualizado com sucesso!");
+     fetchDatabase();
    }
   }
 
@@ -623,7 +716,7 @@ function App() {
               const { error } = await supabase.auth.updateUser({ password: novaSenha });
               
               if (error) {
-                alert("Erro ao salvar senha: " + error.message);
+                reportarErro('Erro ao salvar senha', error);
               } else {
                 alert("✅ Senha atualizada com sucesso!");
                 window.location.hash = ''; 
@@ -911,15 +1004,23 @@ function App() {
                       <option value="editor">Editor</option>
                       <option value="admin">Admin</option>
                     </select>
+                      <button
+                        className="ghost-btn full"
+                        style={{ borderRadius: '50px' }}
+                        onClick={() => enviarEmailReset(perfil.email)}
+                      >
+                        Enviar link de nova senha
+                      </button>
+
                       {perfil.id !== session?.user?.id && (
-                        <button 
-                          className="ghost-btn full" 
-                          style={{ 
-                            color: '#dc2626', 
-                            borderColor: '#fca5a5', 
+                        <button
+                          className="ghost-btn full"
+                          style={{
+                            color: '#dc2626',
+                            borderColor: '#fca5a5',
                             backgroundColor: '#fef2f2',
-                            borderRadius: '50px' 
-                          }} 
+                            borderRadius: '50px'
+                          }}
                           onClick={() => deletePerfil(perfil.id)}
                         >
                           Excluir Usuário
@@ -958,7 +1059,7 @@ function App() {
                 {programacoesDoDia.length === 0 ? (
                   <div className="empty-card">
                     <p>Nenhuma equipe programada para este dia.</p>
-                    {userRole === 'admin' || userRole === 'editor' && (
+                    {(userRole === 'admin' || userRole === 'editor') && (
                       <button className="ghost-btn" onClick={() => openProgramacaoModal()}>
                         Criar Programação
                       </button>
@@ -1033,11 +1134,25 @@ function App() {
                               return (
                                 <div className="compact-summary-block full-row">
                                   <span className="section-label">Registro de Tempos</span>
-                                  <div className="service-line compact-service-line" style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', color: '#059669', fontWeight: 'bold' }}>
+                                  <div
+                                    className="service-line compact-service-line"
+                                    style={{
+                                      display: 'flex',
+                                      flexWrap: 'wrap',
+                                      gap: '15px',
+                                      color: hours.incompleto ? '#b45309' : '#059669',
+                                      fontWeight: 'bold',
+                                    }}
+                                  >
                                     <span>🚗 In Itinere: {hours.inItinere}</span>
                                     <span>🚧 Na Obra: {hours.obra}</span>
                                     <span>⏱ Total: {hours.total}</span>
                                   </div>
+                                  {hours.incompleto && (
+                                    <div className="small-muted" style={{ color: '#b45309' }}>
+                                      Horários incompletos — preencha os seis registros para calcular.
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })()}
@@ -1754,7 +1869,7 @@ function MultiSelect({ label, items, selectedIds, labelKey, subtitleKey, subtitl
         ))}
         {filtrados.length === 0 && (
           <div style={{ padding: '15px', textAlign: 'center', color: '#64748b' }}>
-            Nenhum resultado para "{busca}"
+            Nenhum resultado para &quot;{busca}&quot;
           </div>
         )}
       </div>

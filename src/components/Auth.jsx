@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 export function Auth() {
 const [loading, setLoading] = useState(false);
 
 // Agora controlamos 3 ecrãs: 'login', 'cadastro' ou 'recuperar'
-const [view, setView] = useState('login'); 
+const [view, setView] = useState('login'); 
 
 // Nossos 3 campos
 const [email, setEmail] = useState('');
@@ -80,11 +80,11 @@ return (
         {view === 'cadastro' && (
           <label className="full-row" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
             <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#64748b' }}>Nome Completo</span>
-            <input 
-              type="text" 
-              value={nome} 
-              onChange={(e) => setNome(e.target.value)} 
-              required={view === 'cadastro'} 
+            <input 
+              type="text" 
+              value={nome} 
+              onChange={(e) => setNome(e.target.value)} 
+              required={view === 'cadastro'} 
               style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px' }}
             />
           </label>
@@ -92,11 +92,11 @@ return (
 
         <label className="full-row" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
           <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#64748b' }}>E-mail</span>
-          <input 
-            type="email" 
-            value={email} 
-            onChange={(e) => setEmail(e.target.value)} 
-            required 
+          <input 
+            type="email" 
+            value={email} 
+            onChange={(e) => setEmail(e.target.value)} 
+            required 
             style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px' }}
           />
         </label>
@@ -105,11 +105,11 @@ return (
         {view !== 'recuperar' && (
           <label className="full-row" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
             <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#64748b' }}>Senha</span>
-            <input 
-              type="password" 
-              value={password} 
-              onChange={(e) => setPassword(e.target.value)} 
-              required={view !== 'recuperar'} 
+            <input 
+              type="password" 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
+              required={view !== 'recuperar'} 
               style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px' }}
             />
           </label>
@@ -123,9 +123,9 @@ return (
       <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {/* Botão de Esqueci a Senha - Só aparece no Login */}
         {view === 'login' && (
-          <button 
+          <button 
             type="button"
-            className="ghost-btn full" 
+            className="ghost-btn full" 
             onClick={() => setView('recuperar')}
           >
             Esqueci a minha senha
@@ -133,9 +133,9 @@ return (
         )}
 
         {/* Botão para alternar entre Login e Cadastro */}
-        <button 
+        <button 
           type="button"
-          className="ghost-btn full" 
+          className="ghost-btn full" 
           onClick={() => setView(view === 'login' ? 'cadastro' : 'login')}
         >
           {view === 'login' ? 'Não tem conta? Cadastre-se' : 'Voltar para o Login'}
