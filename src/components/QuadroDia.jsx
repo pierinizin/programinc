@@ -26,6 +26,17 @@ const OPCOES_STATUS = [
   ['NÃO FOI POSSÍVEL REALIZAR', 'OUTROS', 'Não realizado · outros', 'selo-parado'],
 ];
 
+/* Os mesmos motivos do formulário de falta — o valor gravado é idêntico, só o
+   rótulo fica legível. Mudar aqui sem mudar lá cria dois vocabulários. */
+const MOTIVOS_FALTA = [
+  ['atestado_medico', 'Atestado médico'],
+  ['falta_justificada', 'Falta justificada'],
+  ['falta_injustificada', 'Falta injustificada'],
+  ['licenca', 'Licença'],
+  ['acidente_trabalho', 'Acidente de trabalho'],
+  ['outro', 'Outro'],
+];
+
 /* Primeiro + último nome. "José Carlos da Silva Souza" vira "José Souza":
    é como a equipe chama a pessoa, e é o que cabe no card. */
 export function nomeCurto(nome) {
@@ -60,6 +71,10 @@ export function QuadroDia({
   onNovaEquipe,
   onCopiar,
   onAlternarApontamento,
+  onAoPatio,
+  onTirarDoPatio,
+  onRegistrarFalta,
+  onRemoverFalta,
   onMudarStatus,
   podeMudarStatus,
   podeExcluir,
@@ -75,6 +90,7 @@ export function QuadroDia({
   const [nova, setNova] = useState({ tipoEquipe: '', cidade: '', contratante: '' });
   const [criando, setCriando] = useState(false);
   const [menuStatus, setMenuStatus] = useState(null);
+  const [pedindoFalta, setPedindoFalta] = useState(null);
 
   /* Um menu aberto que não fecha ao clicar fora vira armadilha no toque. */
   useEffect(() => {
@@ -132,6 +148,14 @@ export function QuadroDia({
     return s;
   }, [db.faltas, selectedDate]);
 
+  const noPatio = useMemo(() => {
+    const s = new Set();
+    (db.patio || []).forEach((p) => {
+      if (p.data === selectedDate) s.add(p.colaboradorId);
+    });
+    return s;
+  }, [db.patio, selectedDate]);
+
   const equipesDaPessoa = useMemo(() => {
     const m = {};
     equipes.forEach((eq) => {
@@ -153,8 +177,11 @@ export function QuadroDia({
   }, [equipes]);
 
   const pessoasLivres = useMemo(
-    () => db.colaboradores.filter((c) => c.status !== 'inativo' && !equipesDaPessoa[c.id]),
-    [db.colaboradores, equipesDaPessoa]
+    () => db.colaboradores.filter(
+      (c) => c.status !== 'inativo' && !equipesDaPessoa[c.id]
+        && !noPatio.has(c.id) && !faltosos.has(c.id)
+    ),
+    [db.colaboradores, equipesDaPessoa, noPatio, faltosos]
   );
   const veiculosLivres = useMemo(
     () => db.veiculos.filter((v) => v.status !== 'Inativo' && !equipesDoVeiculo[v.id]),
@@ -194,9 +221,28 @@ export function QuadroDia({
      aviso — foi a sua escolha. Bloqueio de verdade só em equipe cheia
      ou item que já está naquela mesma equipe.
      --------------------------------------------------------------- */
-  function validar(arrasto, equipe, ehNova) {
+  function validar(arrasto, equipe, ehNova, zona) {
     if (!arrasto) return { ok: 'nao', msg: '' };
     const { tipo, item } = arrasto;
+
+    // Pátio e faltas são só de gente. Veículo não falta nem fica de sobreaviso.
+    if (zona) {
+      if (tipo !== 'pessoa') return { ok: 'nao', msg: 'só pessoas' };
+      if (zona === 'patio') {
+        if (noPatio.has(item.id)) return { ok: 'nao', msg: 'já está no pátio' };
+        if (faltosos.has(item.id)) return { ok: 'nao', msg: 'tem falta hoje' };
+      } else {
+        if (faltosos.has(item.id)) return { ok: 'nao', msg: 'já tem falta hoje' };
+        if (noPatio.has(item.id)) return { ok: 'nao', msg: 'está no pátio' };
+      }
+      // Estar numa equipe e ir para o pátio/falta é contraditório, mas pode ser
+      // exatamente a correção que a pessoa quer fazer. Avisa, não bloqueia.
+      const emEquipe = equipesDaPessoa[item.id];
+      if (emEquipe && emEquipe.length) {
+        return { ok: 'aviso', msg: `está em ${emEquipe[0].cidade}` };
+      }
+      return { ok: 'sim', msg: zona === 'patio' ? 'fica no pátio' : 'registrar falta' };
+    }
 
     if (tipo === 'veiculo') {
       if (equipe && (equipe.veiculoIds || []).includes(item.id)) {
@@ -259,7 +305,8 @@ export function QuadroDia({
     const sob = document.elementFromPoint(x, y);
     if (el) el.style.visibility = 'visible';
     if (!sob || !sob.closest) return null;
-    return sob.closest('[data-equipe]') || sob.closest('[data-nova]');
+    return sob.closest('[data-equipe]') || sob.closest('[data-nova]')
+      || sob.closest('[data-zona]');
   }
 
   function limparAlvo() {
@@ -314,8 +361,9 @@ export function QuadroDia({
     if (alvo && alvo !== st.alvo) {
       st.alvo = alvo;
       const ehNova = alvo.hasAttribute('data-nova');
-      const eq = ehNova ? null : equipes.find((e) => e.id === alvo.dataset.equipe);
-      const v = validar(st.arrasto, eq, ehNova);
+      const zona = alvo.dataset.zona || null;
+      const eq = (ehNova || zona) ? null : equipes.find((e) => e.id === alvo.dataset.equipe);
+      const v = validar(st.arrasto, eq, ehNova, zona);
       alvo.classList.add(v.ok === 'nao' ? 'alvo-nao' : 'alvo');
       pintarFantasma(v, st.arrasto);
     }
@@ -330,8 +378,17 @@ export function QuadroDia({
 
     if (alvo) {
       const ehNova = alvo.hasAttribute('data-nova');
-      const eq = ehNova ? null : equipes.find((e) => e.id === alvo.dataset.equipe);
-      const v = validar(arrasto, eq, ehNova);
+      const zona = alvo.dataset.zona || null;
+      const eq = (ehNova || zona) ? null : equipes.find((e) => e.id === alvo.dataset.equipe);
+      const v = validar(arrasto, eq, ehNova, zona);
+
+      if (v.ok !== 'nao' && zona) {
+        encerrar();
+        if (zona === 'patio') onAoPatio(arrasto.item.id);
+        // falta exige motivo: pergunta antes de gravar
+        else setPedindoFalta(arrasto.item);
+        return;
+      }
 
       if (v.ok !== 'nao') {
         if (ehNova && arrasto.tipo === 'pessoa') {
@@ -773,6 +830,97 @@ export function QuadroDia({
           )}
         </div>
       </div>
+
+      {/* Pátio e faltas: os dois destinos de quem não vai para obra. Ficam
+          embaixo do quadro e recebem arraste igual às equipes. */}
+      <div className="zonas">
+        <div className="zona" data-zona="patio">
+          <div className="zona-topo">
+            <span className="zona-rot">Pátio</span>
+            <span className="small-muted">
+              {noPatio.size === 0 ? 'arraste quem ficou' : `${noPatio.size} no pátio`}
+            </span>
+          </div>
+          <div className="zona-gente">
+            {[...noPatio].map((id) => maps.colaboradores[id]).filter(Boolean).map((p) => (
+              <button
+                type="button"
+                key={p.id}
+                className="membro-chip"
+                title={podeEditar ? `${p.nome} — clique duplo para tirar` : p.nome}
+                onDoubleClick={() => podeEditar && onTirarDoPatio(p.id)}
+              >
+                <Avatar nome={p.nome} url={p.fotoUrl} tamanho="small" />
+                <span className="membro-nome">{nomeCurto(p.nome)}</span>
+              </button>
+            ))}
+            {noPatio.size === 0 && <span className="zona-vazia">solte alguém aqui</span>}
+          </div>
+        </div>
+
+        <div className="zona zona-falta" data-zona="falta">
+          <div className="zona-topo">
+            <span className="zona-rot">Faltas</span>
+            <span className="small-muted">
+              {faltosos.size === 0 ? 'arraste quem não veio' : `${faltosos.size} com falta`}
+            </span>
+          </div>
+          <div className="zona-gente">
+            {[...faltosos].map((id) => maps.colaboradores[id]).filter(Boolean).map((p) => {
+              const reg = (db.faltas || []).find(
+                (f) => f.data === selectedDate && f.colaboradorId === p.id
+              );
+              return (
+                <button
+                  type="button"
+                  key={p.id}
+                  className="membro-chip"
+                  title={`${p.nome}${reg?.motivo ? ` — ${reg.motivo.replace(/_/g, ' ')}` : ''}`
+                    + (podeEditar ? ' — clique duplo para tirar' : '')}
+                  onDoubleClick={() => podeEditar && onRemoverFalta(p.id)}
+                >
+                  <Avatar nome={p.nome} url={p.fotoUrl} tamanho="small" />
+                  <span className="membro-nome">{nomeCurto(p.nome)}</span>
+                </button>
+              );
+            })}
+            {faltosos.size === 0 && <span className="zona-vazia">solte alguém aqui</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* O motivo é obrigatório no banco, então perguntamos em vez de inventar. */}
+      {pedindoFalta && (
+        <div className="modal-backdrop" onClick={() => setPedindoFalta(null)}>
+          <div className="modal modal-motivo" onClick={(e) => e.stopPropagation()}>
+            <div className="card-header between">
+              <div>
+                <strong>Falta de {pedindoFalta.nome}</strong>
+                <p className="small-muted" style={{ margin: 0 }}>
+                  {selectedDate.split('-').reverse().join('/')} · escolha o motivo
+                </p>
+              </div>
+              <button className="icon-btn" onClick={() => setPedindoFalta(null)} aria-label="Fechar">×</button>
+            </div>
+            <div className="lista-motivos">
+              {MOTIVOS_FALTA.map(([valor, rotulo]) => (
+                <button
+                  key={valor}
+                  type="button"
+                  className="selo-opc"
+                  onClick={() => {
+                    const quem = pedindoFalta;
+                    setPedindoFalta(null);
+                    onRegistrarFalta(quem.id, valor);
+                  }}
+                >
+                  {rotulo}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div id="fantasma" ref={fantasmaRef}>
         <span className="veredito" />

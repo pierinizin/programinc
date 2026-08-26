@@ -112,6 +112,7 @@ function normalizeDb(data) {
      ? [...data.veiculos].sort((a, b) => String(a.placa || '').localeCompare(String(b.placa || ''), 'pt-BR'))
      : [],
    faltas: Array.isArray(data?.faltas) ? data.faltas : [],
+   patio: Array.isArray(data?.patio) ? data.patio : [],
    perfis: Array.isArray(data?.perfis) ? data.perfis : [],
    programacoes: Array.isArray(data?.programacoes)
      ? data.programacoes.map((item) => ({
@@ -266,7 +267,7 @@ function App() {
   const [isRecovering, setIsRecovering] = useState(false);
   const [novaSenha, setNovaSenha] = useState('');
   
-  const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [], perfis: [] });
+  const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [], patio: [], perfis: [] });
   const [page, setPage] = useState('programacao'); 
   const [selectedDate, setSelectedDate] = useState(today());
   const [search, setSearch] = useState('');
@@ -290,17 +291,18 @@ function App() {
   };
 
   const fetchDatabase = async () => {
-    const [resCols, resVeics, resProgs, resFaltas, resPerfis] = await Promise.all([
+    const [resCols, resVeics, resProgs, resFaltas, resPatio, resPerfis] = await Promise.all([
       supabase.from('colaboradores').select('*'),
       supabase.from('veiculos').select('*'),
       supabase.from('programacoes').select('*'),
       supabase.from('faltas').select('*'),
+      supabase.from('patio').select('*'),
       supabase.from('perfis').select('*')
     ]);
 
     // Com RLS ligada, uma tabela sem permissão volta com error e data null.
     // Registramos no console em vez de silenciar tudo como lista vazia.
-    [resCols, resVeics, resProgs, resFaltas, resPerfis].forEach((res) => {
+    [resCols, resVeics, resProgs, resFaltas, resPatio, resPerfis].forEach((res) => {
       if (res?.error) console.error('Erro ao carregar dados:', res.error.message);
     });
 
@@ -318,6 +320,7 @@ function App() {
       veiculos: resVeics.data || [],
       programacoes: resProgs.data || [],
       faltas: resFaltas.data || [],
+      patio: resPatio?.data || [],
       perfis: resPerfis?.data || []
     }));
   };
@@ -371,7 +374,7 @@ function App() {
     };
 
     const canal = supabase.channel('mudancas-incovia');
-    ['colaboradores', 'veiculos', 'programacoes', 'faltas', 'perfis'].forEach((table) => {
+    ['colaboradores', 'veiculos', 'programacoes', 'faltas', 'patio', 'perfis'].forEach((table) => {
       canal.on('postgres_changes', { event: '*', schema: 'public', table }, agendarRefetch);
     });
     canal.subscribe();
@@ -1057,6 +1060,57 @@ function App() {
     return true;
   }
 
+  /* ------------------------------------------------------------------
+     Pátio e faltas pelo arraste do quadro.
+     Pátio = veio trabalhar e não saiu para obra. Falta = não veio. São
+     tabelas separadas justamente para não misturar as duas contagens.
+     ------------------------------------------------------------------ */
+  async function adicionarAoPatio(colaboradorId) {
+    if (db.patio.some((p) => p.data === selectedDate && p.colaboradorId === colaboradorId)) return;
+
+    const res = await supabase.from('patio')
+      .insert([{ colaboradorId, data: selectedDate }]).select();
+    if (res.error) return reportarErro('Erro ao mandar para o pátio', res.error);
+    if (!res.data?.length) return semPermissao('registrar pátio');
+    fetchDatabase();
+  }
+
+  async function removerDoPatio(colaboradorId) {
+    const reg = db.patio.find(
+      (p) => p.data === selectedDate && p.colaboradorId === colaboradorId
+    );
+    if (!reg) return;
+    const res = await supabase.from('patio').delete().eq('id', reg.id).select();
+    if (res.error) return reportarErro('Erro ao tirar do pátio', res.error);
+    if (!res.data?.length) return semPermissao('tirar do pátio');
+    fetchDatabase();
+  }
+
+  // 'motivo' é NOT NULL no banco, então quem chama precisa escolher — a tela
+  // pergunta no momento do drop em vez de gravar um motivo inventado.
+  async function registrarFalta(colaboradorId, motivo) {
+    if (db.faltas.some((f) => f.data === selectedDate && f.colaboradorId === colaboradorId)) return;
+
+    const res = await supabase.from('faltas')
+      .insert([{ colaboradorId, data: selectedDate, motivo, observacao: '' }]).select();
+    if (res.error) return reportarErro('Erro ao registrar falta', res.error);
+    if (!res.data?.length) return semPermissao('registrar faltas');
+    fetchDatabase();
+  }
+
+  async function removerFalta(colaboradorId) {
+    const reg = db.faltas.find(
+      (f) => f.data === selectedDate && f.colaboradorId === colaboradorId
+    );
+    if (!reg) return;
+    const res = await supabase.from('faltas').delete().eq('id', reg.id).select();
+    if (res.error) return reportarErro('Erro ao remover falta', res.error);
+    // Apagar falta é só de admin no security.sql — dizer isso é melhor do que
+    // o botão parecer quebrado.
+    if (!res.data?.length) return semPermissao('remover faltas');
+    fetchDatabase();
+  }
+
   async function deleteColaborador(itemId) {
     if (!confirm('Excluir este colaborador? Todas as faltas atreladas a ele serão apagadas.')) return;
     const res = await supabase.from('colaboradores').delete().eq('id', itemId).select();
@@ -1533,6 +1587,10 @@ function App() {
                   onNovaEquipe={() => openProgramacaoModal()}
                   onCopiar={copiarProgramacoes}
                   onAlternarApontamento={alternarApontamento}
+                  onAoPatio={adicionarAoPatio}
+                  onTirarDoPatio={removerDoPatio}
+                  onRegistrarFalta={registrarFalta}
+                  onRemoverFalta={removerFalta}
                   onMudarStatus={mudarStatusEquipe}
                   podeMudarStatus={userRole === 'admin'}
                   podeExcluir={userRole === 'admin'}

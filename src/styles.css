@@ -1546,6 +1546,55 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 
 /* --------------------------- diálogo de cópia --------------------------- */
 .modal-copia { width: min(500px, 100%); }
+.modal-motivo { width: min(380px, 100%); }
+.lista-motivos { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; }
+.lista-motivos .selo-opc { font-size: 13.5px; padding: 9px 11px; }
+
+/* ---- Pátio e faltas: destinos de arraste no pé do quadro ---- */
+.zonas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 10px;
+  border-top: 1px solid var(--borda);
+  background: var(--asfalto-alto);
+}
+.zona {
+  border: 1.5px dashed var(--borda-forte);
+  border-radius: var(--r-sm);
+  padding: 9px 11px;
+  background: var(--superficie);
+  min-height: 76px;
+  transition: border-color .12s, background .12s;
+}
+.zona.alvo { border-color: var(--ok-texto); background: var(--ok-fundo); border-style: solid; }
+.zona.alvo-nao { border-color: var(--erro-texto); background: var(--erro-fundo); border-style: solid; }
+
+.zona-topo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.zona-rot {
+  font-family: var(--fonte-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--tinta);
+}
+/* falta é ausência, não pendência: vermelho, seguindo a mesma semântica de
+   cor usada nos selos de status */
+.zona-falta .zona-rot { color: var(--erro-texto); }
+
+.zona-gente { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.zona-vazia { font-size: 11.5px; color: var(--tinta-fraca); font-style: italic; }
+
+@media (max-width: 720px) {
+  .zonas { grid-template-columns: 1fr; }
+}
 .opcoes { display: flex; flex-direction: column; gap: 6px; margin-top: 7px; }
 .opcao {
   display: flex;
