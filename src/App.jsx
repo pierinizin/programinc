@@ -1022,6 +1022,41 @@ function App() {
     fetchDatabase();
   }
 
+  /* Exclusão em lote a partir da seleção do quadro (a mesma dos checkboxes que
+     já servem para copiar). Some de vez, então o aviso lista o que vai embora
+     em vez de perguntar "tem certeza?" sobre um número solto. */
+  async function excluirProgramacoes(lista) {
+    if (!lista.length) return false;
+
+    const nomes = lista.slice(0, 6)
+      .map((e) => `· ${e.tipoEquipe || 'Sem tipo'} — ${e.cidade || 'sem cidade'}`)
+      .join('\n');
+    const resto = lista.length > 6 ? `\n· e mais ${lista.length - 6}` : '';
+    const ok = window.confirm(
+      `Excluir ${lista.length} ${lista.length === 1 ? 'programação' : 'programações'}?\n\n`
+      + `${nomes}${resto}\n\nEsta ação não pode ser desfeita.`
+    );
+    if (!ok) return false;
+
+    const ids = lista.map((e) => e.id);
+    const res = await supabase.from('programacoes').delete().in('id', ids).select();
+    if (res.error) { reportarErro('Erro ao excluir programações', res.error); return false; }
+
+    const apagadas = res.data?.length || 0;
+    if (!apagadas) { semPermissao('excluir programações'); return false; }
+    // Apagar menos do que foi pedido quase sempre é RLS barrando algumas
+    // linhas. Dizer o número evita a impressão de que sumiu tudo.
+    if (apagadas < ids.length) {
+      reportarErro(
+        'Exclusão parcial',
+        { message: `${apagadas} de ${ids.length} foram excluídas. `
+          + 'As demais podem estar fora da sua permissão.' }
+      );
+    }
+    fetchDatabase();
+    return true;
+  }
+
   async function deleteColaborador(itemId) {
     if (!confirm('Excluir este colaborador? Todas as faltas atreladas a ele serão apagadas.')) return;
     const res = await supabase.from('colaboradores').delete().eq('id', itemId).select();
@@ -1500,6 +1535,8 @@ function App() {
                   onAlternarApontamento={alternarApontamento}
                   onMudarStatus={mudarStatusEquipe}
                   podeMudarStatus={userRole === 'admin'}
+                  podeExcluir={userRole === 'admin'}
+                  onExcluir={excluirProgramacoes}
                 />
 
                 {programacoesDoDia.some((p) => p.id === expandedProgramacaoId) && (

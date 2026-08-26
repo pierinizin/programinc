@@ -62,6 +62,8 @@ export function QuadroDia({
   onAlternarApontamento,
   onMudarStatus,
   podeMudarStatus,
+  podeExcluir,
+  onExcluir,
 }) {
   const [aba, setAba] = useState('pessoas');
   const [busca, setBusca] = useState('');
@@ -413,6 +415,19 @@ export function QuadroDia({
             <button className="chip-btn" onClick={() => setSelecionadas({})}>Limpar</button>
             {podeEditar && (
               <button className="chip-btn" onClick={abrirCopia}>Copiar para outro dia</button>
+            )}
+            {podeExcluir && (
+              <button
+                className="chip-btn perigo"
+                onClick={async () => {
+                  // só limpa a seleção se a exclusão aconteceu: desistir no
+                  // aviso não pode custar as marcações já feitas.
+                  const feito = await onExcluir(equipes.filter((e) => selecionadas[e.id]));
+                  if (feito) setSelecionadas({});
+                }}
+              >
+                Excluir
+              </button>
             )}
           </div>
         </div>

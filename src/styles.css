@@ -571,6 +571,11 @@ button { cursor: pointer; color: inherit; }
 }
 .chip-btn:hover { border-color: var(--borda-forte); color: var(--tinta); }
 
+/* Ação destrutiva na barra de seleção. Vermelha só na borda e no texto: um
+   botão vermelho cheio ao lado de "Copiar" atrai o clique errado. */
+.chip-btn.perigo { color: var(--erro-texto); border-color: var(--erro-texto); background: transparent; }
+.chip-btn.perigo:hover { background: var(--erro-fundo); color: var(--erro-texto); }
+
 .service-line {
   font-weight: 500;
   color: var(--tinta-media);
@@ -1057,6 +1062,15 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   color: #16190C;
   font-weight: 600;
 }
+/* Sobre o amarelo da barra, o vermelho do tema some. Aqui a ação destrutiva
+   inverte — fundo branco e texto vermelho — para não virar mais um botão
+   igual aos outros dois ao lado. */
+.barra-sel .chip-btn.perigo {
+  background: #FFF;
+  border-color: #B0181D;
+  color: #B0181D;
+}
+.barra-sel .chip-btn.perigo:hover { background: #B0181D; color: #FFF; }
 .barra-sel .chip-btn:hover { background: rgba(0,0,0,.22); color: #16190C; }
 
 /* As duas colunas rolam por conta própria e o quadro não cresce junto com o
