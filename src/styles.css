@@ -29,8 +29,8 @@
 
   --faixa:        #FFC72C;
   --faixa-fundo:  #3A2F0E;
-  --obra:         #FF6A13;
-  --obra-fundo:   #3B2011;
+  --obra:         #3B9BEE;
+  --obra-fundo:   #10263B;
   --ok:           #35C07B;
   --ok-fundo:     #10301F;
   --erro:         #F0575C;
@@ -38,7 +38,7 @@
 
   /* versões legíveis como TEXTO */
   --faixa-texto:  #FFC72C;
-  --obra-texto:   #FF8A44;
+  --obra-texto:   #5CB3F5;
   --ok-texto:     #4FD494;
   --erro-texto:   #FF7A7E;
 
@@ -82,12 +82,12 @@
     --tinta-fraca:  #838E97;
 
     --faixa-fundo:  #FFF3D0;
-    --obra-fundo:   #FFE9DC;
+    --obra-fundo:   #DCEBFA;
     --ok-fundo:     #DDF3E7;
     --erro-fundo:   #FDE3E4;
 
     --faixa-texto:  #7A5600;
-    --obra-texto:   #A63C00;
+    --obra-texto:   #10508C;
     --ok-texto:     #10693F;
     --erro-texto:   #B0181D;
 
