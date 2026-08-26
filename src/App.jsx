@@ -3,6 +3,7 @@ import { supabase } from './lib/supabase';
 import { Auth } from './components/Auth';
 import { Avatar } from './components/Avatar';
 import { QuadroDia } from './components/QuadroDia';
+import { Apontamentos } from './components/Apontamentos';
 import { prepararFoto, enviarFoto, assinarFotos } from './lib/fotos';
 
 import {
@@ -127,6 +128,7 @@ function normalizeDb(data) {
          horarioSaida: item.horarioSaida || '18:00',
          membroIds: Array.isArray(item.membroIds) ? item.membroIds : [],
          veiculoIds: Array.isArray(item.veiculoIds) ? item.veiculoIds : [],
+         apontamentoSeriais: Array.isArray(item.apontamentoSeriais) ? item.apontamentoSeriais : [],
        }))
      : [],
  };
@@ -677,6 +679,119 @@ function App() {
     fetchDatabase();
   }
 
+  /* ------------------------------------------------------------------
+     Conciliação com o Kartado. Guardamos só a marcação — o boletim em si
+     não vai para o banco, foi a sua escolha. Quatro colunas dão o que a
+     medição precisa: se foi lançado, quais seriais, quando e por quem.
+     ------------------------------------------------------------------ */
+  async function lancarApontamento(programacao, ap) {
+    const atuais = Array.isArray(programacao.apontamentoSeriais)
+      ? programacao.apontamentoSeriais : [];
+    if (atuais.includes(ap.serial)) return;
+
+    const patch = {
+      apontamentoSeriais: [...atuais, ap.serial],
+      apontamentoLancado: true,
+      apontamentoEm: new Date().toISOString(),
+      apontamentoPor: session?.user?.id || null,
+    };
+    const res = await supabase
+      .from('programacoes').update(patch).eq('id', programacao.id).select();
+
+    if (res.error) return reportarErro('Erro ao lançar apontamento', res.error);
+    if (!res.data?.length) return semPermissao('lançar apontamentos');
+    fetchDatabase();
+  }
+
+  /* Checkbox de apontamento no quadro do dia.
+     A conciliação do Kartado marca sozinha; aqui é a marcação manual, para o
+     serviço que foi executado mas não veio no boletim (ou ainda não veio).
+     Por isso 'apontamentoLancado' é independente de 'apontamentoSeriais':
+     marcado sem serial = lançado na mão. */
+  async function alternarApontamento(programacao) {
+    const marcar = !programacao.apontamentoLancado;
+    const seriais = programacao.apontamentoSeriais || [];
+
+    // Desmarcar uma equipe conciliada desfaz o vínculo com o boletim. Isso some
+    // da tela de Apontamentos, então não pode acontecer por clique distraído.
+    if (!marcar && seriais.length) {
+      const ok = window.confirm(
+        `Esta equipe está vinculada ao boletim do Kartado (${seriais.join(', ')}).\n\n`
+        + 'Desmarcar desfaz esse vínculo e o apontamento volta para a fila de '
+        + 'conciliação. Continuar?'
+      );
+      if (!ok) return;
+    }
+
+    const patch = marcar
+      ? {
+        apontamentoLancado: true,
+        apontamentoEm: new Date().toISOString(),
+        apontamentoPor: session?.user?.id || null,
+      }
+      : {
+        apontamentoLancado: false,
+        apontamentoSeriais: [],
+        apontamentoEm: null,
+        apontamentoPor: null,
+      };
+
+    const res = await supabase
+      .from('programacoes').update(patch).eq('id', programacao.id).select();
+
+    if (res.error) return reportarErro('Erro ao marcar apontamento', res.error);
+    if (!res.data?.length) return semPermissao('marcar apontamentos');
+    fetchDatabase();
+  }
+
+  async function desfazerApontamento(programacao, ap) {
+    const restantes = (programacao.apontamentoSeriais || [])
+      .filter((s) => s !== ap.serial);
+    const patch = {
+      apontamentoSeriais: restantes,
+      apontamentoLancado: restantes.length > 0,
+      apontamentoEm: restantes.length ? programacao.apontamentoEm : null,
+      apontamentoPor: restantes.length ? programacao.apontamentoPor : null,
+    };
+    const res = await supabase
+      .from('programacoes').update(patch).eq('id', programacao.id).select();
+
+    if (res.error) return reportarErro('Erro ao desfazer lançamento', res.error);
+    if (!res.data?.length) return semPermissao('desfazer lançamentos');
+    fetchDatabase();
+  }
+
+  /* Troca de status direto no quadro, sem abrir a equipe.
+     Status e motivo vão juntos porque 'NÃO FOI POSSÍVEL REALIZAR' sem motivo é
+     um estado que o próprio formulário recusa — não dá para gravar pela metade. */
+  async function mudarStatusEquipe(programacao, statusExecucao, motivo = null) {
+    if (programacao.statusExecucao === statusExecucao
+      && (programacao.motivoNaoExecucao || null) === motivo) return;
+
+    const payload = {
+      statusExecucao,
+      motivoNaoExecucao: statusExecucao === 'NÃO FOI POSSÍVEL REALIZAR' ? motivo : null,
+    };
+
+    const anterior = db.programacoes;
+    setDb((atual) => ({
+      ...atual,
+      programacoes: atual.programacoes.map(
+        (p) => (p.id === programacao.id ? { ...p, ...payload } : p)
+      ),
+    }));
+
+    const res = await supabase
+      .from('programacoes').update(payload).eq('id', programacao.id).select();
+
+    if (res.error || !res.data?.length) {
+      setDb((atual) => ({ ...atual, programacoes: anterior }));
+      if (res.error) return reportarErro('Erro ao mudar o status', res.error);
+      return semPermissao('mudar o status');
+    }
+    fetchDatabase();
+  }
+
   async function updateProgramacaoField(itemId, field, value) {
     const payload = { [field]: value };
     if (field === 'statusExecucao' && value !== 'NÃO FOI POSSÍVEL REALIZAR') {
@@ -1075,6 +1190,9 @@ function App() {
              <NavButton active={page === 'veiculos'} onClick={() => changePage('veiculos')}>
                Veículos
              </NavButton>
+             <NavButton active={page === 'apontamentos'} onClick={() => changePage('apontamentos')}>
+               Apontamentos
+             </NavButton>
              <NavButton active={page === 'historico'} onClick={() => changePage('historico')}>
                Histórico
              </NavButton>
@@ -1175,6 +1293,24 @@ function App() {
 
         <div className={`content-grid ${activeDrawer ? 'with-drawer' : ''}`}>
           <section className="content-column">
+
+            {page === 'apontamentos' && (
+              <>
+                <div className="page-head">
+                  <div>
+                    <h2>Apontamentos</h2>
+                    <p>Importe o boletim do Kartado e concilie com as equipes</p>
+                  </div>
+                </div>
+                <Apontamentos
+                  db={db}
+                  maps={maps}
+                  podeEditar={userRole === 'admin' || userRole === 'editor'}
+                  onLancar={lancarApontamento}
+                  onDesfazer={desfazerApontamento}
+                />
+              </>
+            )}
 
             {page === 'calendario' && (
               <>
@@ -1361,6 +1497,9 @@ function App() {
                   }
                   onNovaEquipe={() => openProgramacaoModal()}
                   onCopiar={copiarProgramacoes}
+                  onAlternarApontamento={alternarApontamento}
+                  onMudarStatus={mudarStatusEquipe}
+                  podeMudarStatus={userRole === 'admin'}
                 />
 
                 {programacoesDoDia.some((p) => p.id === expandedProgramacaoId) && (

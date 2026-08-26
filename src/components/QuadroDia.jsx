@@ -1,12 +1,39 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
 
 const MAX_EQUIPE = 10;
-const AVATARES_VISIVEIS = 4;
 
-/* Com até 12 equipes e 10 pessoas cada, mostrar todos os rostos daria uma
-   centena de avatares na tela. Mostramos quatro e um contador; o encarregado
-   sai da pilha porque é a chave de leitura da equipe. */
+/* O texto do tooltip diz de onde veio a marcação — reconhecida no boletim ou
+   posta na mão. Numa divergência de medição essa diferença é o que importa. */
+function rotuloApontamento(eq) {
+  const seriais = eq.apontamentoSeriais || [];
+  if (!eq.apontamentoLancado) return 'Marcar apontamento como lançado';
+  if (seriais.length) {
+    return `Apontamento lançado · reconhecido no Kartado (${seriais.join(', ')})`;
+  }
+  return 'Apontamento lançado manualmente';
+}
+
+/* Opções do menu de status. 'Não realizado' aparece já desdobrado por motivo:
+   um clique grava status e motivo juntos, em vez de deixar o registro num
+   estado que o formulário completo recusaria. */
+const OPCOES_STATUS = [
+  ['EXECUTANDO', null, 'Em campo', 'selo-obra'],
+  ['CONCLUÍDO', null, 'Concluído', 'selo-ok'],
+  ['NÃO FOI POSSÍVEL REALIZAR', 'CHUVA', 'Não realizado · chuva', 'selo-parado'],
+  ['NÃO FOI POSSÍVEL REALIZAR', 'MANUTENÇÃO', 'Não realizado · manutenção', 'selo-parado'],
+  ['NÃO FOI POSSÍVEL REALIZAR', 'VIAGEM', 'Não realizado · viagem', 'selo-parado'],
+  ['NÃO FOI POSSÍVEL REALIZAR', 'OUTROS', 'Não realizado · outros', 'selo-parado'],
+];
+
+/* Primeiro + último nome. "José Carlos da Silva Souza" vira "José Souza":
+   é como a equipe chama a pessoa, e é o que cabe no card. */
+export function nomeCurto(nome) {
+  const partes = String(nome || '').trim().split(/\s+/).filter(Boolean);
+  if (!partes.length) return '';
+  if (partes.length === 1) return partes[0];
+  return `${partes[0]} ${partes[partes.length - 1]}`;
+}
 
 function seloDe(item) {
   if (item.statusExecucao === 'EXECUTANDO') return ['selo-obra', 'Em campo'];
@@ -32,6 +59,9 @@ export function QuadroDia({
   onAbrirEquipe,
   onNovaEquipe,
   onCopiar,
+  onAlternarApontamento,
+  onMudarStatus,
+  podeMudarStatus,
 }) {
   const [aba, setAba] = useState('pessoas');
   const [busca, setBusca] = useState('');
@@ -42,6 +72,22 @@ export function QuadroDia({
   const [estrategia, setEstrategia] = useState('fila');
   const [nova, setNova] = useState({ tipoEquipe: '', cidade: '', contratante: '' });
   const [criando, setCriando] = useState(false);
+  const [menuStatus, setMenuStatus] = useState(null);
+
+  /* Um menu aberto que não fecha ao clicar fora vira armadilha no toque. */
+  useEffect(() => {
+    if (!menuStatus) return undefined;
+    const fechar = (ev) => {
+      if (!ev.target.closest || !ev.target.closest('.selo-menu')) setMenuStatus(null);
+    };
+    const tecla = (ev) => { if (ev.key === 'Escape') setMenuStatus(null); };
+    document.addEventListener('pointerdown', fechar);
+    document.addEventListener('keydown', tecla);
+    return () => {
+      document.removeEventListener('pointerdown', fechar);
+      document.removeEventListener('keydown', tecla);
+    };
+  }, [menuStatus]);
 
   const equipes = useMemo(
     () => db.programacoes.filter((p) => p.data === selectedDate),
@@ -447,8 +493,6 @@ export function QuadroDia({
               .filter((id) => id !== eq.encarregadoId)
               .map((id) => maps.colaboradores[id])
               .filter(Boolean);
-            const mostrar = membros.slice(0, AVATARES_VISIVEIS);
-            const resto = membros.length - mostrar.length;
             const total = membros.length + (lider ? 1 : 0);
             const [classeSelo, textoSelo] = seloDe(eq);
 
@@ -505,7 +549,9 @@ export function QuadroDia({
                         <Avatar nome={lider.nome} url={lider.fotoUrl} />
                         <span>
                           <span className="rot">Encarregado</span>
-                          <span className="nome-lider">{lider.apelido || lider.nome}</span>
+                          <span className="nome-lider" title={lider.nome}>
+                            {nomeCurto(lider.nome)}
+                          </span>
                         </span>
                       </>
                     ) : (
@@ -516,32 +562,104 @@ export function QuadroDia({
                     )}
                   </span>
 
-                  <span className="pilha">
-                    {mostrar.length === 0 && <span className="vaga" title="Sem integrantes" />}
-                    {mostrar.map((p) => (
+                  <span className="contagem">
+                    <b>{total}</b>/{MAX_EQUIPE}
+                  </span>
+                </span>
+
+                {/* Integrantes com nome. Linha própria porque com dez pessoas
+                    nenhuma quantidade de aperto faz caber na linha de cima —
+                    e ler quem está na equipe é o que mais se faz neste quadro. */}
+                <span className="eq-nomes">
+                  {membros.length === 0 ? (
+                    <span className="sem-membros">
+                      {lider ? 'só o encarregado' : 'equipe vazia'}
+                    </span>
+                  ) : (
+                    membros.map((p) => (
                       <button
                         type="button"
                         key={p.id}
-                        className="pilha-item"
+                        className="membro-chip"
                         title={podeEditar ? `${p.nome} — clique duplo para tirar` : p.nome}
                         onDoubleClick={() => podeEditar && onRemoverMembro(eq, p.id)}
                       >
                         <Avatar nome={p.nome} url={p.fotoUrl} tamanho="small" />
+                        <span className="membro-nome">{nomeCurto(p.nome)}</span>
                       </button>
-                    ))}
-                    {resto > 0 && <span className="mais">+{resto}</span>}
-                  </span>
-
-                  <span className="contagem">
-                    <b>{total}</b>/{MAX_EQUIPE}
-                  </span>
+                    ))
+                  )}
                 </span>
 
                 <span className="eq-dir">
                   <span className="horas">
                     {eq.horarioInicio || '--:--'} → {eq.horarioSaida || '--:--'}
                   </span>
-                  <span className={`selo ${classeSelo}`}>{textoSelo}</span>
+                  {podeMudarStatus ? (
+                    <span className="selo-menu">
+                      <button
+                        type="button"
+                        className={`selo selo-btn ${classeSelo}`}
+                        aria-haspopup="menu"
+                        aria-expanded={menuStatus === eq.id}
+                        title="Mudar status"
+                        onClick={() => setMenuStatus(menuStatus === eq.id ? null : eq.id)}
+                      >
+                        {textoSelo}
+                        <span className="seta" aria-hidden="true">▾</span>
+                      </button>
+
+                      {menuStatus === eq.id && (
+                        <span className="selo-lista" role="menu">
+                          {OPCOES_STATUS.map(([st, motivo, rotulo, cls]) => {
+                            const atual = eq.statusExecucao === st
+                              && (eq.motivoNaoExecucao || null) === motivo;
+                            return (
+                              <button
+                                key={rotulo}
+                                type="button"
+                                role="menuitem"
+                                className={`selo-opc${atual ? ' atual' : ''}`}
+                                onClick={() => {
+                                  setMenuStatus(null);
+                                  onMudarStatus(eq, st, motivo);
+                                }}
+                              >
+                                <span className={`ponto ${cls}`} aria-hidden="true" />
+                                {rotulo}
+                                {atual && <span className="marca" aria-hidden="true">✓</span>}
+                              </button>
+                            );
+                          })}
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className={`selo ${classeSelo}`}>{textoSelo}</span>
+                  )}
+
+                  {/* Apontamento: marcado sozinho quando a conciliação do
+                      Kartado reconhece a equipe, ou na mão quando o serviço
+                      não veio no boletim. */}
+                  <button
+                    type="button"
+                    className={`ap-flag${eq.apontamentoLancado ? ' ligado' : ''}`}
+                    role="checkbox"
+                    aria-checked={Boolean(eq.apontamentoLancado)}
+                    disabled={!podeEditar}
+                    title={rotuloApontamento(eq)}
+                    aria-label={rotuloApontamento(eq)}
+                    onClick={() => onAlternarApontamento(eq)}
+                  >
+                    <span className="ap-flag-box" aria-hidden="true">
+                      {eq.apontamentoLancado ? '✓' : ''}
+                    </span>
+                    <span className="ap-flag-txt">
+                      apontado
+                      {eq.apontamentoLancado && (eq.apontamentoSeriais || []).length
+                        ? ' · k' : ''}
+                    </span>
+                  </button>
                 </span>
               </div>
             );
