@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from './lib/supabase';
 import { Auth } from './components/Auth';
 import { Avatar } from './components/Avatar';
+import { QuadroDia } from './components/QuadroDia';
 import { prepararFoto, enviarFoto, assinarFotos } from './lib/fotos';
 
 import {
@@ -440,6 +441,198 @@ function App() {
         }
       }
     }, 100);
+  }
+
+  /* ------------------------------------------------------------------
+     Operações do quadro. Todas fazem update otimista: a interface responde
+     na hora e só volta atrás se o servidor recusar.
+     ------------------------------------------------------------------ */
+
+  async function gravarCampos(equipe, patch) {
+    const anterior = db.programacoes;
+    setDb((atual) => ({
+      ...atual,
+      programacoes: atual.programacoes.map((p) =>
+        p.id === equipe.id ? { ...p, ...patch } : p
+      ),
+    }));
+
+    const res = await supabase
+      .from('programacoes')
+      .update(patch)
+      .eq('id', equipe.id)
+      .select();
+
+    if (res.error) {
+      setDb((atual) => ({ ...atual, programacoes: anterior }));
+      return reportarErro('Erro ao atualizar a equipe', res.error);
+    }
+    if (!res.data?.length) {
+      setDb((atual) => ({ ...atual, programacoes: anterior }));
+      return semPermissao('alterar esta equipe');
+    }
+    fetchDatabase();
+  }
+
+  function adicionarMembro(equipe, pessoaId) {
+    const atuais = Array.isArray(equipe.membroIds) ? equipe.membroIds : [];
+    if (atuais.includes(pessoaId)) return;
+    gravarCampos(equipe, { membroIds: [...atuais, pessoaId] });
+  }
+
+  // A primeira pessoa solta numa equipe sem encarregado vira o encarregado —
+  // e entra também na lista de membros, que é de onde saem os relatórios.
+  function definirEncarregado(equipe, pessoaId) {
+    const atuais = Array.isArray(equipe.membroIds) ? equipe.membroIds : [];
+    gravarCampos(equipe, {
+      encarregadoId: pessoaId,
+      membroIds: atuais.includes(pessoaId) ? atuais : [...atuais, pessoaId],
+    });
+  }
+
+  function removerMembro(equipe, pessoaId) {
+    if (equipe.encarregadoId === pessoaId) {
+      alert('Para trocar o encarregado, abra a programação.');
+      return;
+    }
+    gravarCampos(equipe, { membroIds: (equipe.membroIds || []).filter((id) => id !== pessoaId) });
+  }
+
+  function adicionarVeiculo(equipe, veiculoId) {
+    const atuais = Array.isArray(equipe.veiculoIds) ? equipe.veiculoIds : [];
+    if (atuais.includes(veiculoId)) return;
+    gravarCampos(equipe, { veiculoIds: [...atuais, veiculoId] });
+  }
+
+  function removerVeiculo(equipe, veiculoId) {
+    gravarCampos(equipe, { veiculoIds: (equipe.veiculoIds || []).filter((id) => id !== veiculoId) });
+  }
+
+  /* Criação direto do quadro: os horários entram no padrão da empresa e o
+     resto se ajusta arrastando. Abrir o formulário completo continua sendo
+     uma opção, mas deixou de ser obrigatório para começar um dia. */
+  async function criarProgramacaoRapida({ tipoEquipe, cidade, contratante, encarregadoId }) {
+    const linha = {
+      data: selectedDate,
+      tipoEquipe,
+      cidade,
+      contratante,
+      engenheiro: '',
+      encarregadoId: encarregadoId || null,
+      membroIds: encarregadoId ? [encarregadoId] : [],
+      veiculoIds: [],
+      statusExecucao: 'EXECUTANDO',
+      motivoNaoExecucao: null,
+      observacoes: '',
+      horarioInicio: '06:30',
+      horarioInicioObra: '07:30',
+      horarioSaidaAlmoco: '11:30',
+      horarioRetornoAlmoco: '13:00',
+      horarioFimObra: '17:00',
+      horarioSaida: '18:00',
+    };
+
+    const res = await supabase.from('programacoes').insert([linha]).select();
+    if (res.error) return reportarErro('Erro ao criar programação', res.error);
+    if (!res.data?.length) return semPermissao('criar programações');
+    fetchDatabase();
+  }
+
+  /**
+   * Copia as equipes selecionadas para outra data.
+   * A estratégia decide o que fazer com quem está indisponível no destino —
+   * indisponível aqui é: já escalado naquele dia, ou com falta lançada nele.
+   */
+  async function copiarProgramacoes(equipes, dataDestino, estrategia) {
+    if (!equipes.length || !dataDestino) return;
+
+    const noDestino = db.programacoes.filter((p) => p.data === dataDestino);
+    const ocupadosNoDestino = new Set();
+    noDestino.forEach((p) => {
+      [p.encarregadoId, ...(p.membroIds || [])].filter(Boolean).forEach((id) =>
+        ocupadosNoDestino.add(id)
+      );
+    });
+    const faltosos = new Set(
+      db.faltas.filter((f) => f.data === dataDestino).map((f) => f.colaboradorId)
+    );
+
+    const indisponivel = (id) =>
+      (estrategia !== 'substituir' && ocupadosNoDestino.has(id)) || faltosos.has(id);
+
+    if (estrategia === 'substituir' && noDestino.length) {
+      const del = await supabase
+        .from('programacoes')
+        .delete()
+        .eq('data', dataDestino)
+        .select();
+      if (del.error) return reportarErro('Erro ao limpar o dia de destino', del.error);
+      if (!del.data?.length) return semPermissao('apagar programações do dia de destino');
+    }
+
+    const novas = [];
+    let ignoradas = 0;
+    let removidas = 0;
+
+    equipes.forEach((eq) => {
+      const membros = (eq.membroIds || []).filter(Boolean);
+      const problema = membros.some(indisponivel) || (eq.encarregadoId && indisponivel(eq.encarregadoId));
+
+      if (estrategia === 'pular' && problema) {
+        ignoradas += 1;
+        return;
+      }
+
+      let membrosFinais = membros;
+      let encarregadoFinal = eq.encarregadoId;
+      if (estrategia === 'fila') {
+        membrosFinais = membros.filter((id) => !indisponivel(id));
+        removidas += membros.length - membrosFinais.length;
+        if (encarregadoFinal && indisponivel(encarregadoFinal)) {
+          encarregadoFinal = null;
+          removidas += 1;
+        }
+      }
+
+      novas.push({
+        data: dataDestino,
+        tipoEquipe: eq.tipoEquipe,
+        cidade: eq.cidade,
+        contratante: eq.contratante,
+        engenheiro: eq.engenheiro || '',
+        encarregadoId: encarregadoFinal,
+        membroIds: membrosFinais,
+        veiculoIds: eq.veiculoIds || [],
+        // Execução não se copia: status, motivo, observações e horários
+        // realizados pertencem ao dia de origem. Só os horários padrão vão.
+        statusExecucao: 'EXECUTANDO',
+        motivoNaoExecucao: null,
+        observacoes: '',
+        horarioInicio: eq.horarioInicio,
+        horarioInicioObra: eq.horarioInicioObra,
+        horarioSaidaAlmoco: eq.horarioSaidaAlmoco,
+        horarioRetornoAlmoco: eq.horarioRetornoAlmoco,
+        horarioFimObra: eq.horarioFimObra,
+        horarioSaida: eq.horarioSaida,
+      });
+    });
+
+    if (!novas.length) {
+      alert('Nenhuma equipe foi copiada: todas tinham alguém indisponível no dia escolhido.');
+      return;
+    }
+
+    const res = await supabase.from('programacoes').insert(novas).select();
+    if (res.error) return reportarErro('Erro ao copiar programações', res.error);
+    if (!res.data?.length) return semPermissao('criar programações');
+
+    const partes = [`${novas.length} ${novas.length === 1 ? 'equipe copiada' : 'equipes copiadas'}`];
+    if (removidas) partes.push(`${removidas} ${removidas === 1 ? 'pessoa ficou' : 'pessoas ficaram'} de fora`);
+    if (ignoradas) partes.push(`${ignoradas} ${ignoradas === 1 ? 'equipe ignorada' : 'equipes ignoradas'}`);
+    alert('✅ ' + partes.join(' · ') + '.');
+
+    setSelectedDate(dataDestino);
+    fetchDatabase();
   }
 
   async function updateProgramacaoField(itemId, field, value) {
@@ -1106,18 +1299,31 @@ function App() {
                   <StatCard number={totalPessoasDia} label="Pessoas" subtle />
                 </div>
 
-                {programacoesDoDia.length === 0 ? (
-                  <div className="empty-card">
-                    <p>Nenhuma equipe programada para este dia.</p>
-                    {(userRole === 'admin' || userRole === 'editor') && (
-                      <button className="ghost-btn" onClick={() => openProgramacaoModal()}>
-                        Criar Programação
-                      </button>
-                    )}
-                  </div>
-                ) : (
+                {/* O quadro substitui a grade de cartões como forma de MONTAR o dia.
+                    Os cartões continuam existindo, mas só para a equipe aberta —
+                    é ali que se edita status, horários e observações. */}
+                <QuadroDia
+                  db={db}
+                  maps={maps}
+                  selectedDate={selectedDate}
+                  podeEditar={userRole === 'admin' || userRole === 'editor'}
+                  tiposEquipe={TEAM_TYPE_OPTIONS}
+                  onAdicionarMembro={adicionarMembro}
+                  onDefinirEncarregado={definirEncarregado}
+                  onRemoverMembro={removerMembro}
+                  onAdicionarVeiculo={adicionarVeiculo}
+                  onRemoverVeiculo={removerVeiculo}
+                  onCriarRapida={criarProgramacaoRapida}
+                  onAbrirEquipe={(eq) =>
+                    setExpandedProgramacaoId((atual) => (atual === eq.id ? null : eq.id))
+                  }
+                  onNovaEquipe={() => openProgramacaoModal()}
+                  onCopiar={copiarProgramacoes}
+                />
+
+                {programacoesDoDia.some((p) => p.id === expandedProgramacaoId) && (
                   <div className="cards-grid programacao-cards-grid">
-                    {programacoesDoDia.map((item) => {
+                    {programacoesDoDia.filter((p) => p.id === expandedProgramacaoId).map((item) => {
                       const isExpanded = expandedProgramacaoId === item.id;
                      const members = item.membroIds
                       .map((memberId) => maps.colaboradores[memberId])
