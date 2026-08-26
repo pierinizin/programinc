@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from './lib/supabase';
 import { Auth } from './components/Auth';
+import { Avatar } from './components/Avatar';
+import { prepararFoto, enviarFoto, assinarFotos } from './lib/fotos';
 
 import {
   exportProgramacaoModeloAntigo,
@@ -45,16 +47,6 @@ function shiftDate(dateStr, days) {
   const d = new Date(`${dateStr}T12:00:00`);
   d.setDate(d.getDate() + days);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function initials(name) {
-  return String(name || '')
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase();
 }
 
 // CÁLCULO DE HORAS (SEPARANDO IN ITINERE E OBRA)
@@ -163,7 +155,12 @@ function emptyProgramacao(date = today()) {
 }
 
 function emptyColaborador() {
-  return { id: '', nome: '', apelido: '', funcao: 'Ajudante de produção', telefone: '', status: 'ativo' };
+  return {
+    id: '', nome: '', apelido: '', funcao: 'Ajudante de produção',
+    telefone: '', status: 'ativo',
+    foto_path: null, fotoUrl: null,
+    fotoArquivo: null, fotoPreview: null,
+  };
 }
 
 function emptyVeiculo() {
@@ -236,6 +233,7 @@ function App() {
   const [faltaForm, setFaltaForm] = useState(emptyFalta());
   const [expandedProgramacaoId, setExpandedProgramacaoId] = useState(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
+  const [salvandoFoto, setSalvandoFoto] = useState(false);
 
   const fetchUserRole = async (userId) => {
     const { data } = await supabase.from('perfis').select('cargo').eq('id', userId).single();
@@ -261,8 +259,17 @@ function App() {
       if (res?.error) console.error('Erro ao carregar dados:', res.error.message);
     });
 
+    // Bucket privado: a imagem só abre com URL assinada. Assinamos todas de
+    // uma vez, senão seria uma requisição por pessoa a cada carregamento.
+    const colaboradores = resCols.data || [];
+    const mapaFotos = await assinarFotos(colaboradores.map((c) => c.foto_path));
+    const colaboradoresComFoto = colaboradores.map((c) => ({
+      ...c,
+      fotoUrl: c.foto_path ? mapaFotos[c.foto_path] || null : null,
+    }));
+
     setDb(normalizeDb({
-      colaboradores: resCols.data || [],
+      colaboradores: colaboradoresComFoto,
       veiculos: resVeics.data || [],
       programacoes: resProgs.data || [],
       faltas: resFaltas.data || [],
@@ -535,26 +542,69 @@ function App() {
     
     const payload = {
       nome: colaboradorForm.nome,
-      apelido: colaboradorForm.apelido, 
+      apelido: colaboradorForm.apelido,
       funcao: colaboradorForm.funcao,
       telefone: colaboradorForm.telefone,
-      status: colaboradorForm.status
-    }
+      status: colaboradorForm.status,
+    };
+
+    setSalvandoFoto(Boolean(colaboradorForm.fotoArquivo));
+
+    // Grava primeiro, envia a foto depois: um colaborador novo só ganha id
+    // no insert, e o caminho da foto no bucket é derivado desse id.
     let res;
     if (colaboradorForm.id) {
-      res = await supabase.from('colaboradores').update(payload).eq('id', colaboradorForm.id);
+      res = await supabase.from('colaboradores').update(payload).eq('id', colaboradorForm.id).select();
     } else {
-      res = await supabase.from('colaboradores').insert([payload]);
+      res = await supabase.from('colaboradores').insert([payload]).select();
     }
 
     if (res.error) {
+      setSalvandoFoto(false);
       reportarErro('Erro ao salvar Colaborador', res.error);
-      console.error(res.error);
       return;
     }
+    if (!res.data?.length) {
+      setSalvandoFoto(false);
+      return semPermissao('salvar colaboradores');
+    }
 
+    const salvo = res.data[0];
+
+    if (colaboradorForm.fotoArquivo) {
+      try {
+        const caminho = await enviarFoto(salvo.id, colaboradorForm.fotoArquivo);
+        const up = await supabase
+          .from('colaboradores')
+          .update({ foto_path: caminho })
+          .eq('id', salvo.id);
+        if (up.error) throw up.error;
+      } catch (e) {
+        // A pessoa já foi salva; só a foto falhou. Dizer isso é mais útil do
+        // que um erro genérico que faz parecer que nada foi gravado.
+        console.error(e);
+        alert('Colaborador salvo, mas a foto não subiu: ' + (e.message || 'erro desconhecido'));
+      }
+    }
+
+    setSalvandoFoto(false);
     fetchDatabase();
     setModal(null);
+  }
+
+  // Lê o arquivo escolhido, reduz para 256px e guarda a prévia no formulário.
+  async function escolherFoto(arquivo) {
+    if (!arquivo) return;
+    try {
+      const blob = await prepararFoto(arquivo);
+      setColaboradorForm((f) => ({
+        ...f,
+        fotoArquivo: blob,
+        fotoPreview: URL.createObjectURL(blob),
+      }));
+    } catch (e) {
+      alert(e.message || 'Não foi possível usar esta imagem.');
+    }
   }
 
   async function saveVeiculo() {
@@ -693,18 +743,18 @@ function App() {
 
   if (isRecovering) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--asfalto)', padding: '20px' }}>
         <div className="card" style={{ maxWidth: '400px', width: '100%', padding: '40px', textAlign: 'center', borderRadius: '25px' }}>
           <div style={{ fontSize: '40px', marginBottom: '10px' }}>🔑</div>
           <h2 style={{ marginBottom: '10px' }}>Nova Senha</h2>
-          <p style={{ color: '#64748b', marginBottom: '25px', fontSize: '14px' }}>Digite a sua nova senha de acesso abaixo.</p>
+          <p style={{ color: 'var(--tinta-media)', marginBottom: '25px', fontSize: '14px' }}>Digite a sua nova senha de acesso abaixo.</p>
           
           <input
             type="password"
             placeholder="Digite a nova senha"
             value={novaSenha}
             onChange={(e) => setNovaSenha(e.target.value)}
-            style={{ width: '100%', padding: '15px', borderRadius: '50px', border: '1px solid #cbd5e1', marginBottom: '20px', outline: 'none', textAlign: 'center', fontSize: '16px' }}
+            style={{ width: '100%', marginBottom: '18px', textAlign: 'center', fontSize: '15px' }}
           />
           
           <button
@@ -737,17 +787,17 @@ function App() {
 
   if (userRole === 'pendente') {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--asfalto)', padding: '20px' }}>
         <div className="card" style={{ textAlign: 'center', maxWidth: '400px', padding: '40px' }}>
           <div style={{ fontSize: '48px', marginBottom: '20px' }}>🔒</div>
           <h2>Aguardando Aprovação</h2>
-          <p style={{ color: '#64748b', marginTop: '10px', marginBottom: '30px' }}>
+          <p style={{ color: 'var(--tinta-media)', marginTop: '10px', marginBottom: '30px' }}>
             Sua conta foi criada, mas o acesso ao sistema Incovia precisa ser liberado por um Administrador. Por favor, aguarde.
           </p>
           <button 
             className="ghost-btn" 
             onClick={() => supabase.auth.signOut()}
-            style={{ color: '#dc2626' }}
+            style={{ color: 'var(--erro-texto)' }}
           >
             Sair e voltar depois
           </button>
@@ -988,9 +1038,9 @@ function App() {
                         width: '100%', 
                         padding: '10px 15px', 
                         borderRadius: '50px',
-                        border: '2px solid #ffc107',
-                        backgroundColor: '#fffdeb',
-                        color: '#b45309',
+                        border: '1px solid var(--faixa-texto)',
+                        backgroundColor: 'var(--faixa-fundo)',
+                        color: 'var(--faixa-texto)',
                         fontWeight: 'bold',
                         cursor: 'pointer',
                         outline: 'none',
@@ -1016,9 +1066,9 @@ function App() {
                         <button
                           className="ghost-btn full"
                           style={{
-                            color: '#dc2626',
-                            borderColor: '#fca5a5',
-                            backgroundColor: '#fef2f2',
+                            color: 'var(--erro-texto)',
+                            borderColor: 'var(--erro-texto)',
+                            backgroundColor: 'var(--erro-fundo)',
                             borderRadius: '50px'
                           }}
                           onClick={() => deletePerfil(perfil.id)}
@@ -1079,7 +1129,12 @@ function App() {
                       return (
                         <div
                           key={item.id}
-                          className={`card team-card compact-program-card ${isExpanded ? 'expanded' : 'collapsed'}`}
+                          className={`card team-card compact-program-card ${isExpanded ? 'expanded' : 'collapsed'} ${
+                            item.statusExecucao === 'CONCLUÍDO' ? 'st-ok'
+                              : item.statusExecucao === 'EXECUTANDO' ? 'st-campo'
+                              : item.statusExecucao === 'NÃO FOI POSSÍVEL REALIZAR' ? 'st-parado'
+                              : ''
+                          }`}
                           onClick={() => setExpandedProgramacaoId(isExpanded ? null : item.id)}
                         >
                           <div className="card-header between start compact-program-head">
@@ -1140,7 +1195,7 @@ function App() {
                                       display: 'flex',
                                       flexWrap: 'wrap',
                                       gap: '15px',
-                                      color: hours.incompleto ? '#b45309' : '#059669',
+                                      color: hours.incompleto ? 'var(--faixa-texto)' : 'var(--ok-texto)',
                                       fontWeight: 'bold',
                                     }}
                                   >
@@ -1149,7 +1204,7 @@ function App() {
                                     <span>⏱ Total: {hours.total}</span>
                                   </div>
                                   {hours.incompleto && (
-                                    <div className="small-muted" style={{ color: '#b45309' }}>
+                                    <div className="small-muted" style={{ color: 'var(--faixa-texto)' }}>
                                       Horários incompletos — preencha os seis registros para calcular.
                                     </div>
                                   )}
@@ -1191,7 +1246,7 @@ function App() {
                                       }}
                                     >
                                       <div className="list-row-main">
-                                        <span className="avatar small">{initials(person.nome).slice(0, 1)}</span>
+                                        <Avatar nome={person.nome} url={person.fotoUrl} tamanho="small" />
                                         <span>{(person.apelido && person.apelido.trim() !== '') ? person.apelido : person.nome}</span>
                                       </div>
                                       <span className="tag">
@@ -1295,7 +1350,7 @@ function App() {
                     <div key={item.id} className="card">
                       <div className="card-header">
                         <div className="title-row">
-                          <span className="avatar">{initials(item.nome).slice(0, 1)}</span>
+                          <Avatar nome={item.nome} url={item.fotoUrl} />
                           <div>
                             <h3>{item.nome}</h3>
                             <div className="chips-row tight">
@@ -1384,7 +1439,7 @@ function App() {
                   {historyItems.map((item) => (
                     <div key={item.id} className="history-row">
                       <div className="title-row">
-                        <span className="avatar">{initials(item.nome).slice(0, 1)}</span>
+                        <Avatar nome={item.nome} url={item.fotoUrl} />
                         <div>
                           <strong>{item.nome}</strong>
                           <div className="meta-row">
@@ -1645,9 +1700,48 @@ function App() {
                     { value: 'inativo', label: 'inativo' },
                   ]}
                 />
+                <div className="full-row zona-foto-linha">
+                  <Avatar
+                    nome={colaboradorForm.nome}
+                    url={colaboradorForm.fotoPreview || colaboradorForm.fotoUrl}
+                    tamanho="big"
+                  />
+                  <div className="zona-foto-texto">
+                    <strong>Foto</strong>
+                    <span className="small-muted">
+                      Opcional. Sem foto, aparecem as iniciais. A imagem é recortada
+                      no centro e reduzida antes de enviar.
+                    </span>
+                    <div className="chips-row tight" style={{ marginTop: '8px' }}>
+                      <label className="chip-btn" style={{ cursor: 'pointer' }}>
+                        {colaboradorForm.fotoPreview || colaboradorForm.fotoUrl ? 'Trocar foto' : 'Escolher foto'}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          style={{ display: 'none' }}
+                          onChange={(e) => escolherFoto(e.target.files?.[0])}
+                        />
+                      </label>
+                      {colaboradorForm.fotoPreview && (
+                        <button
+                          type="button"
+                          className="chip-btn"
+                          onClick={() =>
+                            setColaboradorForm((f) => ({ ...f, fotoArquivo: null, fotoPreview: null }))
+                          }
+                        >
+                          Desfazer
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="modal-actions full">
-                  <button className="ghost-btn" onClick={() => setModal(null)}>Cancelar</button>
-                  <button className="primary-btn" onClick={saveColaborador}>Salvar</button>
+                  <button className="ghost-btn" onClick={() => setModal(null)} disabled={salvandoFoto}>Cancelar</button>
+                  <button className="primary-btn" onClick={saveColaborador} disabled={salvandoFoto}>
+                    {salvandoFoto ? 'Enviando foto...' : 'Salvar'}
+                  </button>
                 </div>
               </div>
             )}
@@ -1843,16 +1937,16 @@ function MultiSelect({ label, items, selectedIds, labelKey, subtitleKey, subtitl
           style={{ 
             padding: '8px 15px', 
             borderRadius: '50px', 
-            border: '2px solid #cbd5e1', 
+            border: '1px solid var(--borda)', 
             fontSize: '13px', 
             width: '180px', 
             outline: 'none',
-            backgroundColor: '#f8fafc'
+            backgroundColor: 'var(--superficie-2)'
           }}
         />
       </div>
       
-      <div className="multi-box" style={{ maxHeight: '250px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
+      <div className="multi-box" style={{ maxHeight: '250px', overflowY: 'auto' }}>
         {filtrados.map((item) => (
           <button
             key={item.id}
@@ -1868,7 +1962,7 @@ function MultiSelect({ label, items, selectedIds, labelKey, subtitleKey, subtitl
           </button>
         ))}
         {filtrados.length === 0 && (
-          <div style={{ padding: '15px', textAlign: 'center', color: '#64748b' }}>
+          <div style={{ padding: '15px', textAlign: 'center', color: 'var(--tinta-media)' }}>
             Nenhum resultado para &quot;{busca}&quot;
           </div>
         )}
@@ -1904,7 +1998,7 @@ function ResumoDiaDrawer({ date, db, maps, onGoToDate }) {
           faltas.map((f) => {
             const pessoa = maps.colaboradores[f.colaboradorId];
             return (
-              <div key={f.id} className="mini-card" style={{ borderLeft: '4px solid #dc2626' }}>
+              <div key={f.id} className="mini-card" style={{ borderLeft: '3px solid var(--erro)' }}>
                 <strong>{pessoa ? pessoa.nome : 'Colaborador excluído'}</strong>
                 <div className="meta-row">{f.motivo}</div>
               </div>
@@ -1923,7 +2017,7 @@ function ResumoDiaDrawer({ date, db, maps, onGoToDate }) {
             const nomeEncarregado = encarregado ? encarregado.nome.split(' ')[0] : 'Sem Líder';
 
             return (
-              <div key={p.id} className="mini-card" style={{ borderLeft: '4px solid #2563eb' }}>
+              <div key={p.id} className="mini-card" style={{ borderLeft: '3px solid var(--faixa)' }}>
                 <strong>{p.tipoEquipe}</strong>
                 <div className="meta-row">📍 {p.cidade.toUpperCase()} · Líder: {nomeEncarregado} · {p.membroIds.length} pessoas</div>
                 <StatusBadge status={p.statusExecucao} motivo={p.motivoNaoExecucao} />
@@ -1947,7 +2041,7 @@ function ColaboradorDrawer({ item, db, userRole, openEdit, openFalta, deleteFalt
   return (
     <div className="drawer-body">
       <div className="hero-block">
-        <div className="avatar big">{initials(item.nome).slice(0, 1)}</div>
+        <Avatar nome={item.nome} url={item.fotoUrl} tamanho="big" />
         <div>
           <h3>{item.nome}</h3>
           <div className="chips-row tight">

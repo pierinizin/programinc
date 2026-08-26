@@ -68,9 +68,9 @@ const handleAuth = async (e) => {
 };
 
 return (
-  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
-    <div className="card" style={{ width: '100%', maxWidth: '400px', padding: '30px' }}>
-      <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>
+  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--asfalto)', padding: '20px' }}>
+    <div className="card" style={{ width: '100%', maxWidth: '390px', padding: '28px' }}>
+      <h2 style={{ textAlign: 'center', marginBottom: '22px', fontFamily: 'var(--fonte-display)', fontSize: '20px', fontWeight: 700 }}>
         {view === 'login' ? 'Incovia - Acesso' : view === 'cadastro' ? 'Criar Conta' : 'Recuperar Senha'}
       </h2>
       
@@ -78,39 +78,36 @@ return (
         
         {/* O CAMPO DE NOME: Só aparece quando está em 'cadastro' */}
         {view === 'cadastro' && (
-          <label className="full-row" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-            <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#64748b' }}>Nome Completo</span>
+          <label className="full-row" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--tinta-media)', fontFamily: 'var(--fonte-display)' }}>Nome Completo</span>
             <input 
               type="text" 
               value={nome} 
               onChange={(e) => setNome(e.target.value)} 
               required={view === 'cadastro'} 
-              style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px' }}
             />
           </label>
         )}
 
-        <label className="full-row" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#64748b' }}>E-mail</span>
+        <label className="full-row" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--tinta-media)', fontFamily: 'var(--fonte-display)' }}>E-mail</span>
           <input 
             type="email" 
             value={email} 
             onChange={(e) => setEmail(e.target.value)} 
             required 
-            style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px' }}
           />
         </label>
         
         {/* O CAMPO DE SENHA: Só esconde se estiver a recuperar a senha */}
         {view !== 'recuperar' && (
-          <label className="full-row" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-            <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#64748b' }}>Senha</span>
+          <label className="full-row" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--tinta-media)', fontFamily: 'var(--fonte-display)' }}>Senha</span>
             <input 
               type="password" 
               value={password} 
               onChange={(e) => setPassword(e.target.value)} 
               required={view !== 'recuperar'} 
-              style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '4px' }}
             />
           </label>
         )}
