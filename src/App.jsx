@@ -355,6 +355,24 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  /* Um único agendador de recarga.
+     Antes, cada mutação chamava fetchDatabase() na hora E o realtime chamava
+     outra 300 ms depois, pelo MESMO evento: duas recargas completas (6 selects
+     + assinatura de todas as fotos) por arraste, por clique de status, por
+     checkbox. Agora todo mundo agenda no mesmo temporizador e os dois pedidos
+     viram um. O atraso é imperceptível e as telas que precisam de resposta
+     imediata já fazem atualização otimista. */
+  const fetchTimerRef = useRef(null);
+  function agendarFetch() {
+    if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current);
+    fetchTimerRef.current = setTimeout(() => {
+      fetchTimerRef.current = null;
+      fetchDatabaseRef.current();
+    }, 250);
+  }
+  const agendarFetchRef = useRef(agendarFetch);
+  agendarFetchRef.current = agendarFetch;
+
   // Realtime: antes escutava schema inteiro e refazia as 5 queries a cada evento,
   // o que virava cascata com várias pessoas editando. Agora escuta só as tabelas
   // que interessam e agrupa eventos próximos num único refetch.
@@ -364,23 +382,13 @@ function App() {
     if (!userId) return undefined;
     fetchDatabaseRef.current();
 
-    let timer = null;
-    const agendarRefetch = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        timer = null;
-        fetchDatabaseRef.current();
-      }, 300);
-    };
-
     const canal = supabase.channel('mudancas-incovia');
     ['colaboradores', 'veiculos', 'programacoes', 'faltas', 'patio', 'perfis'].forEach((table) => {
-      canal.on('postgres_changes', { event: '*', schema: 'public', table }, agendarRefetch);
+      canal.on('postgres_changes', { event: '*', schema: 'public', table }, () => agendarFetchRef.current());
     });
     canal.subscribe();
 
     return () => {
-      if (timer) clearTimeout(timer);
       supabase.removeChannel(canal);
     };
   }, [userId]);
@@ -388,7 +396,7 @@ function App() {
   const maps = useMemo(() => ({
       colaboradores: Object.fromEntries(db.colaboradores.map((x) => [x.id, x])),
       veiculos: Object.fromEntries(db.veiculos.map((x) => [x.id, x])),
-  }), [db]);
+  }), [db.colaboradores, db.veiculos]);
 
   const programacoesDoDia = useMemo(() =>
       db.programacoes
@@ -518,7 +526,7 @@ function App() {
       setDb((atual) => ({ ...atual, programacoes: anterior }));
       return semPermissao('alterar esta equipe');
     }
-    fetchDatabase();
+    agendarFetch();
   }
 
   function adicionarMembro(equipe, pessoaId) {
@@ -582,7 +590,7 @@ function App() {
     const res = await supabase.from('programacoes').insert([linha]).select();
     if (res.error) return reportarErro('Erro ao criar programação', res.error);
     if (!res.data?.length) return semPermissao('criar programações');
-    fetchDatabase();
+    agendarFetch();
   }
 
   /**
@@ -679,7 +687,7 @@ function App() {
     alert('✅ ' + partes.join(' · ') + '.');
 
     setSelectedDate(dataDestino);
-    fetchDatabase();
+    agendarFetch();
   }
 
   /* ------------------------------------------------------------------
@@ -703,7 +711,7 @@ function App() {
 
     if (res.error) return reportarErro('Erro ao lançar apontamento', res.error);
     if (!res.data?.length) return semPermissao('lançar apontamentos');
-    fetchDatabase();
+    agendarFetch();
   }
 
   /* Checkbox de apontamento no quadro do dia.
@@ -744,7 +752,7 @@ function App() {
 
     if (res.error) return reportarErro('Erro ao marcar apontamento', res.error);
     if (!res.data?.length) return semPermissao('marcar apontamentos');
-    fetchDatabase();
+    agendarFetch();
   }
 
   async function desfazerApontamento(programacao, ap) {
@@ -761,7 +769,7 @@ function App() {
 
     if (res.error) return reportarErro('Erro ao desfazer lançamento', res.error);
     if (!res.data?.length) return semPermissao('desfazer lançamentos');
-    fetchDatabase();
+    agendarFetch();
   }
 
   /* Troca de status direto no quadro, sem abrir a equipe.
@@ -792,7 +800,7 @@ function App() {
       if (res.error) return reportarErro('Erro ao mudar o status', res.error);
       return semPermissao('mudar o status');
     }
-    fetchDatabase();
+    agendarFetch();
   }
 
   async function updateProgramacaoField(itemId, field, value) {
@@ -815,7 +823,7 @@ function App() {
       reportarErro('Erro ao atualizar Programação', res.error);
       return;
     }
-    fetchDatabase();
+    agendarFetch();
   }
 
   function openProgramacaoModal(item = null) {
@@ -883,7 +891,7 @@ function App() {
       return;
     }
 
-    fetchDatabase();
+    agendarFetch();
     setModal(null);
   }
 
@@ -941,7 +949,7 @@ function App() {
     }
 
     setSalvandoFoto(false);
-    fetchDatabase();
+    agendarFetch();
     setModal(null);
   }
 
@@ -987,7 +995,7 @@ function App() {
       return;
     }
 
-    fetchDatabase();
+    agendarFetch();
     setModal(null);
   }
 
@@ -1013,7 +1021,7 @@ function App() {
       return;
     }
 
-    fetchDatabase();
+    agendarFetch();
     setModal(null);
   }
 
@@ -1022,7 +1030,7 @@ function App() {
     const res = await supabase.from('programacoes').delete().eq('id', itemId).select();
     if (res.error) return reportarErro('Erro ao excluir Programação', res.error);
     if (!res.data?.length) return semPermissao('excluir esta programação');
-    fetchDatabase();
+    agendarFetch();
   }
 
   /* Exclusão em lote a partir da seleção do quadro (a mesma dos checkboxes que
@@ -1056,7 +1064,7 @@ function App() {
           + 'As demais podem estar fora da sua permissão.' }
       );
     }
-    fetchDatabase();
+    agendarFetch();
     return true;
   }
 
@@ -1072,7 +1080,7 @@ function App() {
       .insert([{ colaboradorId, data: selectedDate }]).select();
     if (res.error) return reportarErro('Erro ao mandar para o pátio', res.error);
     if (!res.data?.length) return semPermissao('registrar pátio');
-    fetchDatabase();
+    agendarFetch();
   }
 
   async function removerDoPatio(colaboradorId) {
@@ -1083,7 +1091,7 @@ function App() {
     const res = await supabase.from('patio').delete().eq('id', reg.id).select();
     if (res.error) return reportarErro('Erro ao tirar do pátio', res.error);
     if (!res.data?.length) return semPermissao('tirar do pátio');
-    fetchDatabase();
+    agendarFetch();
   }
 
   // 'motivo' é NOT NULL no banco, então quem chama precisa escolher — a tela
@@ -1095,7 +1103,7 @@ function App() {
       .insert([{ colaboradorId, data: selectedDate, motivo, observacao: '' }]).select();
     if (res.error) return reportarErro('Erro ao registrar falta', res.error);
     if (!res.data?.length) return semPermissao('registrar faltas');
-    fetchDatabase();
+    agendarFetch();
   }
 
   async function removerFalta(colaboradorId) {
@@ -1108,7 +1116,7 @@ function App() {
     // Apagar falta é só de admin no security.sql — dizer isso é melhor do que
     // o botão parecer quebrado.
     if (!res.data?.length) return semPermissao('remover faltas');
-    fetchDatabase();
+    agendarFetch();
   }
 
   async function deleteColaborador(itemId) {
@@ -1117,7 +1125,7 @@ function App() {
     if (res.error) return reportarErro('Erro ao excluir Colaborador', res.error);
     if (!res.data?.length) return semPermissao('excluir este colaborador');
     {
-      fetchDatabase();
+      agendarFetch();
       if (activeDrawer?.type === 'colaborador' && activeDrawer.item.id === itemId) setActiveDrawer(null);
     }
   }
@@ -1130,7 +1138,7 @@ function App() {
       reportarErro('Erro ao excluir usuário', error);
     } else {
       alert("✅ Usuário e credenciais excluídos com sucesso!");
-      fetchDatabase();
+      agendarFetch();
     }
   }
 
@@ -1153,7 +1161,7 @@ function App() {
     if (res.error) return reportarErro('Erro ao excluir Veículo', res.error);
     if (!res.data?.length) return semPermissao('excluir este veículo');
     {
-      fetchDatabase();
+      agendarFetch();
       if (activeDrawer?.type === 'veiculo' && activeDrawer.item.id === itemId) setActiveDrawer(null);
     }
   }
@@ -1163,7 +1171,7 @@ function App() {
     const res = await supabase.from('faltas').delete().eq('id', itemId).select();
     if (res.error) return reportarErro('Erro ao excluir Falta', res.error);
     if (!res.data?.length) return semPermissao('excluir este registro de falta');
-    fetchDatabase();
+    agendarFetch();
   }
 
   async function aprovarUsuario(id, novoCargo) {
@@ -1176,7 +1184,7 @@ function App() {
    if (error) reportarErro('Erro ao alterar acesso', error);
    else {
      alert("✅ Acesso atualizado com sucesso!");
-     fetchDatabase();
+     agendarFetch();
    }
   }
 

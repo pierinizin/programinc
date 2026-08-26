@@ -107,33 +107,6 @@ export function QuadroDia({
     };
   }, [menuStatus]);
 
-  /* A altura do quadro é medida, não chutada: um "100vh menos 300px" fixo erra
-     sempre que o cabeçalho muda de altura, e o que sobra de erro vira rolagem
-     de página — justamente o que faz a lista de pessoas subir e sumir.
-     Aqui o corpo do quadro termina exatamente no fim da janela. */
-  const corpoRef = useRef(null);
-  useEffect(() => {
-    const medir = () => {
-      const el = corpoRef.current;
-      if (!el) return;
-      const topo = el.getBoundingClientRect().top + window.scrollY;
-      let altura = Math.max(340, window.innerHeight - topo - 18);
-      el.style.height = `${altura}px`;
-
-      // Segunda passada: o que existe ABAIXO do quadro (margem, respiro da
-      // grade) não dá para saber daqui. Se ainda sobrou rolagem de página,
-      // desconta exatamente o que sobrou — em vez de chutar uma reserva.
-      const sobra = document.documentElement.scrollHeight
-        - document.documentElement.clientHeight;
-      if (sobra > 0 && altura - sobra >= 340) {
-        altura -= sobra;
-        el.style.height = `${altura}px`;
-      }
-    };
-    medir();
-    window.addEventListener('resize', medir);
-    return () => window.removeEventListener('resize', medir);
-  });
 
   const equipes = useMemo(
     () => db.programacoes.filter((p) => p.data === selectedDate),
@@ -430,6 +403,75 @@ export function QuadroDia({
 
   /* ------------------------------ seleção ------------------------------ */
   const marcadas = Object.keys(selecionadas).filter((k) => selecionadas[k]);
+
+  /* A altura do quadro é medida, não chutada: um "100vh menos 300px" fixo erra
+     sempre que o cabeçalho muda de altura, e o que sobra de erro vira rolagem
+     de página — justamente o que faz a lista de pessoas subir e sumir.
+     Aqui o corpo do quadro termina exatamente no fim da janela. */
+  const corpoRef = useRef(null);
+  useEffect(() => {
+    const medir = () => {
+      const el = corpoRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+
+      /* Quanto de página existe DEPOIS do corpo do quadro: as zonas de pátio e
+         faltas, a margem, o respiro da grade. Medir isso é o que torna a conta
+         idempotente — não depende da altura do próprio corpo, então medir duas
+         vezes dá o mesmo resultado.
+
+         A versão anterior calculava a altura cheia e depois descontava a
+         rolagem que sobrou. Só que na passada seguinte a sobra já era zero, a
+         altura voltava ao valor grande, e a coisa ficava oscilando entre "cabe"
+         e "não cabe" — foi assim que a rolagem de página voltou sem eu ver. */
+      // O que vem abaixo do corpo, medido no elemento pai (.quadro): as zonas
+      // de pátio e faltas mais a borda. Medido, não chutado — e idempotente,
+      // porque a altura das zonas não depende da altura do corpo.
+      //
+      // Não dá para usar scrollHeight aqui: ele nunca é menor que a janela,
+      // então numa página que NÃO rola ele devolve espaço vazio como se fosse
+      // conteúdo, o quadro encolhia para o mínimo e nunca mais crescia.
+      const pai = el.parentElement;
+      const zonas = pai ? Math.max(0, pai.getBoundingClientRect().bottom - r.bottom) : 0;
+      // Respiro abaixo do quadro: padding da grade (20) + margem do quadro (16).
+      // São constantes desta folha de estilo; mudando lá, mude aqui.
+      const RESPIRO = 36;
+      const abaixo = zonas + RESPIRO;
+      const altura = Math.max(340, window.innerHeight - r.top - abaixo - 8);
+
+      // Só escreve se mudou: escrever height igual ao atual ainda invalida o
+      // layout e, com o ResizeObserver escutando, realimenta o ciclo.
+      const novo = `${Math.round(altura)}px`;
+      if (el.style.height !== novo) el.style.height = novo;
+    };
+    /* Sem lista de dependências este efeito rodava a CADA render — inclusive a
+       cada tecla digitada na busca — e cada passada faz leituras de layout
+       síncronas, que é o tipo de coisa que deixa a tela pastosa sem aparecer
+       em lugar nenhum. Mas listar dependências é adivinhar: a altura muda por
+       coisas que não estão em variável nenhuma (a barra de seleção que
+       aparece, o cabeçalho que quebra em duas linhas, uma fonte que terminou
+       de carregar). ResizeObserver mede o que de fato mudou de tamanho e
+       dispara só aí — nem toda hora, nem por adivinhação. */
+    let pendente = 0;
+    const remedir = () => {
+      if (pendente) return;                       // no máximo uma vez por quadro
+      pendente = requestAnimationFrame(() => { pendente = 0; medir(); });
+    };
+
+    medir();
+    window.addEventListener('resize', remedir);
+
+    const obs = new ResizeObserver(remedir);
+    // O que fica ACIMA do quadro define onde ele começa; o body pega o resto.
+    if (corpoRef.current?.parentElement) obs.observe(corpoRef.current.parentElement);
+    obs.observe(document.body);
+
+    return () => {
+      if (pendente) cancelAnimationFrame(pendente);
+      window.removeEventListener('resize', remedir);
+      obs.disconnect();
+    };
+  }, []);
 
   function abrirCopia() {
     const d = new Date(`${selectedDate}T12:00:00`);
