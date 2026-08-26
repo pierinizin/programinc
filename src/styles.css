@@ -1505,3 +1505,135 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .criar-rot { grid-column: 1 / -1; }
   .criar-dica { grid-column: 1 / -1; }
 }
+
+/* ==========================================================================
+   FICHAS DE CADASTRO (pessoas e veículos)
+   Simetria por construção: as três faixas têm altura fixa, então os cartões
+   terminam alinhados mesmo com nomes e funções de comprimentos diferentes.
+   ========================================================================== */
+
+.ficha { padding: 0; overflow: hidden; position: relative; gap: 0; }
+.ficha::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--borda-forte);
+}
+.ficha.st-ok::before   { background: var(--ok); }
+.ficha.st-obra::before { background: var(--obra); }
+.ficha.st-aten::before { background: var(--faixa); }
+
+.ficha-topo {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 14px 14px 10px 17px;
+  min-height: 80px;
+}
+.ficha-nome { min-width: 0; flex: 1; }
+.ficha-nome b {
+  display: block;
+  font-family: var(--fonte-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ficha-nome span {
+  display: block;
+  font-size: 11.5px;
+  color: var(--tinta-fraca);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* nowrap + truncagem: a faixa do meio ocupa exatamente uma linha em TODO
+   cartão, senão "Operador de máquina de pintura" quebra em duas e desalinha
+   a leitura de um cartão para o outro. */
+.ficha-corpo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  height: 42px;
+  padding: 0 14px 0 17px;
+}
+.ficha-corpo > :first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.ficha-corpo > :last-child { flex-shrink: 0; }
+
+.ficha-rodape {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--borda);
+  border-bottom: 1px solid var(--borda);
+  background: var(--superficie-2);
+}
+.ficha-rodape div { padding: 8px 6px; text-align: center; }
+.ficha-rodape div + div { border-left: 1px solid var(--borda); }
+.ficha-rodape b {
+  display: block;
+  font-family: var(--fonte-dado);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ficha-rodape span {
+  display: block;
+  font-family: var(--fonte-display);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--tinta-fraca);
+}
+
+.ficha-contato { padding: 9px 14px 0 17px; font-size: 12px; }
+.ficha .card-actions { padding: 9px 14px 13px 17px; margin-top: auto; }
+
+/* Placa: mono em caixa alta com o friso azul do Mercosul. Reconhecível
+   sem virar desenho de placa de verdade. */
+.placa-veic {
+  font-family: var(--fonte-dado);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  padding: 4px 9px 4px 6px;
+  border-radius: 4px;
+  background: var(--superficie-2);
+  border: 1px solid var(--borda-forte);
+  color: var(--tinta);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.placa-veic::before {
+  content: 'BR';
+  font-family: var(--fonte-display);
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  background: #1B4FA8;
+  color: #fff;
+  padding: 3px 3px;
+  border-radius: 2px;
+}
+
+.tag.obra { background: var(--obra-fundo); color: var(--obra-texto); border-color: var(--obra-texto); }
+.tag.aten { background: var(--faixa-fundo); color: var(--faixa-texto); border-color: var(--faixa-texto); }
+
+.veic-icone {
+  width: 40px; height: 40px;
+  flex-shrink: 0;
+  color: var(--tinta-media);
+}
+.veic-icone svg { width: 100%; height: 100%; display: block; }

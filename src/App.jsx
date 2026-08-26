@@ -155,6 +155,48 @@ function emptyProgramacao(date = today()) {
   };
 }
 
+/* Ícone por tipo de veículo — traço fino, mesma família dos demais ícones.
+   Emoji 🚚 renderiza diferente em cada sistema e destoava do resto. */
+function iconeVeiculo(tipo) {
+  const comum = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinejoin: 'round' };
+  if (tipo === 'Caminhão') {
+    return (
+      <svg viewBox="0 0 40 40" {...comum}>
+        <path d="M3 12h20v13H3z" /><path d="M23 17h7l5 5v3h-12z" />
+        <circle cx="11" cy="29" r="3.2" /><circle cx="28" cy="29" r="3.2" />
+      </svg>
+    );
+  }
+  if (tipo === 'Caminhonete') {
+    return (
+      <svg viewBox="0 0 40 40" {...comum}>
+        <path d="M3 24v-6l4-6h9l3 6h4v12H3z" /><path d="M23 18h14v10H23z" />
+        <circle cx="11" cy="29" r="3.2" /><circle cx="30" cy="29" r="3.2" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 40 40" {...comum}>
+      <path d="M4 26v-6l4-8h20l4 8v6z" /><path d="M8 12h20" />
+      <circle cx="12" cy="28" r="3.2" /><circle cx="28" cy="28" r="3.2" />
+    </svg>
+  );
+}
+
+function statusVeiculoClasse(status) {
+  if (status === 'Disponível') return 'st-ok';
+  if (status === 'Em uso') return 'st-obra';
+  if (status === 'Manutenção') return 'st-aten';
+  return '';
+}
+
+function tagVeiculo(status) {
+  if (status === 'Disponível') return 'success';
+  if (status === 'Em uso') return 'obra';
+  if (status === 'Manutenção') return 'aten';
+  return '';
+}
+
 function emptyColaborador() {
   return {
     id: '', nome: '', apelido: '', funcao: 'Ajudante de produção',
@@ -1553,21 +1595,24 @@ function App() {
                 <SearchBox value={search} onChange={setSearch} placeholder="Buscar por nome ou função..." />
                 <div className="cards-grid three">
                   {filteredColaboradores.map((item) => (
-                    <div key={item.id} className="card">
-                      <div className="card-header">
-                        <div className="title-row">
-                          <Avatar nome={item.nome} url={item.fotoUrl} />
-                          <div>
-                            <h3>{item.nome}</h3>
-                            <div className="chips-row tight">
-                              <span className="tag">{item.funcao}</span>
-                              <span className="tag success">{item.status}</span>
-                            </div>
-                          </div>
+                    <div key={item.id} className="card ficha">
+                      <div className="ficha-topo">
+                        <Avatar nome={item.nome} url={item.fotoUrl} tamanho="big" />
+                        <div className="ficha-nome">
+                          <b>{item.apelido || item.nome}</b>
+                          <span>{item.nome}</span>
                         </div>
                       </div>
-                      <div className="section-line" />
-                      <div className="meta-row">{item.escalas} escalas · {item.faltas} faltas · ☎ {item.telefone || '-'}</div>
+                      <div className="ficha-corpo">
+                        <span className="tag">{item.funcao}</span>
+                        <span className={`tag ${item.status === 'ativo' ? 'success' : ''}`}>{item.status}</span>
+                      </div>
+                      <div className="ficha-rodape">
+                        <div><b>{item.escalas}</b><span>Escalas</span></div>
+                        <div><b>{item.faltas}</b><span>Faltas</span></div>
+                        <div><b>{item.cidades}</b><span>Cidades</span></div>
+                      </div>
+                      <div className="meta-row ficha-contato">☎ {item.telefone || 'sem telefone'}</div>
                       <div className="card-actions">
                         <button className="ghost-btn" onClick={() => setActiveDrawer({ type: 'colaborador', item })}>Ver</button>
                         {userRole === 'admin' && (
@@ -1594,23 +1639,22 @@ function App() {
                 <SearchBox value={search} onChange={setSearch} placeholder="Buscar por placa ou modelo..." />
                 <div className="cards-grid three">
                   {filteredVeiculos.map((item) => (
-                    <div key={item.id} className="card">
-                      <div className="card-header">
-                        <div className="title-row">
-                          <span className="avatar">🚚</span>
-                          <div>
-                            <h3>{item.placa}</h3>
-                            <div className="meta-row">{item.modelo} · {item.ano}</div>
-                          </div>
+                    <div key={item.id} className={`card ficha ${statusVeiculoClasse(item.status)}`}>
+                      <div className="ficha-topo">
+                        <span className="veic-icone" aria-hidden="true">{iconeVeiculo(item.tipo)}</span>
+                        <div className="ficha-nome">
+                          <b>{item.modelo}</b>
+                          <span>{item.tipo} · {item.ano || 'ano não informado'}</span>
                         </div>
                       </div>
-                      <div className="section-line" />
-                      <div className="between">
-                        <div className="chips-row tight">
-                          <span className="tag success">{item.status}</span>
-                          <span className="tag">{item.tipo}</span>
-                        </div>
-                        <span className="small-muted">{item.usos} usos</span>
+                      <div className="ficha-corpo">
+                        <span className="placa-veic">{item.placa}</span>
+                        <span className={`tag ${tagVeiculo(item.status)}`}>{item.status}</span>
+                      </div>
+                      <div className="ficha-rodape">
+                        <div><b>{item.usos}</b><span>Saídas</span></div>
+                        <div><b>{item.cidades}</b><span>Cidades</span></div>
+                        <div><b>{item.ano ? new Date().getFullYear() - item.ano : '—'}</b><span>Anos de uso</span></div>
                       </div>
                       <div className="card-actions">
                         <button className="ghost-btn" onClick={() => setActiveDrawer({ type: 'veiculo', item })}>Ver</button>
