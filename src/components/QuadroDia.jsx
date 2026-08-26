@@ -89,6 +89,34 @@ export function QuadroDia({
     };
   }, [menuStatus]);
 
+  /* A altura do quadro é medida, não chutada: um "100vh menos 300px" fixo erra
+     sempre que o cabeçalho muda de altura, e o que sobra de erro vira rolagem
+     de página — justamente o que faz a lista de pessoas subir e sumir.
+     Aqui o corpo do quadro termina exatamente no fim da janela. */
+  const corpoRef = useRef(null);
+  useEffect(() => {
+    const medir = () => {
+      const el = corpoRef.current;
+      if (!el) return;
+      const topo = el.getBoundingClientRect().top + window.scrollY;
+      let altura = Math.max(340, window.innerHeight - topo - 18);
+      el.style.height = `${altura}px`;
+
+      // Segunda passada: o que existe ABAIXO do quadro (margem, respiro da
+      // grade) não dá para saber daqui. Se ainda sobrou rolagem de página,
+      // desconta exatamente o que sobrou — em vez de chutar uma reserva.
+      const sobra = document.documentElement.scrollHeight
+        - document.documentElement.clientHeight;
+      if (sobra > 0 && altura - sobra >= 340) {
+        altura -= sobra;
+        el.style.height = `${altura}px`;
+      }
+    };
+    medir();
+    window.addEventListener('resize', medir);
+    return () => window.removeEventListener('resize', medir);
+  });
+
   const equipes = useMemo(
     () => db.programacoes.filter((p) => p.data === selectedDate),
     [db.programacoes, selectedDate]
@@ -209,6 +237,20 @@ export function QuadroDia({
     el.querySelector('.motivo').textContent = v.msg || '';
   }
 
+  /* Com a coluna de equipes rolando por conta própria, arrastar até uma equipe
+     fora da vista seria impossível: o ponteiro trava na borda e nada rola.
+     Perto da borda, a coluna rola sozinha — quanto mais perto, mais rápido. */
+  const equipesRef = useRef(null);
+  function rolarBorda(y) {
+    const cx = equipesRef.current;
+    if (!cx || cx.scrollHeight <= cx.clientHeight) return;
+    const r = cx.getBoundingClientRect();
+    const zona = 56;
+    const passo = 14;
+    if (y < r.top + zona) cx.scrollTop -= passo * ((r.top + zona - y) / zona);
+    else if (y > r.bottom - zona) cx.scrollTop += passo * ((y - (r.bottom - zona)) / zona);
+  }
+
   function alvoSob(x, y) {
     const el = fantasmaRef.current;
     if (el) el.style.visibility = 'hidden';
@@ -262,6 +304,8 @@ export function QuadroDia({
       el.style.left = `${ev.clientX}px`;
       el.style.top = `${ev.clientY}px`;
     }
+
+    rolarBorda(ev.clientY);
 
     const alvo = alvoSob(ev.clientX, ev.clientY);
     if (st.alvo && st.alvo !== alvo) limparAlvo();
@@ -374,7 +418,7 @@ export function QuadroDia({
         </div>
       )}
 
-      <div className="quadro-corpo">
+      <div className="quadro-corpo" ref={corpoRef}>
         <aside className="banco">
           <div className="banco-abas">
             <button
@@ -486,7 +530,7 @@ export function QuadroDia({
           </div>
         </aside>
 
-        <div className="equipes">
+        <div className="equipes" ref={equipesRef}>
           {equipes.map((eq) => {
             const lider = eq.encarregadoId ? maps.colaboradores[eq.encarregadoId] : null;
             const membros = (eq.membroIds || [])
