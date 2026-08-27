@@ -7,7 +7,7 @@ import { Apontamentos } from './components/Apontamentos';
 import { FichaColaborador } from './components/FichaColaborador';
 import { FichaVeiculo } from './components/FichaVeiculo';
 import { derivarDia } from './lib/dia';
-import { prepararFoto, enviarFoto, assinarFotos } from './lib/fotos';
+import { prepararFoto, enviarFoto, assinarFotos, assinarFotosEmCache } from './lib/fotos';
 
 import {
   exportProgramacaoModeloAntigo,
@@ -314,10 +314,15 @@ function App() {
     // Bucket privado: a imagem só abre com URL assinada. Assinamos todas de
     // uma vez, senão seria uma requisição por pessoa a cada carregamento.
     const colaboradores = resCols.data || [];
-    const mapaFotos = await assinarFotos(colaboradores.map((c) => c.foto_path));
+    /* As fotos NÃO seguram a primeira tela.
+       Antes, assinar as URLs era um await no meio do caminho: a tela ficava
+       vazia esperando uma ida ao Storage que não muda um único número do
+       quadro. Agora os dados entram na hora e os rostos chegam logo depois —
+       o Avatar já sabe desenhar as iniciais enquanto isso. */
+    const mapaAgora = assinarFotosEmCache(colaboradores.map((c) => c.foto_path));
     const colaboradoresComFoto = colaboradores.map((c) => ({
       ...c,
-      fotoUrl: c.foto_path ? mapaFotos[c.foto_path] || null : null,
+      fotoUrl: c.foto_path ? mapaAgora[c.foto_path] || null : null,
     }));
 
     setDb(normalizeDb({
@@ -328,6 +333,24 @@ function App() {
       patio: resPatio?.data || [],
       perfis: resPerfis?.data || []
     }));
+
+    // segunda etapa, sem bloquear: assina o que ainda não estava em cache
+    const faltando = colaboradores
+      .map((c) => c.foto_path)
+      .filter((cam) => cam && !mapaAgora[cam]);
+    if (faltando.length) {
+      assinarFotos(faltando).then((novas) => {
+        if (!Object.keys(novas).length) return;
+        setDb((atual) => ({
+          ...atual,
+          colaboradores: atual.colaboradores.map((c) => (
+            c.foto_path && novas[c.foto_path] && !c.fotoUrl
+              ? { ...c, fotoUrl: novas[c.foto_path] }
+              : c
+          )),
+        }));
+      });
+    }
   };
 
   // Mantém sempre a versão mais recente de fetchDatabase acessível de dentro

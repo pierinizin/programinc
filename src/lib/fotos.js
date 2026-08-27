@@ -97,6 +97,18 @@ const VALIDADE = 3600;
 const FOLGA = 600;
 const cacheFotos = new Map();
 
+/* Só o que já está em cache, sem tocar na rede. Serve para a primeira pintura:
+   quem já foi assinado aparece imediatamente, o resto chega depois. */
+export function assinarFotosEmCache(caminhos) {
+  const agora = Date.now();
+  const mapa = {};
+  (caminhos || []).filter(Boolean).forEach((caminho) => {
+    const guardado = cacheFotos.get(caminho);
+    if (guardado && guardado.expiraEm > agora) mapa[caminho] = guardado.url;
+  });
+  return mapa;
+}
+
 export function limparCacheFotos() {
   cacheFotos.clear();
 }
