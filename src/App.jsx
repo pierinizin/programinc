@@ -5,6 +5,8 @@ import { Avatar } from './components/Avatar';
 import { QuadroDia } from './components/QuadroDia';
 import { Apontamentos } from './components/Apontamentos';
 import { FichaColaborador } from './components/FichaColaborador';
+import { FichaVeiculo } from './components/FichaVeiculo';
+import { derivarDia } from './lib/dia';
 import { prepararFoto, enviarFoto, assinarFotos } from './lib/fotos';
 
 import {
@@ -280,6 +282,7 @@ function App() {
   const [faltaForm, setFaltaForm] = useState(emptyFalta());
   const [expandedProgramacaoId, setExpandedProgramacaoId] = useState(null);
   const [colabsSel, setColabsSel] = useState({});
+  const [veicsSel, setVeicsSel] = useState({});
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [salvandoFoto, setSalvandoFoto] = useState(false);
 
@@ -407,7 +410,9 @@ function App() {
     [db.programacoes, selectedDate]
   );
 
-  const totalPessoasDia = programacoesDoDia.reduce((acc, p) => acc + p.membroIds.length, 0);
+  /* Mesma conta que o quadro usa, vinda de src/lib/dia.js — a fita e a lista
+     não podem discordar sobre quantos estão livres. */
+  const resumoDia = useMemo(() => derivarDia(db, selectedDate), [db, selectedDate]);
   const dateLabel = formatDateLabel(selectedDate);
 
   const colaboradoresComStats = useMemo(() => {
@@ -451,6 +456,10 @@ function App() {
     const t = search.toLowerCase();
     return v.placa.toLowerCase().includes(t) || v.modelo.toLowerCase().includes(t);
   });
+
+  const veicsMarcados = filteredVeiculos.filter((v) => veicsSel[v.id]);
+  const veicsAtivosMarcados = veicsMarcados.filter((v) => v.status !== 'Inativo');
+
 
   const historyItems = colaboradoresComStats.filter((c) => c.nome.toLowerCase().includes(search.toLowerCase()));
 
@@ -1232,6 +1241,75 @@ function App() {
    else alert("✅ E-mail de recuperação enviado com sucesso para " + email);
   }
 
+  /* Veículo não é liga-desliga: são quatro status. Reativar devolve para
+     'Disponível' — nunca para 'Em uso', que quem define é a programação. */
+  async function alternarAtivoVeiculo(item) {
+    const novo = item.status === 'Inativo' ? 'Disponível' : 'Inativo';
+    const res = await supabase.from('veiculos')
+      .update({ status: novo }).eq('id', item.id).select();
+    if (res.error) return reportarErro('Erro ao mudar o status', res.error);
+    if (!res.data?.length) return semPermissao('mudar o status do veículo');
+    agendarFetch();
+  }
+
+  async function inativarVeiculos(lista) {
+    const alvos = lista.filter((v) => v.status !== 'Inativo');
+    if (!alvos.length) return false;
+
+    // Tirar de circulação um veículo que está numa equipe hoje é o erro caro
+    // aqui: a programação continuaria apontando para ele. Avisamos com nome.
+    const emUso = alvos.filter((v) => v.status === 'Em uso');
+    const nomes = alvos.slice(0, 6).map((v) => `· ${v.placa} — ${v.modelo}`).join('\n');
+    const resto = alvos.length > 6 ? `\n· e mais ${alvos.length - 6}` : '';
+    const jaInativos = lista.length - alvos.length;
+
+    const ok = window.confirm(
+      `Inativar ${alvos.length} ${alvos.length === 1 ? 'veículo' : 'veículos'}?\n\n`
+      + `${nomes}${resto}\n\n`
+      + (jaInativos ? `${jaInativos} da seleção já ${jaInativos === 1 ? 'está inativo' : 'estão inativos'} e não ${jaInativos === 1 ? 'será tocado' : 'serão tocados'}.\n\n` : '')
+      + (emUso.length ? `ATENÇÃO: ${emUso.length} ${emUso.length === 1 ? 'está' : 'estão'} EM USO (${emUso.map((v) => v.placa).join(', ')}).\n\n` : '')
+      + 'Eles somem da lista de veículos disponíveis, mas o histórico é preservado.'
+    );
+    if (!ok) return false;
+
+    const res = await supabase.from('veiculos')
+      .update({ status: 'Inativo' }).in('id', alvos.map((v) => v.id)).select();
+    if (res.error) { reportarErro('Erro ao inativar', res.error); return false; }
+    if (!res.data?.length) { semPermissao('inativar veículos'); return false; }
+    agendarFetch();
+    return true;
+  }
+
+  async function excluirVeiculos(lista) {
+    if (!lista.length) return false;
+    const nomes = lista.slice(0, 6).map((v) => `· ${v.placa} — ${v.modelo}`).join('\n');
+    const resto = lista.length > 6 ? `\n· e mais ${lista.length - 6}` : '';
+    const ok = window.confirm(
+      `Excluir ${lista.length} ${lista.length === 1 ? 'veículo' : 'veículos'}?\n\n`
+      + `${nomes}${resto}\n\n`
+      + 'Para apenas tirar da lista de disponíveis sem perder o cadastro, '
+      + 'use Inativar.\n\nEsta ação não pode ser desfeita.'
+    );
+    if (!ok) return false;
+
+    const ids = lista.map((v) => v.id);
+    const res = await supabase.from('veiculos').delete().in('id', ids).select();
+    if (res.error) { reportarErro('Erro ao excluir veículos', res.error); return false; }
+    const apagados = res.data?.length || 0;
+    if (!apagados) { semPermissao('excluir veículos'); return false; }
+    if (apagados < ids.length) {
+      reportarErro('Exclusão parcial', {
+        message: `${apagados} de ${ids.length} foram excluídos. `
+          + 'Os demais podem estar fora da sua permissão.',
+      });
+    }
+    if (activeDrawer?.type === 'veiculo' && ids.includes(activeDrawer.item.id)) {
+      setActiveDrawer(null);
+    }
+    agendarFetch();
+    return true;
+  }
+
   async function deleteVeiculo(itemId) {
     if (!confirm('Excluir este veículo?')) return;
     const res = await supabase.from('veiculos').delete().eq('id', itemId).select();
@@ -1637,18 +1715,56 @@ function App() {
                   </div>
                 </div>
 
-                <div className="date-card">
-                  <button className="icon-btn" onClick={() => { setSelectedDate(shiftDate(selectedDate, -1)); setExpandedProgramacaoId(null); }}>‹</button>
-                  <div>
-                    <h3 className="capitalize">{dateLabel.weekday}</h3>
-                    <span>{dateLabel.full}</span>
-                  </div>
-                  <button className="icon-btn" onClick={() => { setSelectedDate(shiftDate(selectedDate, 1)); setExpandedProgramacaoId(null); }}>›</button>
-                </div>
+                {/* Fita do dia: navegação e contadores na mesma linha. Antes
+                    eram dois blocos de 198px para mostrar dois números que já
+                    apareciam repetidos logo abaixo, no quadro. */}
+                <div className="fita-dia">
+                  <span className="fd-nav">
+                    <button
+                      className="icon-btn"
+                      aria-label="Dia anterior"
+                      onClick={() => { setSelectedDate(shiftDate(selectedDate, -1)); setExpandedProgramacaoId(null); }}
+                    >
+                      ‹
+                    </button>
+                    <span className="fd-data">
+                      <b className="capitalize">{dateLabel.weekday}</b>
+                      <span>{dateLabel.full}</span>
+                    </span>
+                    <button
+                      className="icon-btn"
+                      aria-label="Próximo dia"
+                      onClick={() => { setSelectedDate(shiftDate(selectedDate, 1)); setExpandedProgramacaoId(null); }}
+                    >
+                      ›
+                    </button>
+                  </span>
 
-                <div className="stats-grid">
-                  <StatCard number={programacoesDoDia.length} label="Equipes" />
-                  <StatCard number={totalPessoasDia} label="Pessoas" subtle />
+                  <span className="fd-risco" />
+
+                  <span className="fd-contas">
+                    {/* zero fica apagado de propósito: "0 equipes" não pede
+                        ação nenhuma e não deve competir com o que pede. */}
+                    <Pastilha n={programacoesDoDia.length} rotulo="equipes" />
+                    <Pastilha n={resumoDia.pessoasEscaladas} rotulo="escalados" />
+                    <Pastilha n={resumoDia.pessoasLivres.length} rotulo="livres" tom="destaque" />
+                    <Pastilha n={resumoDia.veiculosLivres.length} rotulo="veíc. parados" />
+                    {resumoDia.faltosos.size > 0 && (
+                      <Pastilha n={resumoDia.faltosos.size} rotulo="faltas" tom="alerta" />
+                    )}
+                    {resumoDia.noPatio.size > 0 && (
+                      <Pastilha n={resumoDia.noPatio.size} rotulo="no pátio" />
+                    )}
+                  </span>
+
+                  {selectedDate !== today() && (
+                    <button
+                      className="fd-hoje"
+                      onClick={() => { setSelectedDate(today()); setExpandedProgramacaoId(null); }}
+                    >
+                      Hoje
+                    </button>
+                  )}
                 </div>
 
                 {/* O quadro substitui a grade de cartões como forma de MONTAR o dia.
@@ -1981,35 +2097,62 @@ function App() {
                   </div>
                 </div>
                 <SearchBox value={search} onChange={setSearch} placeholder="Buscar por placa ou modelo..." />
+                {veicsMarcados.length > 0 && (
+                  <div className="barra-sel solta">
+                    <span>
+                      {veicsMarcados.length}{' '}
+                      {veicsMarcados.length === 1 ? 'selecionado' : 'selecionados'}
+                      {veicsAtivosMarcados.length !== veicsMarcados.length && (
+                        <span className="sel-nota">
+                          {' · '}
+                          {veicsMarcados.length - veicsAtivosMarcados.length} já inativo(s)
+                        </span>
+                      )}
+                    </span>
+                    <div className="chips-row tight">
+                      <button className="chip-btn" onClick={() => setVeicsSel({})}>Limpar</button>
+                      <button
+                        className="chip-btn"
+                        disabled={veicsAtivosMarcados.length === 0}
+                        title={veicsAtivosMarcados.length === 0
+                          ? 'Todos os selecionados já estão inativos'
+                          : `Inativar ${veicsAtivosMarcados.length}`}
+                        onClick={async () => {
+                          const feito = await inativarVeiculos(veicsMarcados);
+                          if (feito) setVeicsSel({});
+                        }}
+                      >
+                        Inativar
+                      </button>
+                      <button
+                        className="chip-btn perigo"
+                        onClick={async () => {
+                          const feito = await excluirVeiculos(veicsMarcados);
+                          if (feito) setVeicsSel({});
+                        }}
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="cards-grid three">
                   {filteredVeiculos.map((item) => (
-                    <div key={item.id} className={`card ficha ${statusVeiculoClasse(item.status)}`}>
-                      <div className="ficha-topo">
-                        <span className="veic-icone" aria-hidden="true">{iconeVeiculo(item.tipo)}</span>
-                        <div className="ficha-nome">
-                          <b>{item.modelo}</b>
-                          <span>{item.tipo} · {item.ano || 'ano não informado'}</span>
-                        </div>
-                      </div>
-                      <div className="ficha-corpo">
-                        <span className="placa-veic">{item.placa}</span>
-                        <span className={`tag ${tagVeiculo(item.status)}`}>{item.status}</span>
-                      </div>
-                      <div className="ficha-rodape">
-                        <div><b>{item.usos}</b><span>Saídas</span></div>
-                        <div><b>{item.cidades}</b><span>Cidades</span></div>
-                        <div><b>{item.ano ? new Date().getFullYear() - item.ano : '—'}</b><span>Anos de uso</span></div>
-                      </div>
-                      <div className="card-actions">
-                        <button className="ghost-btn" onClick={() => setActiveDrawer({ type: 'veiculo', item })}>Ver</button>
-                        {userRole === 'admin' && (
-                          <>
-                            <button className="ghost-btn" onClick={() => openVeiculoModal(item)}>Editar</button>
-                            <button className="danger-btn" onClick={() => deleteVeiculo(item.id)}>Excluir</button>
-                          </>
-                        )}
-                      </div>
-                    </div>
+                    <FichaVeiculo
+                      key={item.id}
+                      item={item}
+                      ehAdmin={userRole === 'admin'}
+                      selecionado={Boolean(veicsSel[item.id])}
+                      onSelecionar={(id) => setVeicsSel((s) => ({ ...s, [id]: !s[id] }))}
+                      onVer={(v) => setActiveDrawer({ type: 'veiculo', item: v })}
+                      onEditar={openVeiculoModal}
+                      onAlternarAtivo={alternarAtivoVeiculo}
+                      onExcluir={(v) => deleteVeiculo(v.id)}
+                      classeStatus={statusVeiculoClasse(item.status)}
+                      classeTag={tagVeiculo(item.status)}
+                      icone={iconeVeiculo(item.tipo)}
+                    />
                   ))}
                 </div>
               </>
@@ -2440,6 +2583,18 @@ function SearchBox({ value, onChange, placeholder }) {
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
     />
+  );
+}
+
+/* Contador compacto da fita do dia. O zero fica apagado: uma tela cheia de
+   números fortes iguais não ajuda ninguém a achar o que importa. */
+function Pastilha({ n, rotulo, tom }) {
+  const cor = n === 0 ? 'zero' : (tom || '');
+  return (
+    <span className={`pastilha ${cor}`} title={`${n} ${rotulo}`}>
+      <b>{n}</b>
+      <span>{rotulo}</span>
+    </span>
   );
 }
 

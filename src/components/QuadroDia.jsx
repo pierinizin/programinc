@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
+import { derivarDia } from '../lib/dia';
 
 const MAX_EQUIPE = 10;
 
@@ -108,58 +109,11 @@ export function QuadroDia({
   }, [menuStatus]);
 
 
-  const equipes = useMemo(
-    () => db.programacoes.filter((p) => p.data === selectedDate),
-    [db.programacoes, selectedDate]
-  );
-
-  const faltosos = useMemo(() => {
-    const s = new Set();
-    db.faltas.forEach((f) => {
-      if (f.data === selectedDate) s.add(f.colaboradorId);
-    });
-    return s;
-  }, [db.faltas, selectedDate]);
-
-  const noPatio = useMemo(() => {
-    const s = new Set();
-    (db.patio || []).forEach((p) => {
-      if (p.data === selectedDate) s.add(p.colaboradorId);
-    });
-    return s;
-  }, [db.patio, selectedDate]);
-
-  const equipesDaPessoa = useMemo(() => {
-    const m = {};
-    equipes.forEach((eq) => {
-      new Set([eq.encarregadoId, ...(eq.membroIds || [])].filter(Boolean)).forEach((id) => {
-        (m[id] = m[id] || []).push(eq);
-      });
-    });
-    return m;
-  }, [equipes]);
-
-  const equipesDoVeiculo = useMemo(() => {
-    const m = {};
-    equipes.forEach((eq) => {
-      (eq.veiculoIds || []).forEach((id) => {
-        (m[id] = m[id] || []).push(eq);
-      });
-    });
-    return m;
-  }, [equipes]);
-
-  const pessoasLivres = useMemo(
-    () => db.colaboradores.filter(
-      (c) => c.status !== 'inativo' && !equipesDaPessoa[c.id]
-        && !noPatio.has(c.id) && !faltosos.has(c.id)
-    ),
-    [db.colaboradores, equipesDaPessoa, noPatio, faltosos]
-  );
-  const veiculosLivres = useMemo(
-    () => db.veiculos.filter((v) => v.status !== 'Inativo' && !equipesDoVeiculo[v.id]),
-    [db.veiculos, equipesDoVeiculo]
-  );
+  /* Uma conta só, compartilhada com a fita do cabeçalho (src/lib/dia.js). */
+  const {
+    equipes, faltosos, noPatio, equipesDaPessoa, equipesDoVeiculo,
+    pessoasLivres, veiculosLivres,
+  } = useMemo(() => derivarDia(db, selectedDate), [db, selectedDate]);
 
   const itensVisiveis = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -493,11 +447,9 @@ export function QuadroDia({
     <div className="quadro">
       <div className="quadro-topo">
         <div>
+          {/* Os contadores saíram daqui: agora vivem na fita do cabeçalho,
+              em um lugar só. Antes a mesma informação aparecia duas vezes. */}
           <strong className="quadro-titulo">Quadro do dia</strong>
-          <span className="small-muted">
-            {equipes.length} {equipes.length === 1 ? 'equipe' : 'equipes'} ·{' '}
-            {pessoasLivres.length} livres · {veiculosLivres.length} veículos parados
-          </span>
         </div>
         {podeEditar && (
           <button className="ghost-btn" onClick={onNovaEquipe}>Formulário completo</button>
