@@ -29,8 +29,8 @@
 
   --faixa:        #FFC72C;
   --faixa-fundo:  #3A2F0E;
-  --obra:         #3B9BEE;
-  --obra-fundo:   #10263B;
+  --obra:         #FF6A13;
+  --obra-fundo:   #3B2011;
   --ok:           #35C07B;
   --ok-fundo:     #10301F;
   --erro:         #F0575C;
@@ -38,7 +38,7 @@
 
   /* versões legíveis como TEXTO */
   --faixa-texto:  #FFC72C;
-  --obra-texto:   #5CB3F5;
+  --obra-texto:   #FF8A44;
   --ok-texto:     #4FD494;
   --erro-texto:   #FF7A7E;
 
@@ -82,12 +82,12 @@
     --tinta-fraca:  #838E97;
 
     --faixa-fundo:  #FFF3D0;
-    --obra-fundo:   #DCEBFA;
+    --obra-fundo:   #FFE9DC;
     --ok-fundo:     #DDF3E7;
     --erro-fundo:   #FDE3E4;
 
     --faixa-texto:  #7A5600;
-    --obra-texto:   #10508C;
+    --obra-texto:   #A63C00;
     --ok-texto:     #10693F;
     --erro-texto:   #B0181D;
 
@@ -1056,6 +1056,14 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   font-weight: 600;
   font-size: 13px;
 }
+/* Dentro do quadro do dia a faixa encosta nas bordas de propósito — o cartão
+   já arredonda e recorta. Na página de colaboradores ela fica solta, então
+   precisa dos próprios cantos e de respiro antes da primeira linha de cards. */
+.barra-sel.solta {
+  border-radius: var(--r-md);
+  margin-bottom: 14px;
+}
+
 .barra-sel .chip-btn {
   background: rgba(0,0,0,.14);
   border-color: rgba(0,0,0,.22);
@@ -1545,6 +1553,70 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 #fantasma .motivo { font-family: var(--fonte-dado); font-size: 10.5px; color: var(--tinta-fraca); }
 
 /* --------------------------- diálogo de cópia --------------------------- */
+/* ---- ficha do colaborador: seleção + menu de três pontos ---- */
+.ficha { position: relative; }
+.ficha.marcada { border-color: var(--faixa); background: var(--superficie-2); }
+/* Inativo fica visivelmente apagado: numa grade de 40 fichas é o que separa
+   quem ainda escala de quem só está guardado por causa do histórico. */
+.ficha.inativa .ficha-topo, .ficha.inativa .ficha-rodape { opacity: .58; }
+
+.fc-check {
+  position: absolute;
+  top: 12px; right: 12px;
+  width: 20px; height: 20px;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--borda-forte);
+  border-radius: 4px;
+  background: var(--superficie);
+  color: transparent;
+  font-size: 12px;
+  padding: 0;
+  z-index: 2;
+}
+.ficha.marcada .fc-check {
+  background: var(--faixa);
+  border-color: var(--faixa);
+  color: #16190C;
+}
+
+.fc-menu { position: absolute; top: 10px; right: 40px; z-index: 3; }
+.fc-kebab {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tinta-fraca);
+  font-size: 16px;
+  line-height: 1;
+}
+.fc-kebab:hover { background: var(--superficie-2); border-color: var(--borda); color: var(--tinta); }
+
+.fc-lista {
+  position: absolute;
+  top: 32px; right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 186px;
+  padding: 4px;
+  background: var(--superficie);
+  border: 1px solid var(--borda-forte);
+  border-radius: var(--r-sm);
+  box-shadow: var(--sombra-lg);
+}
+.fc-lista .selo-opc { font-size: 13px; }
+.fc-lista .selo-opc.perigo { color: var(--erro-texto); }
+.fc-divisor { height: 1px; background: var(--borda); margin: 4px 2px; }
+
+/* Sem admin não há checkbox, então o menu ocupa o canto sozinho. */
+.ficha:not(:has(.fc-check)) .fc-menu { right: 10px; }
+
+.chip-btn:disabled { opacity: .45; cursor: not-allowed; }
+.chip-btn:disabled:hover { border-color: var(--borda); color: var(--tinta-media); }
+.barra-sel .chip-btn:disabled:hover { background: rgba(0,0,0,.14); color: #16190C; }
+.sel-nota { font-weight: 500; opacity: .75; }
+
 .modal-copia { width: min(500px, 100%); }
 .modal-motivo { width: min(380px, 100%); }
 .lista-motivos { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; }
@@ -1732,7 +1804,9 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 14px 14px 10px 17px;
+  /* folga à direita reservada para o ⋯ e o checkbox: sem ela um nome longo
+     ("Alessandro de Jesus Praxedes") passa por baixo dos dois controles. */
+  padding: 14px 78px 10px 17px;
   min-height: 80px;
 }
 .ficha-nome { min-width: 0; flex: 1; }

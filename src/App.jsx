@@ -4,6 +4,7 @@ import { Auth } from './components/Auth';
 import { Avatar } from './components/Avatar';
 import { QuadroDia } from './components/QuadroDia';
 import { Apontamentos } from './components/Apontamentos';
+import { FichaColaborador } from './components/FichaColaborador';
 import { prepararFoto, enviarFoto, assinarFotos } from './lib/fotos';
 
 import {
@@ -278,6 +279,7 @@ function App() {
   const [veiculoForm, setVeiculoForm] = useState(emptyVeiculo());
   const [faltaForm, setFaltaForm] = useState(emptyFalta());
   const [expandedProgramacaoId, setExpandedProgramacaoId] = useState(null);
+  const [colabsSel, setColabsSel] = useState({});
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [salvandoFoto, setSalvandoFoto] = useState(false);
 
@@ -438,6 +440,12 @@ function App() {
     const t = search.toLowerCase();
     return c.nome.toLowerCase().includes(t) || c.funcao.toLowerCase().includes(t);
   });
+
+  /* Só conta como selecionado quem ainda está visível na lista filtrada: se a
+     busca esconde alguém, agir sobre ele seria agir às cegas. */
+  const colabsMarcados = filteredColaboradores.filter((c) => colabsSel[c.id]);
+  const colabsAtivosMarcados = colabsMarcados.filter((c) => c.status === 'ativo');
+
 
   const filteredVeiculos = veiculosComStats.filter((v) => {
     const t = search.toLowerCase();
@@ -1117,6 +1125,75 @@ function App() {
     // o botão parecer quebrado.
     if (!res.data?.length) return semPermissao('remover faltas');
     agendarFetch();
+  }
+
+  /* ------------------------------------------------------------------
+     Ativar / inativar colaborador.
+     Inativar preserva escalas e faltas; excluir apaga tudo em cascata. Por
+     isso inativar é a ação da frente e excluir ficou no fim do menu.
+     ------------------------------------------------------------------ */
+  async function alternarAtivoColaborador(item) {
+    const novo = item.status === 'ativo' ? 'inativo' : 'ativo';
+    const res = await supabase.from('colaboradores')
+      .update({ status: novo }).eq('id', item.id).select();
+    if (res.error) return reportarErro('Erro ao mudar o status', res.error);
+    if (!res.data?.length) return semPermissao('mudar o status do colaborador');
+    agendarFetch();
+  }
+
+  async function inativarColaboradores(lista) {
+    // Quem já está inativo não entra: reenviar o mesmo status só gastaria
+    // escrita e ainda mexeria no updated_at de quem não mudou nada.
+    const alvos = lista.filter((c) => c.status === 'ativo');
+    if (!alvos.length) return false;
+
+    const nomes = alvos.slice(0, 6).map((c) => `· ${c.nome}`).join('\n');
+    const resto = alvos.length > 6 ? `\n· e mais ${alvos.length - 6}` : '';
+    const jaInativos = lista.length - alvos.length;
+    const ok = window.confirm(
+      `Inativar ${alvos.length} ${alvos.length === 1 ? 'colaborador' : 'colaboradores'}?\n\n`
+      + `${nomes}${resto}\n\n`
+      + (jaInativos ? `${jaInativos} da seleção já ${jaInativos === 1 ? 'está inativo' : 'estão inativos'} e não ${jaInativos === 1 ? 'será tocado' : 'serão tocados'}.\n\n` : '')
+      + 'Eles somem das listas de escalação, mas o histórico é preservado.'
+    );
+    if (!ok) return false;
+
+    const res = await supabase.from('colaboradores')
+      .update({ status: 'inativo' }).in('id', alvos.map((c) => c.id)).select();
+    if (res.error) { reportarErro('Erro ao inativar', res.error); return false; }
+    if (!res.data?.length) { semPermissao('inativar colaboradores'); return false; }
+    agendarFetch();
+    return true;
+  }
+
+  async function excluirColaboradores(lista) {
+    if (!lista.length) return false;
+    const nomes = lista.slice(0, 6).map((c) => `· ${c.nome}`).join('\n');
+    const resto = lista.length > 6 ? `\n· e mais ${lista.length - 6}` : '';
+    const ok = window.confirm(
+      `Excluir ${lista.length} ${lista.length === 1 ? 'colaborador' : 'colaboradores'}?\n\n`
+      + `${nomes}${resto}\n\n`
+      + 'As faltas atreladas a eles serão apagadas junto. Para apenas tirar '
+      + 'das listas sem perder histórico, use Inativar.\n\nEsta ação não pode ser desfeita.'
+    );
+    if (!ok) return false;
+
+    const ids = lista.map((c) => c.id);
+    const res = await supabase.from('colaboradores').delete().in('id', ids).select();
+    if (res.error) { reportarErro('Erro ao excluir colaboradores', res.error); return false; }
+    const apagados = res.data?.length || 0;
+    if (!apagados) { semPermissao('excluir colaboradores'); return false; }
+    if (apagados < ids.length) {
+      reportarErro('Exclusão parcial', {
+        message: `${apagados} de ${ids.length} foram excluídos. `
+          + 'Os demais podem estar fora da sua permissão.',
+      });
+    }
+    if (activeDrawer?.type === 'colaborador' && ids.includes(activeDrawer.item.id)) {
+      setActiveDrawer(null);
+    }
+    agendarFetch();
+    return true;
   }
 
   async function deleteColaborador(itemId) {
@@ -1835,36 +1912,61 @@ function App() {
                   </div>
                 </div>
                 <SearchBox value={search} onChange={setSearch} placeholder="Buscar por nome ou função..." />
+                {colabsMarcados.length > 0 && (
+                  <div className="barra-sel solta">
+                    <span>
+                      {colabsMarcados.length}{' '}
+                      {colabsMarcados.length === 1 ? 'selecionado' : 'selecionados'}
+                      {colabsAtivosMarcados.length !== colabsMarcados.length && (
+                        <span className="sel-nota">
+                          {' · '}
+                          {colabsMarcados.length - colabsAtivosMarcados.length} já inativo(s)
+                        </span>
+                      )}
+                    </span>
+                    <div className="chips-row tight">
+                      <button className="chip-btn" onClick={() => setColabsSel({})}>Limpar</button>
+                      {/* Suspenso quando não há ninguém ativo na seleção: o botão
+                          não teria efeito nenhum e o clique só geraria dúvida. */}
+                      <button
+                        className="chip-btn"
+                        disabled={colabsAtivosMarcados.length === 0}
+                        title={colabsAtivosMarcados.length === 0
+                          ? 'Todos os selecionados já estão inativos'
+                          : `Inativar ${colabsAtivosMarcados.length}`}
+                        onClick={async () => {
+                          const feito = await inativarColaboradores(colabsMarcados);
+                          if (feito) setColabsSel({});
+                        }}
+                      >
+                        Inativar
+                      </button>
+                      <button
+                        className="chip-btn perigo"
+                        onClick={async () => {
+                          const feito = await excluirColaboradores(colabsMarcados);
+                          if (feito) setColabsSel({});
+                        }}
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="cards-grid three">
                   {filteredColaboradores.map((item) => (
-                    <div key={item.id} className="card ficha">
-                      <div className="ficha-topo">
-                        <Avatar nome={item.nome} url={item.fotoUrl} tamanho="big" />
-                        <div className="ficha-nome">
-                          <b>{item.apelido || item.nome}</b>
-                          <span>{item.nome}</span>
-                        </div>
-                      </div>
-                      <div className="ficha-corpo">
-                        <span className="tag">{item.funcao}</span>
-                        <span className={`tag ${item.status === 'ativo' ? 'success' : ''}`}>{item.status}</span>
-                      </div>
-                      <div className="ficha-rodape">
-                        <div><b>{item.escalas}</b><span>Escalas</span></div>
-                        <div><b>{item.faltas}</b><span>Faltas</span></div>
-                        <div><b>{item.cidades}</b><span>Cidades</span></div>
-                      </div>
-                      <div className="meta-row ficha-contato">☎ {item.telefone || 'sem telefone'}</div>
-                      <div className="card-actions">
-                        <button className="ghost-btn" onClick={() => setActiveDrawer({ type: 'colaborador', item })}>Ver</button>
-                        {userRole === 'admin' && (
-                          <>
-                            <button className="ghost-btn" onClick={() => openColaboradorModal(item)}>Editar</button>
-                            <button className="danger-btn" onClick={() => deleteColaborador(item.id)}>Excluir</button>
-                          </>
-                        )}
-                      </div>
-                    </div>
+                    <FichaColaborador
+                      key={item.id}
+                      item={item}
+                      ehAdmin={userRole === 'admin'}
+                      selecionado={Boolean(colabsSel[item.id])}
+                      onSelecionar={(id) => setColabsSel((s) => ({ ...s, [id]: !s[id] }))}
+                      onVer={(c) => setActiveDrawer({ type: 'colaborador', item: c })}
+                      onEditar={openColaboradorModal}
+                      onAlternarAtivo={alternarAtivoColaborador}
+                      onExcluir={(c) => deleteColaborador(c.id)}
+                    />
                   ))}
                 </div>
               </>
