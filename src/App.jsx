@@ -368,6 +368,7 @@ function App() {
      viram um. O atraso é imperceptível e as telas que precisam de resposta
      imediata já fazem atualização otimista. */
   const fetchTimerRef = useRef(null);
+  const contadorTmpRef = useRef(0);
   function agendarFetch() {
     if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current);
     fetchTimerRef.current = setTimeout(() => {
@@ -723,12 +724,7 @@ function App() {
       apontamentoEm: new Date().toISOString(),
       apontamentoPor: session?.user?.id || null,
     };
-    const res = await supabase
-      .from('programacoes').update(patch).eq('id', programacao.id).select();
-
-    if (res.error) return reportarErro('Erro ao lançar apontamento', res.error);
-    if (!res.data?.length) return semPermissao('lançar apontamentos');
-    agendarFetch();
+    return atualizarOtimista('programacoes', programacao.id, patch, 'lançar apontamentos');
   }
 
   /* Checkbox de apontamento no quadro do dia.
@@ -764,12 +760,7 @@ function App() {
         apontamentoPor: null,
       };
 
-    const res = await supabase
-      .from('programacoes').update(patch).eq('id', programacao.id).select();
-
-    if (res.error) return reportarErro('Erro ao marcar apontamento', res.error);
-    if (!res.data?.length) return semPermissao('marcar apontamentos');
-    agendarFetch();
+    return atualizarOtimista('programacoes', programacao.id, patch, 'marcar apontamentos');
   }
 
   async function desfazerApontamento(programacao, ap) {
@@ -781,12 +772,7 @@ function App() {
       apontamentoEm: restantes.length ? programacao.apontamentoEm : null,
       apontamentoPor: restantes.length ? programacao.apontamentoPor : null,
     };
-    const res = await supabase
-      .from('programacoes').update(patch).eq('id', programacao.id).select();
-
-    if (res.error) return reportarErro('Erro ao desfazer lançamento', res.error);
-    if (!res.data?.length) return semPermissao('desfazer lançamentos');
-    agendarFetch();
+    return atualizarOtimista('programacoes', programacao.id, patch, 'desfazer lançamentos');
   }
 
   /* Troca de status direto no quadro, sem abrir a equipe.
@@ -1090,14 +1076,70 @@ function App() {
      Pátio = veio trabalhar e não saiu para obra. Falta = não veio. São
      tabelas separadas justamente para não misturar as duas contagens.
      ------------------------------------------------------------------ */
+  /* ------------------------------------------------------------------
+     Escrita otimista em lista.
+     A tela aplica a mudança na hora e desfaz se o servidor recusar. Sem isto,
+     cada clique custava a ida à rede MAIS a recarga completa — medimos 800ms
+     num arraste para o pátio, contra 0ms de percepção agora. Quem monta o dia
+     dá dezenas desses cliques seguidos; esperar em cada um é o "peso".
+     ------------------------------------------------------------------ */
+  /* Update otimista por id, para qualquer tabela. */
+  async function atualizarOtimista(tabela, id, patch, oQue) {
+    const anterior = db[tabela];
+    setDb((atual) => ({
+      ...atual,
+      [tabela]: atual[tabela].map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    }));
+
+    const res = await supabase.from(tabela).update(patch).eq('id', id).select();
+    if (res.error || !res.data?.length) {
+      setDb((atual) => ({ ...atual, [tabela]: anterior }));
+      if (res.error) return reportarErro(`Erro ao ${oQue}`, res.error);
+      return semPermissao(oQue);
+    }
+    return true;
+  }
+
+  async function inserirOtimista(tabela, linha, oQue) {
+    const provisorio = { ...linha, id: `tmp-${tabela}-${contadorTmpRef.current += 1}` };
+    setDb((atual) => ({ ...atual, [tabela]: [...atual[tabela], provisorio] }));
+
+    const res = await supabase.from(tabela).insert([linha]).select();
+
+    if (res.error || !res.data?.length) {
+      // desfaz só a linha provisória — mexer no resto atropelaria o que o
+      // usuário fez nos milissegundos seguintes
+      setDb((atual) => ({
+        ...atual, [tabela]: atual[tabela].filter((r) => r.id !== provisorio.id),
+      }));
+      if (res.error) return reportarErro(`Erro ao ${oQue}`, res.error);
+      return semPermissao(oQue);
+    }
+
+    // troca a provisória pela linha real, com o id que veio do banco
+    const real = res.data[0];
+    setDb((atual) => ({
+      ...atual, [tabela]: atual[tabela].map((r) => (r.id === provisorio.id ? real : r)),
+    }));
+    return true;
+  }
+
+  async function removerOtimista(tabela, id, oQue) {
+    const anterior = db[tabela];
+    setDb((atual) => ({ ...atual, [tabela]: atual[tabela].filter((r) => r.id !== id) }));
+
+    const res = await supabase.from(tabela).delete().eq('id', id).select();
+    if (res.error || !res.data?.length) {
+      setDb((atual) => ({ ...atual, [tabela]: anterior }));
+      if (res.error) return reportarErro(`Erro ao ${oQue}`, res.error);
+      return semPermissao(oQue);
+    }
+    return true;
+  }
+
   async function adicionarAoPatio(colaboradorId) {
     if (db.patio.some((p) => p.data === selectedDate && p.colaboradorId === colaboradorId)) return;
-
-    const res = await supabase.from('patio')
-      .insert([{ colaboradorId, data: selectedDate }]).select();
-    if (res.error) return reportarErro('Erro ao mandar para o pátio', res.error);
-    if (!res.data?.length) return semPermissao('registrar pátio');
-    agendarFetch();
+    return inserirOtimista('patio', { colaboradorId, data: selectedDate }, 'registrar pátio');
   }
 
   async function removerDoPatio(colaboradorId) {
@@ -1105,22 +1147,18 @@ function App() {
       (p) => p.data === selectedDate && p.colaboradorId === colaboradorId
     );
     if (!reg) return;
-    const res = await supabase.from('patio').delete().eq('id', reg.id).select();
-    if (res.error) return reportarErro('Erro ao tirar do pátio', res.error);
-    if (!res.data?.length) return semPermissao('tirar do pátio');
-    agendarFetch();
+    return removerOtimista('patio', reg.id, 'tirar do pátio');
   }
 
   // 'motivo' é NOT NULL no banco, então quem chama precisa escolher — a tela
   // pergunta no momento do drop em vez de gravar um motivo inventado.
   async function registrarFalta(colaboradorId, motivo) {
     if (db.faltas.some((f) => f.data === selectedDate && f.colaboradorId === colaboradorId)) return;
-
-    const res = await supabase.from('faltas')
-      .insert([{ colaboradorId, data: selectedDate, motivo, observacao: '' }]).select();
-    if (res.error) return reportarErro('Erro ao registrar falta', res.error);
-    if (!res.data?.length) return semPermissao('registrar faltas');
-    agendarFetch();
+    return inserirOtimista(
+      'faltas',
+      { colaboradorId, data: selectedDate, motivo, observacao: '' },
+      'registrar faltas'
+    );
   }
 
   async function removerFalta(colaboradorId) {
@@ -1128,12 +1166,9 @@ function App() {
       (f) => f.data === selectedDate && f.colaboradorId === colaboradorId
     );
     if (!reg) return;
-    const res = await supabase.from('faltas').delete().eq('id', reg.id).select();
-    if (res.error) return reportarErro('Erro ao remover falta', res.error);
-    // Apagar falta é só de admin no security.sql — dizer isso é melhor do que
-    // o botão parecer quebrado.
-    if (!res.data?.length) return semPermissao('remover faltas');
-    agendarFetch();
+    // Apagar falta é só de admin no security.sql — se voltar vazio, o aviso
+    // explica em vez de o botão parecer quebrado.
+    return removerOtimista('faltas', reg.id, 'remover faltas');
   }
 
   /* ------------------------------------------------------------------
@@ -1143,11 +1178,9 @@ function App() {
      ------------------------------------------------------------------ */
   async function alternarAtivoColaborador(item) {
     const novo = item.status === 'ativo' ? 'inativo' : 'ativo';
-    const res = await supabase.from('colaboradores')
-      .update({ status: novo }).eq('id', item.id).select();
-    if (res.error) return reportarErro('Erro ao mudar o status', res.error);
-    if (!res.data?.length) return semPermissao('mudar o status do colaborador');
-    agendarFetch();
+    return atualizarOtimista(
+      'colaboradores', item.id, { status: novo }, 'mudar o status do colaborador'
+    );
   }
 
   async function inativarColaboradores(lista) {
@@ -1245,11 +1278,9 @@ function App() {
      'Disponível' — nunca para 'Em uso', que quem define é a programação. */
   async function alternarAtivoVeiculo(item) {
     const novo = item.status === 'Inativo' ? 'Disponível' : 'Inativo';
-    const res = await supabase.from('veiculos')
-      .update({ status: novo }).eq('id', item.id).select();
-    if (res.error) return reportarErro('Erro ao mudar o status', res.error);
-    if (!res.data?.length) return semPermissao('mudar o status do veículo');
-    agendarFetch();
+    return atualizarOtimista(
+      'veiculos', item.id, { status: novo }, 'mudar o status do veículo'
+    );
   }
 
   async function inativarVeiculos(lista) {
