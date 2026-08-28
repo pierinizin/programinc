@@ -17,6 +17,8 @@ export function FichaColaborador({
   onSelecionar,
   onVer,
   onEditar,
+  pendencias = 0,
+  onDocumentos,
   onAlternarAtivo,
   onExcluir,
 }) {
@@ -31,6 +33,12 @@ export function FichaColaborador({
         rotuloItem={item.nome}
         itens={[
           { rotulo: 'Ver ficha completa', onClick: () => onVer(item) },
+          // Só aparece para quem tem pendência: um item que diz "0 pendências"
+          // em 40 fichas ensina a ignorar o menu inteiro.
+          ehAdmin && onDocumentos && pendencias > 0 && {
+            rotulo: `Documentos · ${pendencias} ${pendencias === 1 ? 'pendência' : 'pendências'}`,
+            onClick: () => onDocumentos(item),
+          },
           ehAdmin && { rotulo: 'Editar', onClick: () => onEditar(item) },
           // O rótulo acompanha o estado: para quem já está inativo a opção vira
           // Reativar, em vez de um "Inativar" que não faria nada.

@@ -19,7 +19,7 @@ function rotuloApontamento(eq) {
    um clique grava status e motivo juntos, em vez de deixar o registro num
    estado que o formulário completo recusaria. */
 const OPCOES_STATUS = [
-  ['EXECUTANDO', null, 'Em campo', 'selo-obra'],
+  ['EXECUTANDO', null, 'Em campo', 'selo-campo'],
   ['CONCLUÍDO', null, 'Concluído', 'selo-ok'],
   ['NÃO FOI POSSÍVEL REALIZAR', 'CHUVA', 'Não realizado · chuva', 'selo-parado'],
   ['NÃO FOI POSSÍVEL REALIZAR', 'MANUTENÇÃO', 'Não realizado · manutenção', 'selo-parado'],
@@ -48,7 +48,7 @@ export function nomeCurto(nome) {
 }
 
 function seloDe(item) {
-  if (item.statusExecucao === 'EXECUTANDO') return ['selo-obra', 'Em campo'];
+  if (item.statusExecucao === 'EXECUTANDO') return ['selo-campo', 'Em campo'];
   if (item.statusExecucao === 'CONCLUÍDO') return ['selo-ok', 'Concluído'];
   if (item.statusExecucao === 'NÃO FOI POSSÍVEL REALIZAR') {
     return ['selo-parado', item.motivoNaoExecucao || 'Não realizado'];
@@ -69,6 +69,7 @@ export function QuadroDia({
   onRemoverVeiculo,
   onCriarRapida,
   onAbrirEquipe,
+  onEditarEquipe,
   onNovaEquipe,
   onCopiar,
   onAlternarApontamento,
@@ -705,6 +706,31 @@ export function QuadroDia({
                   <span className="horas">
                     {eq.horarioInicio || '--:--'} → {eq.horarioSaida || '--:--'}
                   </span>
+
+                  {/* Arrastar resolve pessoa e veículo; o resto da equipe —
+                      cidade, contratante, tipo, horários — só existia no
+                      formulário, que até agora não tinha porta nenhuma a partir
+                      do quadro. Uma cidade errada obrigava a apagar a equipe e
+                      montar de novo. */}
+                  {podeEditar && onEditarEquipe && (
+                    <button
+                      type="button"
+                      className="eq-editar"
+                      title="Editar equipe (cidade, contratante, tipo, horários…)"
+                      aria-label={`Editar ${eq.tipoEquipe || 'equipe'}`}
+                      onClick={() => onEditarEquipe(eq)}
+                    >
+                      {/* Lápis desenhado, não o caractere ✎: a fonte do sistema
+                          renderiza esse glifo fino demais e em alguns aparelhos
+                          nem tem — vira um retângulo vazio. */}
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                           strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                           aria-hidden="true">
+                        <path d="M12 20h9" />
+                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                      </svg>
+                    </button>
+                  )}
                   {podeMudarStatus ? (
                     <span className="selo-menu">
                       <button

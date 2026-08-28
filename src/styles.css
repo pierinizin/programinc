@@ -31,6 +31,12 @@
   --faixa-fundo:  #3A2F0E;
   --obra:         #FF6A13;
   --obra-fundo:   #3B2011;
+  /* Azul de equipe em campo. Fica FORA da semântica ANSI de propósito: laranja,
+     amarelo, vermelho e verde já falam de risco e de resultado. "Está na rua
+     agora" não é risco nem resultado, é situação — e num quadro onde tudo é
+     quente, o azul é a única cor que se lê sem competir com elas. */
+  --campo:        #2F81F7;
+  --campo-fundo:  #0F2540;
   --ok:           #35C07B;
   --ok-fundo:     #10301F;
   --erro:         #F0575C;
@@ -39,6 +45,7 @@
   /* versões legíveis como TEXTO */
   --faixa-texto:  #FFC72C;
   --obra-texto:   #FF8A44;
+  --campo-texto:  #6FB0FF;
   --ok-texto:     #4FD494;
   --erro-texto:   #FF7A7E;
 
@@ -83,11 +90,13 @@
 
     --faixa-fundo:  #FFF3D0;
     --obra-fundo:   #FFE9DC;
+    --campo-fundo:  #DDEAFC;
     --ok-fundo:     #DDF3E7;
     --erro-fundo:   #FDE3E4;
 
     --faixa-texto:  #7A5600;
     --obra-texto:   #A63C00;
+    --campo-texto:  #14508F;
     --ok-texto:     #10693F;
     --erro-texto:   #B0181D;
 
@@ -456,9 +465,10 @@ button { cursor: pointer; color: inherit; }
 }
 .compact-program-card:hover { border-color: var(--borda-forte); transform: none; box-shadow: none; }
 
-/* Tarja de status. Semântica ANSI: laranja em execução, verde concluído,
-   vermelho impedido. */
-.compact-program-card.st-campo::before  { background: var(--obra); }
+/* Tarja de status: azul em campo, verde concluído, vermelho impedido.
+   Este cartão já pedia st-campo; faltava a cor, então ele saía laranja e
+   discordava do quadro sobre a mesma equipe. */
+.compact-program-card.st-campo::before  { background: var(--campo); }
 .compact-program-card.st-ok::before     { background: var(--ok); }
 .compact-program-card.st-parado::before { background: var(--erro); }
 
@@ -1326,6 +1336,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   background: var(--borda-forte);
 }
 .equipe.st-obra::before   { background: var(--obra); }
+.equipe.st-campo::before  { background: var(--campo); }
 .equipe.st-ok::before     { background: var(--ok); }
 .equipe.st-parado::before { background: var(--erro); }
 
@@ -1475,6 +1486,21 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 
 .eq-dir { display: flex; align-items: center; gap: 10px; justify-content: flex-end; }
 
+/* Lápis discreto: fica apagado até o mouse chegar no card, para não competir
+   com o selo de status, que é o que se lê de longe. No toque não há hover, e
+   por isso ele nunca fica invisível de verdade — só menos forte. */
+.eq-editar {
+  width: 26px; height: 26px; flex: none;
+  display: grid; place-items: center;
+  border: 1px solid var(--borda); border-radius: var(--r-sm);
+  background: transparent; color: var(--tinta-media);
+  cursor: pointer;
+  opacity: .7; transition: opacity .12s, color .12s, border-color .12s;
+}
+.eq-editar svg { width: 14px; height: 14px; }
+.equipe:hover .eq-editar, .eq-editar:focus-visible { opacity: 1; }
+.eq-editar:hover { color: var(--faixa-texto); border-color: var(--borda-forte); }
+
 /* Checkbox de apontamento no card da equipe. Fica apagado enquanto não há
    lançamento e ganha o verde de confirmação quando há — o quadro precisa
    responder "esta equipe já foi apontada?" de relance. */
@@ -1536,6 +1562,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   white-space: nowrap;
 }
 .selo-obra   { background: var(--obra-fundo); color: var(--obra-texto); border: 1px solid var(--obra-texto); }
+.selo-campo  { background: var(--campo-fundo); color: var(--campo-texto); border: 1px solid var(--campo-texto); }
 .selo-ok     { background: var(--ok-fundo); color: var(--ok-texto); border: 1px solid var(--ok-texto); }
 .selo-parado { background: var(--erro-fundo); color: var(--erro-texto); border: 1px solid var(--erro-texto); }
 
@@ -1587,6 +1614,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   border: 1px solid currentColor;
 }
 .selo-opc .ponto.selo-obra   { background: var(--obra-texto); color: var(--obra-texto); }
+.selo-opc .ponto.selo-campo  { background: var(--campo-texto); color: var(--campo-texto); }
 .selo-opc .ponto.selo-ok     { background: var(--ok-texto); color: var(--ok-texto); }
 .selo-opc .ponto.selo-parado { background: var(--erro-texto); color: var(--erro-texto); }
 .selo-opc .marca { margin-left: auto; color: var(--tinta-media); font-size: 11px; }
@@ -2174,4 +2202,165 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 760px) {
   .ap-barra { flex-direction: column; align-items: stretch; }
   .ap-linha-topo .selo { margin-left: 0; }
+}
+
+/* ==========================================================================
+   DOCUMENTOS — fila de prazos e importação em massa
+   --------------------------------------------------------------------------
+   Cor segue a mesma semântica do quadro (ANSI Z535): vermelho = irregular
+   hoje, amarelo = atenção, cinza = pendência de papelada. Nada de vermelho
+   para "falta anexar o PDF" — se tudo grita, nada é urgente.
+   ========================================================================== */
+
+.nav-selo {
+  margin-left: auto; min-width: 20px; padding: 1px 6px;
+  border-radius: 999px; background: var(--erro); color: #fff;
+  font: 700 11px/1.6 var(--fonte-dado); text-align: center;
+}
+
+.aviso-faixa {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  margin-bottom: 14px; padding: 10px 14px;
+  border: 1px solid var(--erro); border-left-width: 4px;
+  border-radius: var(--r-md);
+  background: var(--erro-fundo); color: var(--tinta);
+  font-size: 13px; text-align: left;
+}
+.aviso-faixa b { color: var(--erro-texto); font-family: var(--fonte-dado); }
+.aviso-faixa.clicavel { cursor: pointer; }
+.aviso-faixa.clicavel:hover { border-color: var(--erro-texto); }
+.aviso-faixa .ir { margin-left: auto; color: var(--tinta-media); font-size: 12px; }
+
+.doc-barra {
+  display: flex; align-items: center; gap: 22px;
+  margin-bottom: 16px; padding: 12px 16px;
+  background: var(--superficie); border: 1px solid var(--borda);
+  border-radius: var(--r-md);
+}
+.doc-barra .primary-btn { margin-left: auto; }
+.doc-barra-txt { display: flex; align-items: baseline; gap: 7px; }
+.doc-barra-txt b { font: 700 20px var(--fonte-dado); color: var(--tinta); }
+.doc-barra-txt span { font-size: 12px; color: var(--tinta-media); }
+
+.doc-filtros { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.chip-btn.on { background: var(--faixa); color: #16191C; border-color: var(--faixa); }
+
+.doc-grupo { margin-bottom: 14px; }
+.doc-grupo-topo {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px 12px; border: 1px solid var(--borda); border-radius: var(--r-sm);
+  background: var(--superficie); color: var(--tinta);
+  font: 600 12px var(--fonte-display); letter-spacing: .04em; text-transform: uppercase;
+  cursor: pointer;
+}
+.doc-grupo-topo .n {
+  padding: 0 7px; border-radius: 999px;
+  background: var(--superficie-2); font-family: var(--fonte-dado);
+}
+.doc-grupo-topo .seta { margin-left: auto; color: var(--tinta-media); }
+.doc-grupo-topo.u-erro    { border-left: 4px solid var(--erro); }
+.doc-grupo-topo.u-nunca   { border-left: 4px solid var(--obra); }
+.doc-grupo-topo.u-atencao { border-left: 4px solid var(--faixa); }
+.doc-grupo-topo.u-leve    { border-left: 4px solid var(--borda-forte); }
+
+.doc-item {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  margin-top: 6px; padding: 9px 12px;
+  border: 1px solid var(--borda); border-radius: var(--r-sm);
+  background: var(--asfalto-alto); color: var(--tinta); text-align: left; cursor: pointer;
+}
+.doc-item:hover { border-color: var(--borda-forte); }
+.doc-item .bar { width: 3px; align-self: stretch; border-radius: 2px; }
+.doc-item.u-erro    .bar { background: var(--erro); }
+.doc-item.u-nunca   .bar { background: var(--obra); }
+.doc-item.u-atencao .bar { background: var(--faixa); }
+.doc-item.u-leve    .bar { background: var(--borda-forte); }
+.doc-item-txt { flex: 1; min-width: 0; }
+.doc-item-txt h4 { margin: 0; font-size: 13px; font-weight: 600; }
+.doc-item-txt p  { margin: 2px 0 0; font-size: 12px; color: var(--tinta-media); }
+.doc-item .dias { font: 600 13px var(--fonte-dado); color: var(--tinta-media); }
+.doc-item.u-erro .dias { color: var(--erro-texto); }
+
+.tudo-ok {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 26px; border: 1px dashed var(--ok); border-radius: var(--r-md);
+  background: var(--ok-fundo); text-align: center;
+}
+.tudo-ok b { color: var(--ok-texto); font-size: 15px; }
+.tudo-ok span { color: var(--tinta-media); font-size: 12px; }
+
+/* --- Importação em massa -------------------------------------------------- */
+.mut {
+  display: flex; flex-direction: column;
+  background: var(--superficie); border: 1px solid var(--borda);
+  border-radius: var(--r-lg); overflow: hidden;
+}
+.mut-topo {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 18px; border-bottom: 1px solid var(--borda);
+}
+.mut-nome { display: flex; flex-direction: column; min-width: 0; }
+.mut-nome b { font: 600 17px var(--fonte-display); }
+.mut-nome i { font-style: normal; font-size: 12px; color: var(--tinta-media); }
+.mut-contador { margin-left: auto; text-align: right; }
+.mut-contador b { display: block; font: 700 16px var(--fonte-dado); }
+.mut-contador i { font-style: normal; font-size: 11px; color: var(--tinta-media); }
+
+.mut-prog { height: 3px; background: var(--superficie-2); }
+.mut-prog i { display: block; height: 100%; background: var(--faixa); transition: width .2s; }
+
+.mut-lista { max-height: 58vh; overflow-y: auto; padding: 6px 10px 10px; }
+
+.mlinha {
+  display: grid; grid-template-columns: 1fr auto 132px;
+  align-items: center; gap: 12px;
+  padding: 7px 10px; border-radius: var(--r-sm);
+  border-left: 3px solid transparent;
+}
+/* A linha em foco é a única marca de "onde estou" quando a mão não sai do
+   teclado — sem ela, S e N marcariam às cegas. */
+.mlinha.foco { background: var(--superficie-2); border-left-color: var(--faixa); }
+.mlinha.salvando { opacity: .55; }
+.mnome { display: flex; flex-direction: column; font-size: 13.5px; }
+.mnome i { font-style: normal; font-size: 11px; color: var(--tinta-fraca); }
+.mnome i.sem-pdf { color: var(--faixa-texto); }
+
+.sn { display: flex; gap: 6px; }
+.sn .bt {
+  min-width: 54px; padding: 5px 10px; border-radius: var(--r-sm);
+  border: 1px solid var(--borda-forte); background: transparent;
+  color: var(--tinta-media); font-size: 12px; cursor: pointer;
+}
+.sn .bt:hover { color: var(--tinta); border-color: var(--tinta-fraca); }
+.sn .sim.on { background: var(--ok); border-color: var(--ok); color: #0B2418; font-weight: 700; }
+.sn .nao.on { background: var(--superficie-2); border-color: var(--borda-forte); color: var(--tinta); }
+
+.mlinha .dt {
+  width: 100%; padding: 5px 8px; border-radius: var(--r-sm);
+  border: 1px solid var(--borda); background: var(--asfalto-alto);
+  color: var(--tinta); font: 13px var(--fonte-dado); text-align: center;
+}
+.mlinha .dt:disabled { opacity: .35; border-style: dashed; }
+
+.mut-erro {
+  margin: 0 18px 8px; padding: 8px 12px; border-radius: var(--r-sm);
+  background: var(--erro-fundo); color: var(--erro-texto); font-size: 12.5px;
+}
+
+.mut-pe {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 18px; border-top: 1px solid var(--borda); background: var(--asfalto-alto);
+}
+.mut-pe .teclas { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--tinta-media); }
+.mut-pe kbd {
+  padding: 1px 6px; border: 1px solid var(--borda-forte); border-bottom-width: 2px;
+  border-radius: 4px; background: var(--superficie-2);
+  font: 600 11px var(--fonte-dado); color: var(--tinta);
+}
+.mut-acoes { margin-left: auto; display: flex; gap: 8px; }
+
+@media (max-width: 760px) {
+  .mlinha { grid-template-columns: 1fr auto; }
+  .mlinha .dt { grid-column: 1 / -1; }
+  .doc-barra { flex-wrap: wrap; }
 }

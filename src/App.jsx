@@ -3,6 +3,7 @@ import { supabase } from './lib/supabase';
 import { Auth } from './components/Auth';
 import { Avatar } from './components/Avatar';
 import { QuadroDia } from './components/QuadroDia';
+import { Documentos } from './components/Documentos';
 import { Apontamentos } from './components/Apontamentos';
 import { FichaColaborador } from './components/FichaColaborador';
 import { FichaVeiculo } from './components/FichaVeiculo';
@@ -286,6 +287,11 @@ function App() {
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [salvandoFoto, setSalvandoFoto] = useState(false);
 
+  /* Documentos ficam FORA de `db` de propósito: só admin enxerga, a carga é
+     mais cara (uma view que cruza pessoa × tipo) e não tem por que entrar no
+     caminho crítico da Programação, que é a tela que todo mundo abre. */
+  const [docs, setDocs] = useState({ tipos: [], documentos: [], pendencias: [] });
+
   const fetchUserRole = async (userId) => {
     const { data } = await supabase.from('perfis').select('cargo').eq('id', userId).single();
     if (data && data.cargo) {
@@ -358,6 +364,31 @@ function App() {
   const fetchDatabaseRef = useRef(fetchDatabase);
   fetchDatabaseRef.current = fetchDatabase;
 
+  /* Carga dos documentos. Roda só para admin — para os outros as policies
+     devolveriam três listas vazias, e três requisições para receber nada é o
+     tipo de peso que não aparece em nenhum gráfico e atrasa todo mundo.
+     Se as tabelas ainda não existem no banco, o erro vira lista vazia e a tela
+     explica o que rodar, em vez de quebrar. */
+  const fetchDocumentos = async () => {
+    const [resTipos, resDocs, resPend] = await Promise.all([
+      supabase.from('tipos_documento').select('*'),
+      supabase.from('documentos').select('*'),
+      supabase.from('painel_prazos').select('*'),
+    ]);
+    [resTipos, resDocs, resPend].forEach((r) => {
+      if (r?.error) console.error('Documentos:', r.error.message);
+    });
+    setDocs({
+      tipos: resTipos?.data || [],
+      documentos: resDocs?.data || [],
+      pendencias: (resPend?.data || []).slice().sort((a, b) => (
+        (a.urgencia - b.urgencia)
+        || ((a.dias_restantes ?? 9999) - (b.dias_restantes ?? 9999))
+        || String(a.colaborador).localeCompare(String(b.colaborador), 'pt-BR')
+      )),
+    });
+  };
+
   useEffect(() => {
     if (window.location.hash.includes('type=recovery')) {
       setIsRecovering(true);
@@ -422,6 +453,106 @@ function App() {
     };
   }, [userId]);
 
+  /* Só admin carrega documentos, e só depois que o cargo chegou — antes disso
+     a consulta voltaria vazia por policy e a tela mentiria dizendo "tudo em
+     dia". Um painel de prazos que erra para menos é pior do que não existir. */
+  const ehAdmin = userRole === 'admin';
+  const fetchDocumentosRef = useRef(fetchDocumentos);
+  fetchDocumentosRef.current = fetchDocumentos;
+  useEffect(() => {
+    if (!userId || !ehAdmin) return;
+    fetchDocumentosRef.current();
+  }, [userId, ehAdmin]);
+
+  /* ------------------------------------------------------------------------
+     Registrar / apagar um documento na conferência
+     ------------------------------------------------------------------------
+     Escrita otimista, como no quadro: na Importação em massa o teclado vai mais
+     rápido que a rede, e esperar o banco a cada tecla transformaria a tarefa de
+     uma tarde numa tarde inteira. Se o banco recusar, a linha volta ao que era
+     e a tela avisa — em vez de mostrar um "tem" que não existe.
+     ------------------------------------------------------------------------ */
+  async function salvarDocumento({ colaborador, tipo, valido_ate, existente }) {
+    const antes = docs.documentos;
+
+    if (existente) {
+      setDocs((d) => ({ ...d,
+        documentos: d.documentos.map((x) => (x.id === existente.id ? { ...x, valido_ate } : x)) }));
+      const res = await supabase.from('documentos')
+        .update({ valido_ate }).eq('id', existente.id).select();
+      if (res.error || !res.data?.length) {
+        setDocs((d) => ({ ...d, documentos: antes }));
+        console.error('Documentos:', res.error?.message);
+        return false;
+      }
+      agendarFetchDocs();
+      return true;
+    }
+
+    const tmp = `tmp-${Date.now()}`;
+    const linha = {
+      colaboradorId: colaborador.id,
+      tipo_id: tipo.id,
+      categoria: tipo.categoria,
+      titulo: tipo.nome,
+      valido_ate,
+      repetivel: false,
+    };
+    setDocs((d) => ({ ...d, documentos: [...d.documentos, { ...linha, id: tmp }] }));
+    const res = await supabase.from('documentos').insert([linha]).select();
+    if (res.error || !res.data?.length) {
+      setDocs((d) => ({ ...d, documentos: antes }));
+      console.error('Documentos:', res.error?.message);
+      return false;
+    }
+    setDocs((d) => ({ ...d,
+      documentos: d.documentos.map((x) => (x.id === tmp ? res.data[0] : x)) }));
+    registrarAcesso(res.data[0].id, colaborador.id, 'enviou');
+    agendarFetchDocs();
+    return true;
+  }
+
+  async function removerDocumento(doc) {
+    // Um registro sem arquivo é só uma anotação: apagar é corrigir a
+    // conferência. Com PDF anexado é outra coisa, e aí a pessoa confirma.
+    if (doc.caminho && !window.confirm(
+      'Este documento tem um PDF anexado. Apagar o registro deixa o arquivo sem referência. Continuar?'
+    )) return false;
+
+    const antes = docs.documentos;
+    setDocs((d) => ({ ...d, documentos: d.documentos.filter((x) => x.id !== doc.id) }));
+    const res = await supabase.from('documentos').delete().eq('id', doc.id).select();
+    if (res.error || !res.data?.length) {
+      setDocs((d) => ({ ...d, documentos: antes }));
+      console.error('Documentos:', res.error?.message);
+      return false;
+    }
+    registrarAcesso(null, doc.colaboradorId, 'apagou');
+    agendarFetchDocs();
+    return true;
+  }
+
+  /* O rastro de acesso é obrigação de LGPD, não funcionalidade da tela: se
+     falhar, não pode derrubar a marcação que o usuário acabou de fazer. Por
+     isso vai solto, com o erro só no console. */
+  function registrarAcesso(documentoId, colaboradorId, acao) {
+    supabase.from('documentos_acessos')
+      .insert([{ documento_id: documentoId, colaborador_id: colaboradorId, acao }])
+      .then((r) => { if (r.error) console.error('Auditoria:', r.error.message); });
+  }
+
+  /* A view de pendências só muda de verdade quando a rajada de marcações para.
+     Recalcular pessoa × tipo a cada tecla seria pagar caro por um número que
+     ninguém está olhando naquele instante. */
+  const timerDocsRef = useRef(null);
+  function agendarFetchDocs() {
+    if (timerDocsRef.current) clearTimeout(timerDocsRef.current);
+    timerDocsRef.current = setTimeout(() => {
+      timerDocsRef.current = null;
+      fetchDocumentosRef.current();
+    }, 1200);
+  }
+
   const maps = useMemo(() => ({
       colaboradores: Object.fromEntries(db.colaboradores.map((x) => [x.id, x])),
       veiculos: Object.fromEntries(db.veiculos.map((x) => [x.id, x])),
@@ -437,6 +568,22 @@ function App() {
   /* Mesma conta que o quadro usa, vinda de src/lib/dia.js — a fita e a lista
      não podem discordar sobre quantos estão livres. */
   const resumoDia = useMemo(() => derivarDia(db, selectedDate), [db, selectedDate]);
+
+  /* Só o que já é irregular HOJE conta para o selo do menu e para a faixa da
+     Programação. "Vence em 30 dias" é assunto da aba Documentos; se entrasse
+     aqui, o aviso ficaria aceso o ano inteiro e viraria paisagem. */
+  const pendenciasGraves = useMemo(
+    () => docs.pendencias.filter((p) => p.urgencia <= 2).length,
+    [docs.pendencias]
+  );
+
+  /* Quantas pendências cada pessoa tem — para o menu da ficha e para a faixa
+     saber de quem está falando. */
+  const pendenciasPorPessoa = useMemo(() => {
+    const m = {};
+    docs.pendencias.forEach((p) => { m[p.colaborador_id] = (m[p.colaborador_id] || 0) + 1; });
+    return m;
+  }, [docs.pendencias]);
   const dateLabel = formatDateLabel(selectedDate);
 
   const colaboradoresComStats = useMemo(() => {
@@ -1493,6 +1640,14 @@ function App() {
              <NavButton active={page === 'colaboradores'} onClick={() => changePage('colaboradores')}>
                Colaboradores
              </NavButton>
+             {userRole === 'admin' && (
+               <NavButton active={page === 'documentos'} onClick={() => changePage('documentos')}>
+                 Documentos
+                 {/* O número no menu é o ponto do desenho: o prazo cobra
+                     sozinho, sem depender de alguém lembrar de abrir a aba. */}
+                 {pendenciasGraves > 0 && <span className="nav-selo">{pendenciasGraves}</span>}
+               </NavButton>
+             )}
              <NavButton active={page === 'veiculos'} onClick={() => changePage('veiculos')}>
                Veículos
              </NavButton>
@@ -1614,6 +1769,29 @@ function App() {
                   podeEditar={userRole === 'admin' || userRole === 'editor'}
                   onLancar={lancarApontamento}
                   onDesfazer={desfazerApontamento}
+                />
+              </>
+            )}
+
+            {page === 'documentos' && userRole === 'admin' && (
+              <>
+                <div className="page-head">
+                  <div>
+                    <h2>Documentos</h2>
+                    <p>Validades, pendências e a conferência da pasta de cada um</p>
+                  </div>
+                </div>
+                <Documentos
+                  colaboradores={db.colaboradores}
+                  tipos={docs.tipos}
+                  documentos={docs.documentos}
+                  pendencias={docs.pendencias}
+                  onSalvarDocumento={salvarDocumento}
+                  onRemoverDocumento={removerDocumento}
+                  onAbrirPessoa={(id) => {
+                    const c = maps.colaboradores[id];
+                    if (c) setActiveDrawer({ type: 'colaborador', item: c });
+                  }}
                 />
               </>
             )}
@@ -1769,6 +1947,24 @@ function App() {
                   </div>
                 </div>
 
+                {/* Faixa de aviso: só link, nunca formulário. Quem está montando
+                    a programação das 6h não vai parar para cadastrar validade —
+                    mas precisa saber, antes de escalar, que tem gente com NR
+                    vencida. */}
+                {userRole === 'admin' && pendenciasGraves > 0 && (
+                  <button
+                    type="button"
+                    className="aviso-faixa clicavel"
+                    onClick={() => changePage('documentos')}
+                  >
+                    <b>{pendenciasGraves}</b>
+                    {pendenciasGraves === 1
+                      ? ' documento vencido ou nunca entregue'
+                      : ' documentos vencidos ou nunca entregues'}
+                    <span className="ir">ver em Documentos →</span>
+                  </button>
+                )}
+
                 {/* Fita do dia: navegação e contadores na mesma linha. Antes
                     eram dois blocos de 198px para mostrar dois números que já
                     apareciam repetidos logo abaixo, no quadro. */}
@@ -1839,6 +2035,7 @@ function App() {
                   onAbrirEquipe={(eq) =>
                     setExpandedProgramacaoId((atual) => (atual === eq.id ? null : eq.id))
                   }
+                  onEditarEquipe={openProgramacaoModal}
                   onNovaEquipe={() => openProgramacaoModal()}
                   onCopiar={copiarProgramacoes}
                   onAlternarApontamento={alternarApontamento}
@@ -2133,6 +2330,8 @@ function App() {
                       selecionado={Boolean(colabsSel[item.id])}
                       onSelecionar={(id) => setColabsSel((s) => ({ ...s, [id]: !s[id] }))}
                       onVer={(c) => setActiveDrawer({ type: 'colaborador', item: c })}
+                      pendencias={pendenciasPorPessoa[item.id] || 0}
+                      onDocumentos={() => changePage('documentos')}
                       onEditar={openColaboradorModal}
                       onAlternarAtivo={alternarAtivoColaborador}
                       onExcluir={(c) => deleteColaborador(c.id)}
