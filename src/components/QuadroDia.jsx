@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
+import { contratoAutomatico } from '../lib/contratos';
 import { derivarDia } from '../lib/dia';
 
 const MAX_EQUIPE = 10;
@@ -89,9 +90,13 @@ export function QuadroDia({
   const [dlgAberto, setDlgAberto] = useState(false);
   const [dataDestino, setDataDestino] = useState('');
   const [estrategia, setEstrategia] = useState('fila');
-  const [nova, setNova] = useState({ tipoEquipe: '', cidade: '', contratante: '' });
+  const [nova, setNova] = useState({ tipoEquipe: '', cidade: '', concessionariaId: '' });
   const [criando, setCriando] = useState(false);
   const [menuStatus, setMenuStatus] = useState(null);
+  const mapaContratos = useMemo(
+    () => Object.fromEntries((db.contratos || []).map((k) => [k.id, k])),
+    [db.contratos]
+  );
   const [pedindoFalta, setPedindoFalta] = useState(null);
 
   /* Um menu aberto que não fecha ao clicar fora vira armadilha no toque. */
@@ -333,18 +338,26 @@ export function QuadroDia({
   }
 
   /* --------------------------- criação rápida --------------------------- */
-  const podeCriar = nova.cidade.trim() && nova.contratante.trim() && nova.tipoEquipe;
+  const podeCriar = nova.cidade.trim() && nova.concessionariaId && nova.tipoEquipe;
 
   async function criar(encarregadoId = null) {
     if (!podeCriar) return;
     setCriando(true);
+    const conc = (db.concessionarias || []).find((c) => c.id === nova.concessionariaId);
     await onCriarRapida({
       tipoEquipe: nova.tipoEquipe,
       cidade: nova.cidade.trim().toUpperCase(),
-      contratante: nova.contratante.trim().toUpperCase(),
+      // o texto continua indo junto: é ele que sai na exportação
+      contratante: conc ? conc.sigla : '',
+      concessionaria_id: nova.concessionariaId,
+      // aqui NÃO há campo para escolher entre vários: a criação rápida é de
+      // três campos por definição. Com mais de um contrato vigente, entra sem
+      // contrato e a pessoa completa no lápis — melhor um vazio visível do
+      // que um contrato chutado.
+      contrato_id: contratoAutomatico(db.contratos, nova.concessionariaId),
       encarregadoId,
     });
-    setNova({ tipoEquipe: '', cidade: '', contratante: '' });
+    setNova({ tipoEquipe: '', cidade: '', concessionariaId: '' });
     setCriando(false);
   }
 
@@ -631,6 +644,14 @@ export function QuadroDia({
                       <span className="cidade">{eq.cidade}</span>
                       <span className="sep">/</span>
                       <span>{eq.contratante}</span>
+                      {/* Número do contrato onde o olho já procura o
+                          contratante. Some quando não há contrato ligado, em
+                          vez de mostrar um traço: espaço vazio não informa. */}
+                      {mapaContratos[eq.contrato_id] && (
+                        <span className="ctr-etq">
+                          {mapaContratos[eq.contrato_id].numero}
+                        </span>
+                      )}
                     </span>
                   </span>
                 </button>
@@ -822,12 +843,16 @@ export function QuadroDia({
                 placeholder="Cidade"
                 aria-label="Cidade"
               />
-              <input
-                value={nova.contratante}
-                onChange={(e) => setNova({ ...nova, contratante: e.target.value })}
-                placeholder="Contratante"
+              <select
+                value={nova.concessionariaId}
+                onChange={(e) => setNova({ ...nova, concessionariaId: e.target.value })}
                 aria-label="Contratante"
-              />
+              >
+                <option value="">Contratante…</option>
+                {(db.concessionarias || []).map((c) => (
+                  <option key={c.id} value={c.id}>{c.sigla}</option>
+                ))}
+              </select>
               <button
                 className="primary-btn"
                 disabled={!podeCriar || criando}

@@ -2230,6 +2230,12 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .aviso-faixa.clicavel { cursor: pointer; }
 .aviso-faixa.clicavel:hover { border-color: var(--erro-texto); }
 .aviso-faixa .ir { margin-left: auto; color: var(--tinta-media); font-size: 12px; }
+/* Vermelho é impedimento. Contratante por ligar é pendência de arrumação —
+   amarelo. Se tudo for vermelho, o vermelho deixa de querer dizer alguma coisa. */
+.aviso-faixa.atencao {
+  border-color: var(--faixa); background: var(--faixa-fundo);
+}
+.aviso-faixa.atencao b { color: var(--faixa-texto); }
 
 .doc-barra {
   display: flex; align-items: center; gap: 22px;
@@ -2417,4 +2423,145 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 760px) {
   .plinha { grid-template-columns: 1fr auto; }
   .plinha .dt { grid-column: 1 / -1; }
+}
+
+/* ==========================================================================
+   CONTRATOS — lista de contratos e as concessionárias
+   ========================================================================== */
+
+/* Etiqueta do contrato no card da equipe. Mono e discreta: é número de
+   documento, não título — precisa ser conferível, não chamativa. */
+.ctr-etq {
+  margin-left: 8px; padding: 1px 7px;
+  border: 1px solid var(--faixa-texto); border-radius: 4px;
+  background: var(--faixa-fundo); color: var(--faixa-texto);
+  font: 11px var(--fonte-dado); white-space: nowrap;
+}
+
+.ct-busca {
+  flex: 1; min-width: 200px; padding: 8px 12px;
+  border: 1px solid var(--borda); border-radius: var(--r-sm);
+  background: var(--asfalto-alto); color: var(--tinta); font: inherit; font-size: 13.5px;
+}
+.doc-barra .ct-busca + .ghost-btn { margin-left: 0; }
+
+/* --- formulário --- */
+.ct-form {
+  margin-bottom: 16px; padding: 16px;
+  background: var(--superficie); border: 1px solid var(--faixa); border-radius: var(--r-md);
+}
+.ct-form h4 { margin: 0 0 12px; font: 600 14px var(--fonte-display); }
+.ct-grade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.ct-campo { display: flex; flex-direction: column; gap: 4px; }
+.ct-campo.largo { grid-column: span 2; }
+.ct-campo > span {
+  font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--tinta-fraca);
+}
+.ct-campo input[type="text"], .ct-campo select {
+  padding: 7px 10px; border: 1px solid var(--borda); border-radius: var(--r-sm);
+  background: var(--asfalto-alto); color: var(--tinta); font: inherit; font-size: 13.5px;
+}
+.ct-campo.ct-check { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 8px; }
+.ct-campo.ct-check > span { text-transform: none; letter-spacing: 0; font-size: 12.5px; color: var(--tinta-media); }
+.ct-acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
+/* --- tabela --- */
+.ct-tabela { border: 1px solid var(--borda); border-radius: var(--r-md); overflow: hidden; }
+.ct-cab, .ct-linha {
+  display: grid;
+  grid-template-columns: 30px 200px 1fr 200px 70px auto;
+  gap: 12px; align-items: center; padding: 9px 14px;
+}
+.ct-cab {
+  background: var(--asfalto-alto); color: var(--tinta-fraca);
+  font: 600 10.5px var(--fonte-display); letter-spacing: .07em; text-transform: uppercase;
+}
+.ct-linha { border-top: 1px solid var(--borda); font-size: 13px; }
+.ct-linha:hover { background: var(--superficie-2); }
+/* Encerrado continua visível, só apagado: some da programação, não do histórico. */
+.ct-linha.encerrado { opacity: .55; }
+.ct-num { font: 12.5px var(--fonte-dado); color: var(--faixa-texto); }
+.ct-conc { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; }
+.ct-conc i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.ct-obj i { display: block; font-style: normal; font-size: 11.5px; color: var(--tinta-fraca); }
+.ct-vig { font: 11.5px var(--fonte-dado); color: var(--tinta-media); }
+.ct-vig i { display: block; font-style: normal; font-size: 10.5px; }
+.ct-vig i.sim { color: var(--ok-texto); }
+.ct-vig i.nao { color: var(--tinta-fraca); }
+.ct-obras { font: 13px var(--fonte-dado); color: var(--tinta-media); text-align: center; }
+.ct-btns { display: flex; gap: 6px; justify-content: flex-end; }
+
+/* --- concessionárias --- */
+/* --- as duas abas --- */
+.ct-abas { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--borda); }
+.ct-aba {
+  padding: 9px 16px; border: 0; background: transparent; cursor: pointer;
+  color: var(--tinta-media); font: 600 13px var(--fonte-display);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.ct-aba:hover { color: var(--tinta); }
+.ct-aba.on { color: var(--tinta); border-bottom-color: var(--faixa); }
+.ct-aba i {
+  font-style: normal; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+  background: var(--superficie-2); color: var(--tinta-media);
+  font: 11px var(--fonte-dado);
+}
+
+/* seleção: mesma marca amarela das fichas de colaborador e veículo */
+.ct-linha.marcada, .ct-emp.marcada {
+  background: var(--faixa-fundo); border-color: var(--faixa);
+}
+/* A checkbox das fichas é posicionada no canto do card; aqui ela mora dentro
+   da linha, então volta ao fluxo. O aceso segue a mesma regra visual. */
+.ct-check-item { position: static; flex: none; }
+.ct-linha.marcada .ct-check-item,
+.ct-emp.marcada .ct-check-item,
+.ct-check-item[aria-checked="true"] {
+  background: var(--faixa); border-color: var(--faixa); color: #16191C;
+}
+
+.ct-empresas { margin-top: 22px; }
+.ct-empresas h4 {
+  margin: 0 0 10px; font: 600 12px var(--fonte-display);
+  letter-spacing: .06em; text-transform: uppercase; color: var(--tinta-media);
+}
+.ct-empresas h4 i {
+  font-style: normal; font-family: var(--fonte-dado); color: var(--tinta-fraca); margin-left: 6px;
+}
+.ct-emp-lista { display: grid; gap: 6px; }
+.ct-emp {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 9px 14px; border: 1px solid var(--borda); border-radius: var(--r-sm);
+  background: var(--asfalto-alto);
+}
+.ct-emp .cor { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.ct-emp-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ct-emp-txt b { font-size: 13.5px; }
+.ct-emp-txt i { font-style: normal; font-size: 11.5px; color: var(--tinta-fraca); }
+.ct-emp-n { font: 12px var(--fonte-dado); color: var(--tinta-media); }
+.ct-juntar {
+  flex-basis: 100%; display: flex; align-items: center; gap: 8px;
+  padding-top: 8px; border-top: 1px dashed var(--borda);
+  font-size: 12.5px; color: var(--tinta-media);
+}
+.ct-juntar select, .solto select {
+  padding: 4px 8px; border: 1px solid var(--borda-forte); border-radius: var(--r-sm);
+  background: var(--superficie); color: var(--tinta); font: inherit; font-size: 12px;
+}
+
+/* --- textos ainda não ligados --- */
+.soltos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.solto {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 5px 10px; border: 1px solid var(--borda); border-radius: var(--r-sm);
+  background: var(--superficie);
+}
+.solto b { font: 12.5px var(--fonte-dado); white-space: nowrap; }
+.solto i { font-style: normal; font-size: 11px; color: var(--tinta-fraca); white-space: nowrap; }
+
+@media (max-width: 900px) {
+  .ct-grade { grid-template-columns: 1fr; }
+  .ct-campo.largo { grid-column: auto; }
+  .ct-cab { display: none; }
+  .ct-linha { grid-template-columns: 1fr 1fr; }
 }

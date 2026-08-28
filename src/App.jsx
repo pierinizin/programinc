@@ -4,6 +4,8 @@ import { Auth } from './components/Auth';
 import { Avatar } from './components/Avatar';
 import { QuadroDia } from './components/QuadroDia';
 import { Documentos } from './components/Documentos';
+import { Contratos } from './components/Contratos';
+import { contratosVigentes, contratoAutomatico } from './lib/contratos';
 import { Apontamentos } from './components/Apontamentos';
 import { FichaColaborador } from './components/FichaColaborador';
 import { FichaVeiculo } from './components/FichaVeiculo';
@@ -118,6 +120,10 @@ function normalizeDb(data) {
    faltas: Array.isArray(data?.faltas) ? data.faltas : [],
    patio: Array.isArray(data?.patio) ? data.patio : [],
    perfis: Array.isArray(data?.perfis) ? data.perfis : [],
+   concessionarias: Array.isArray(data?.concessionarias)
+     ? [...data.concessionarias].sort((a, b) => String(a.sigla || '').localeCompare(String(b.sigla || ''), 'pt-BR'))
+     : [],
+   contratos: Array.isArray(data?.contratos) ? data.contratos : [],
    programacoes: Array.isArray(data?.programacoes)
      ? data.programacoes.map((item) => ({
          ...item,
@@ -146,6 +152,8 @@ function emptyProgramacao(date = today()) {
     tipoEquipe: '',
     cidade: '',
     contratante: '',
+    concessionaria_id: null,
+    contrato_id: null,
     encarregadoId: null,
     engenheiro: '',
     membroIds: [],
@@ -271,7 +279,7 @@ function App() {
   const [isRecovering, setIsRecovering] = useState(false);
   const [novaSenha, setNovaSenha] = useState('');
   
-  const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [], patio: [], perfis: [] });
+  const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [], patio: [], perfis: [], concessionarias: [], contratos: [] });
   const [page, setPage] = useState('programacao'); 
   const [selectedDate, setSelectedDate] = useState(today());
   const [search, setSearch] = useState('');
@@ -305,18 +313,22 @@ function App() {
   };
 
   const fetchDatabase = async () => {
-    const [resCols, resVeics, resProgs, resFaltas, resPatio, resPerfis] = await Promise.all([
+    const [resCols, resVeics, resProgs, resFaltas, resPatio, resPerfis,
+           resConcs, resCtrs] = await Promise.all([
       supabase.from('colaboradores').select('*'),
       supabase.from('veiculos').select('*'),
       supabase.from('programacoes').select('*'),
       supabase.from('faltas').select('*'),
       supabase.from('patio').select('*'),
-      supabase.from('perfis').select('*')
+      supabase.from('perfis').select('*'),
+      supabase.from('concessionarias').select('*'),
+      supabase.from('contratos').select('*')
     ]);
 
     // Com RLS ligada, uma tabela sem permissão volta com error e data null.
     // Registramos no console em vez de silenciar tudo como lista vazia.
-    [resCols, resVeics, resProgs, resFaltas, resPatio, resPerfis].forEach((res) => {
+    [resCols, resVeics, resProgs, resFaltas, resPatio, resPerfis,
+     resConcs, resCtrs].forEach((res) => {
       if (res?.error) console.error('Erro ao carregar dados:', res.error.message);
     });
 
@@ -340,7 +352,9 @@ function App() {
       programacoes: resProgs.data || [],
       faltas: resFaltas.data || [],
       patio: resPatio?.data || [],
-      perfis: resPerfis?.data || []
+      perfis: resPerfis?.data || [],
+      concessionarias: resConcs?.data || [],
+      contratos: resCtrs?.data || []
     }));
 
     // segunda etapa, sem bloquear: assina o que ainda não estava em cache
@@ -512,6 +526,138 @@ function App() {
       documentos: d.documentos.map((x) => (x.id === tmp ? res.data[0] : x)) }));
     registrarAcesso(res.data[0].id, colaborador.id, 'enviou');
     agendarFetchDocs();
+    return true;
+  }
+
+  /* ------------------------------------------------------------------------
+     Concessionárias e contratos
+     ------------------------------------------------------------------------ */
+  async function salvarConcessionaria(dados) {
+    const payload = {
+      sigla: dados.sigla, nome: dados.nome, cnpj: dados.cnpj || null,
+      contato_nome: dados.contato_nome || null,
+      contato_email: dados.contato_email || null,
+      contato_telefone: dados.contato_telefone || null,
+      cor: dados.cor || '#FFC72C',
+    };
+    const res = dados.id
+      ? await supabase.from('concessionarias').update(payload).eq('id', dados.id).select()
+      : await supabase.from('concessionarias').insert([payload]).select();
+    if (res.error || !res.data?.length) {
+      console.error('Concessionárias:', res.error?.message);
+      return false;
+    }
+    await fetchDatabase();
+    return true;
+  }
+
+  async function salvarContrato(dados) {
+    const payload = {
+      concessionaria_id: dados.concessionaria_id,
+      numero: dados.numero, objeto: dados.objeto || null, trecho: dados.trecho || null,
+      inicio: dados.inicio, fim: dados.fim, ativo: Boolean(dados.ativo),
+    };
+    const res = dados.id
+      ? await supabase.from('contratos').update(payload).eq('id', dados.id).select()
+      : await supabase.from('contratos').insert([payload]).select();
+    if (res.error || !res.data?.length) {
+      console.error('Contratos:', res.error?.message);
+      return false;
+    }
+    await fetchDatabase();
+    return true;
+  }
+
+  /* Excluir contrato NÃO apaga obra nenhuma: a chave estrangeira é
+     'on delete set null'. Mas a programação perde a referência, então o aviso
+     precisa dizer quantas — quem apaga um contrato com 40 obras merece saber
+     disso antes, não depois. */
+  async function excluirContratos(alvos, obrasPorContrato = {}) {
+    if (!alvos?.length) return false;
+    const nObras = alvos.reduce((s, k) => s + (obrasPorContrato[k.id] || 0), 0);
+    const nomes = alvos.map((k) => k.numero).join(', ');
+    const aviso = nObras > 0
+      ? `Excluir ${nomes}?\n\n${nObras} programação(ões) vão ficar sem contrato — o nome do contratante continua registrado nelas.`
+      : `Excluir ${nomes}?`;
+    if (!window.confirm(aviso)) return false;
+    const res = await supabase.from('contratos').delete().in('id', alvos.map((k) => k.id)).select();
+    if (res.error) { console.error('Contratos:', res.error.message); return false; }
+    await fetchDatabase();
+    return true;
+  }
+
+  /* Excluir contratante é mais perigoso e por isso é mais chato: o banco tem
+     'on delete restrict' nos contratos, então uma empresa com contrato não sai
+     — e é bom que não saia. O erro do Postgres não diria isso de forma
+     legível, então a checagem acontece aqui, com o nome do que está segurando. */
+  async function excluirConcessionarias(alvos) {
+    if (!alvos?.length) return false;
+
+    const presos = alvos.filter((c) => db.contratos.some((k) => k.concessionaria_id === c.id));
+    if (presos.length) {
+      window.alert(
+        `${presos.map((c) => c.sigla).join(', ')} ainda tem contrato cadastrado.\n\n`
+        + 'Apague os contratos antes, ou use "Juntar" para passar tudo para outro contratante.'
+      );
+      return false;
+    }
+
+    const nObras = alvos.reduce(
+      (s, c) => s + db.programacoes.filter((p) => p.concessionaria_id === c.id).length, 0
+    );
+    const aviso = nObras > 0
+      ? `Excluir ${alvos.map((c) => c.sigla).join(', ')}?\n\n${nObras} programação(ões) vão ficar sem contratante ligado — o nome continua escrito nelas.`
+      : `Excluir ${alvos.map((c) => c.sigla).join(', ')}?`;
+    if (!window.confirm(aviso)) return false;
+
+    const res = await supabase.from('concessionarias')
+      .delete().in('id', alvos.map((c) => c.id)).select();
+    if (res.error) { console.error('Contratantes:', res.error.message); return false; }
+    await fetchDatabase();
+    return true;
+  }
+
+  /* Juntar duas concessionárias que são a mesma empresa escrita de dois jeitos.
+     A ordem importa: primeiro as programações e os contratos mudam de dono,
+     e só depois a duplicata é apagada. Ao contrário, a FK 'on delete restrict'
+     dos contratos barraria — ou, pior, as obras ficariam sem ninguém. */
+  async function juntarConcessionarias(origem, destino) {
+    if (!origem || !destino || origem.id === destino.id) return false;
+    const nObras = db.programacoes.filter((p) => p.concessionaria_id === origem.id).length;
+    if (!window.confirm(
+      `Mover ${nObras} programação(ões) e os contratos de "${origem.sigla}" para "${destino.sigla}" e apagar "${origem.sigla}"?`
+    )) return false;
+
+    const p1 = await supabase.from('programacoes')
+      .update({ concessionaria_id: destino.id, contratante: destino.sigla })
+      .eq('concessionaria_id', origem.id);
+    const p2 = await supabase.from('contratos')
+      .update({ concessionaria_id: destino.id }).eq('concessionaria_id', origem.id);
+    if (p1.error || p2.error) {
+      console.error('Juntar:', p1.error?.message || p2.error?.message);
+      await fetchDatabase();
+      return false;
+    }
+    const del = await supabase.from('concessionarias').delete().eq('id', origem.id);
+    if (del.error) console.error('Juntar:', del.error.message);
+    await fetchDatabase();
+    return true;
+  }
+
+  /* Ligar um texto antigo ("Motiva") a uma concessionária, de uma vez em todas
+     as programações onde ele aparece. */
+  async function vincularTexto(solto, concessionariaId) {
+    const conc = db.concessionarias.find((c) => c.id === concessionariaId);
+    if (!conc) return false;
+    const ids = db.programacoes
+      .filter((p) => !p.concessionaria_id
+        && String(p.contratante || '').trim().toUpperCase() === solto.chave)
+      .map((p) => p.id);
+    if (!ids.length) return false;
+    const res = await supabase.from('programacoes')
+      .update({ concessionaria_id: conc.id, contratante: conc.sigla }).in('id', ids);
+    if (res.error) { console.error('Vincular:', res.error.message); return false; }
+    await fetchDatabase();
     return true;
   }
 
@@ -781,12 +927,16 @@ function App() {
   /* Criação direto do quadro: os horários entram no padrão da empresa e o
      resto se ajusta arrastando. Abrir o formulário completo continua sendo
      uma opção, mas deixou de ser obrigatório para começar um dia. */
-  async function criarProgramacaoRapida({ tipoEquipe, cidade, contratante, encarregadoId }) {
+  async function criarProgramacaoRapida({
+    tipoEquipe, cidade, contratante, concessionaria_id, contrato_id, encarregadoId,
+  }) {
     const linha = {
       data: selectedDate,
       tipoEquipe,
       cidade,
       contratante,
+      concessionaria_id: concessionaria_id || null,
+      contrato_id: contrato_id || null,
       engenheiro: '',
       encarregadoId: encarregadoId || null,
       membroIds: encarregadoId ? [encarregadoId] : [],
@@ -1675,6 +1825,11 @@ function App() {
                  {pendenciasGraves > 0 && <span className="nav-selo">{pendenciasGraves}</span>}
                </NavButton>
              )}
+             {userRole === 'admin' && (
+               <NavButton active={page === 'contratos'} onClick={() => changePage('contratos')}>
+                 Contratantes
+               </NavButton>
+             )}
              <NavButton active={page === 'veiculos'} onClick={() => changePage('veiculos')}>
                Veículos
              </NavButton>
@@ -1796,6 +1951,29 @@ function App() {
                   podeEditar={userRole === 'admin' || userRole === 'editor'}
                   onLancar={lancarApontamento}
                   onDesfazer={desfazerApontamento}
+                />
+              </>
+            )}
+
+            {page === 'contratos' && userRole === 'admin' && (
+              <>
+                <div className="page-head">
+                  <div>
+                    <h2>Contratantes</h2>
+                    <p>As empresas e os contratos que a programação usa</p>
+                  </div>
+                </div>
+                <Contratos
+                  concessionarias={db.concessionarias}
+                  contratos={db.contratos}
+                  programacoes={db.programacoes}
+                  podeEditar={userRole === 'admin'}
+                  onSalvarConcessionaria={salvarConcessionaria}
+                  onSalvarContrato={salvarContrato}
+                  onExcluirContratos={excluirContratos}
+                  onExcluirConcessionarias={excluirConcessionarias}
+                  onJuntarConcessionarias={juntarConcessionarias}
+                  onVincularTexto={vincularTexto}
                 />
               </>
             )}
@@ -2562,11 +2740,40 @@ function App() {
                   value={programacaoForm.cidade}
                   onChange={(v) => setProgramacaoForm({ ...programacaoForm, cidade: v })}
                 />
-                <Input
+                <Select
                   label="Contratante"
-                  value={programacaoForm.contratante}
-                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, contratante: v })}
+                  value={programacaoForm.concessionaria_id || ''}
+                  onChange={(v) => {
+                    const c = db.concessionarias.find((x) => x.id === v);
+                    setProgramacaoForm({
+                      ...programacaoForm,
+                      concessionaria_id: v || null,
+                      // o texto acompanha a escolha: é ele que sai nas
+                      // exportações e é por ele que o Kartado casa
+                      contratante: c ? c.sigla : '',
+                      contrato_id: contratoAutomatico(db.contratos, v),
+                    });
+                  }}
+                  placeholder="Selecione"
+                  options={db.concessionarias.map((c) => ({ value: c.id, label: c.sigla }))}
                 />
+
+                {/* Com um contrato vigente só, ele já entrou sozinho e o campo
+                    nem aparece — um seletor de uma opção é uma pergunta que
+                    não precisava ser feita. */}
+                {contratosVigentes(db.contratos, programacaoForm.concessionaria_id).length > 1 && (
+                  <Select
+                    label="Contrato"
+                    value={programacaoForm.contrato_id || ''}
+                    /* Sem esta opção vazia o <select> mostraria o primeiro
+                       contrato da lista com o valor ainda em branco: parece
+                       escolhido, salva sem contrato. */
+                    placeholder="Escolha o contrato"
+                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, contrato_id: v || null })}
+                    options={contratosVigentes(db.contratos, programacaoForm.concessionaria_id)
+                      .map((k) => ({ value: k.id, label: k.numero }))}
+                  />
+                )}
                 <Input
                 label="Engenheiro Responsável"
                 value={programacaoForm.engenheiro}
