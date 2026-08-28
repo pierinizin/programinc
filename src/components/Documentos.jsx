@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ImportacaoEmMassa } from './ImportacaoEmMassa';
+import { FichaDocumentos } from './FichaDocumentos';
 import {
   GRUPOS_PAINEL, ROTULO_SITUACAO, classeUrgencia, dataBR, tiposDaPessoa,
 } from '../lib/documentos';
@@ -102,10 +103,11 @@ function Fila({ pendencias, onAbrirPessoa }) {
 }
 
 export function Documentos({
-  colaboradores: todos, tipos, documentos, pendencias,
-  onSalvarDocumento, onRemoverDocumento, onAbrirPessoa,
+  colaboradores: todos, tipos, documentos, pendencias, quem, pessoaInicial,
+  onSalvarDocumento, onRemoverDocumento, onSalvarValidade, onRecarregar,
 }) {
-  const [modo, setModo] = useState('fila');
+  const [modo, setModo] = useState(pessoaInicial ? 'pessoa' : 'fila');
+  const [pessoaId, setPessoaId] = useState(pessoaInicial || null);
 
   const ativos = useMemo(
     () => (todos || [])
@@ -127,6 +129,24 @@ export function Documentos({
       return !precisa.length || !tem || !precisa.every((t) => tem.has(t.id));
     }).length;
   }, [ativos, documentos, tipos]);
+
+  const pessoa = pessoaId ? ativos.find((c) => c.id === pessoaId) : null;
+
+  function abrirPessoa(id) { setPessoaId(id); setModo('pessoa'); }
+
+  if (modo === 'pessoa' && pessoa) {
+    return (
+      <FichaDocumentos
+        colaborador={pessoa}
+        tipos={tipos || []}
+        documentos={documentos || []}
+        quem={quem}
+        onRecarregar={onRecarregar}
+        onSalvarValidade={onSalvarValidade}
+        onVoltar={() => { setModo('fila'); setPessoaId(null); }}
+      />
+    );
+  }
 
   if (modo === 'importacao') {
     return (
@@ -169,7 +189,7 @@ export function Documentos({
         </button>
       </div>
 
-      <Fila pendencias={pendencias} onAbrirPessoa={onAbrirPessoa} />
+      <Fila pendencias={pendencias} onAbrirPessoa={abrirPessoa} />
     </>
   );
 }

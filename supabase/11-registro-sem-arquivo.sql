@@ -56,6 +56,15 @@ create unique index if not exists documentos_um_por_tipo
 -- -----------------------------------------------------------------------------
 -- 'faltando'  = a pessoa não tem o documento (o "-" da agenda)
 -- 'sem o PDF' = tem, está válido, mas o arquivo não foi anexado
+--
+-- DERRUBAR ANTES DE RECRIAR, e não 'create or replace'. O Postgres só deixa
+-- ACRESCENTAR coluna no fim de uma view existente: como 'tem_arquivo' entra no
+-- meio, ele leria a mudança como "renomear situacao para tem_arquivo" e recusa
+-- o arquivo inteiro (ERRO 42P16). View não guarda dado, só a definição, então
+-- derrubar não custa nada — mas a ordem importa: painel_prazos depende desta.
+drop view if exists public.painel_prazos;
+drop view if exists public.documentos_pendencias;
+
 create or replace view public.documentos_pendencias
 with (security_invoker = true) as
 select

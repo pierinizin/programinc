@@ -291,6 +291,9 @@ function App() {
      mais cara (uma view que cruza pessoa × tipo) e não tem por que entrar no
      caminho crítico da Programação, que é a tela que todo mundo abre. */
   const [docs, setDocs] = useState({ tipos: [], documentos: [], pendencias: [] });
+  // quando o usuário entra em Documentos pelo menu da ficha, já cai na pasta
+  // daquela pessoa em vez de na fila geral
+  const [docPessoa, setDocPessoa] = useState(null);
 
   const fetchUserRole = async (userId) => {
     const { data } = await supabase.from('perfis').select('cargo').eq('id', userId).single();
@@ -512,6 +515,23 @@ function App() {
     return true;
   }
 
+  /* Corrigir a data de um documento já registrado. Separado do salvarDocumento
+     porque aqui a linha sempre existe: é edição, não conferência. */
+  async function salvarValidade(doc, valido_ate) {
+    const antes = docs.documentos;
+    setDocs((d) => ({ ...d,
+      documentos: d.documentos.map((x) => (x.id === doc.id ? { ...x, valido_ate } : x)) }));
+    const res = await supabase.from('documentos')
+      .update({ valido_ate }).eq('id', doc.id).select();
+    if (res.error || !res.data?.length) {
+      setDocs((d) => ({ ...d, documentos: antes }));
+      console.error('Documentos:', res.error?.message);
+      return false;
+    }
+    agendarFetchDocs();
+    return true;
+  }
+
   async function removerDocumento(doc) {
     // Um registro sem arquivo é só uma anotação: apagar é corrigir a
     // conferência. Com PDF anexado é outra coisa, e aí a pessoa confirma.
@@ -536,8 +556,14 @@ function App() {
      falhar, não pode derrubar a marcação que o usuário acabou de fazer. Por
      isso vai solto, com o erro só no console. */
   function registrarAcesso(documentoId, colaboradorId, acao) {
+    // 'quem' é obrigatório: a policy do 07 exige quem = auth.uid(), para
+    // ninguém escrever rastro em nome de outro. Sem este campo o insert é
+    // recusado e o log simplesmente não acontece.
     supabase.from('documentos_acessos')
-      .insert([{ documento_id: documentoId, colaborador_id: colaboradorId, acao }])
+      .insert([{
+        documento_id: documentoId, colaborador_id: colaboradorId, acao,
+        quem: session?.user?.id || null,
+      }])
       .then((r) => { if (r.error) console.error('Auditoria:', r.error.message); });
   }
 
@@ -671,6 +697,7 @@ function App() {
 
   function changePage(nextPage) {
     setPage(nextPage);
+    if (nextPage !== 'documentos') setDocPessoa(null);
     setSearch('');
     setActiveDrawer(null);
     setExpandedProgramacaoId(null);
@@ -1782,16 +1809,17 @@ function App() {
                   </div>
                 </div>
                 <Documentos
+                  key={docPessoa || 'fila'}
                   colaboradores={db.colaboradores}
                   tipos={docs.tipos}
                   documentos={docs.documentos}
                   pendencias={docs.pendencias}
+                  quem={session?.user?.id || null}
+                  pessoaInicial={docPessoa}
                   onSalvarDocumento={salvarDocumento}
                   onRemoverDocumento={removerDocumento}
-                  onAbrirPessoa={(id) => {
-                    const c = maps.colaboradores[id];
-                    if (c) setActiveDrawer({ type: 'colaborador', item: c });
-                  }}
+                  onSalvarValidade={salvarValidade}
+                  onRecarregar={fetchDocumentos}
                 />
               </>
             )}
@@ -2331,7 +2359,7 @@ function App() {
                       onSelecionar={(id) => setColabsSel((s) => ({ ...s, [id]: !s[id] }))}
                       onVer={(c) => setActiveDrawer({ type: 'colaborador', item: c })}
                       pendencias={pendenciasPorPessoa[item.id] || 0}
-                      onDocumentos={() => changePage('documentos')}
+                      onDocumentos={(c) => { setDocPessoa(c.id); changePage('documentos'); }}
                       onEditar={openColaboradorModal}
                       onAlternarAtivo={alternarAtivoColaborador}
                       onExcluir={(c) => deleteColaborador(c.id)}
