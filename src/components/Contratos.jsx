@@ -45,13 +45,14 @@ function Check({ marcado, onClick, rotulo }) {
   );
 }
 
-function BarraSel({ n, onLimpar, onExcluir, rotulo }) {
+function BarraSel({ n, onLimpar, onExcluir, rotulo, extra }) {
   if (!n) return null;
   return (
     <div className="barra-sel solta">
       <span>{n} {n === 1 ? `${rotulo} selecionado` : `${rotulo}s selecionados`}</span>
       <div className="chips-row tight">
         <button type="button" className="chip-btn" onClick={onLimpar}>Limpar</button>
+        {extra}
         <button type="button" className="chip-btn perigo" onClick={onExcluir}>Excluir</button>
       </div>
     </div>
@@ -68,7 +69,11 @@ export function Contratos({
   const [busca, setBusca] = useState('');
   const [form, setForm] = useState(null);      // {tipo:'conc'|'ctr', dados}
   const [erro, setErro] = useState('');
-  const [juntando, setJuntando] = useState(null);
+  /* Juntar deixou de ser um botão por linha: agora é ação da seleção, como
+     Excluir. Com três grafias da mesma empresa, o caminho antigo obrigava a
+     repetir a operação duas vezes; aqui marca as três e resolve numa. */
+  const [juntarAberto, setJuntarAberto] = useState(false);
+  const [destino, setDestino] = useState('');
   const [selCtr, setSelCtr] = useState({});
   const [selConc, setSelConc] = useState({});
 
@@ -293,7 +298,21 @@ export function Contratos({
         <>
           <BarraSel
             n={concMarcados.length} rotulo="contratante"
-            onLimpar={() => setSelConc({})}
+            extra={concMarcados.length >= 2 && (
+              <button
+                type="button" className="chip-btn"
+                onClick={() => {
+                  setJuntarAberto((v) => !v);
+                  // já sugere o primeiro em ordem alfabética como o que fica
+                  setDestino((d) => d || concMarcados
+                    .map((id) => porId[id]).filter(Boolean)
+                    .sort((a, b) => a.sigla.localeCompare(b.sigla, 'pt-BR'))[0]?.id || '');
+                }}
+              >
+                Juntar
+              </button>
+            )}
+            onLimpar={() => { setSelConc({}); setJuntarAberto(false); }}
             onExcluir={async () => {
               const feito = await onExcluirConcessionarias(
                 concMarcados.map((id) => porId[id]).filter(Boolean)
@@ -301,6 +320,38 @@ export function Contratos({
               if (feito) setSelConc({});
             }}
           />
+
+          {juntarAberto && concMarcados.length >= 2 && (
+            <div className="ct-juntar-painel">
+              <span>
+                Juntar {concMarcados.length} contratantes. <b>Qual fica?</b> Os
+                outros são apagados, e as obras e contratos deles passam para este.
+              </span>
+              <select value={destino} onChange={(e) => setDestino(e.target.value)}>
+                {concMarcados.map((id) => porId[id]).filter(Boolean)
+                  .sort((a, b) => a.sigla.localeCompare(b.sigla, 'pt-BR'))
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>{c.sigla}</option>
+                  ))}
+              </select>
+              <button type="button" className="ghost-btn" onClick={() => setJuntarAberto(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button" className="primary-btn"
+                disabled={!destino}
+                onClick={async () => {
+                  const alvo = porId[destino];
+                  const origens = concMarcados
+                    .filter((id) => id !== destino).map((id) => porId[id]).filter(Boolean);
+                  const feito = await onJuntarConcessionarias(origens, alvo);
+                  if (feito) { setSelConc({}); setJuntarAberto(false); setDestino(''); }
+                }}
+              >
+                Juntar em {porId[destino]?.sigla || '…'}
+              </button>
+            </div>
+          )}
 
           {listaConc.length === 0 ? (
             <div className="empty-card">Nenhum contratante cadastrado ainda.</div>
@@ -331,34 +382,9 @@ export function Contratos({
                           type="button" className="chip-btn"
                           onClick={() => { setErro(''); setForm({ tipo: 'conc', dados: { ...c } }); }}
                         >Editar</button>
-                        {/* Juntar existe porque a migração cria um contratante
-                            por texto distinto: "DER-PR" e "DER PR" entram
-                            separados e só uma pessoa sabe que são o mesmo. */}
-                        <button
-                          type="button" className="chip-btn"
-                          onClick={() => setJuntando(juntando === c.id ? null : c.id)}
-                        >Juntar</button>
                       </span>
                     )}
 
-                    {juntando === c.id && (
-                      <span className="ct-juntar">
-                        Mover tudo de <b>{c.sigla}</b> para:
-                        <select
-                          defaultValue=""
-                          onChange={async (e) => {
-                            if (!e.target.value) return;
-                            await onJuntarConcessionarias(c, porId[e.target.value]);
-                            setJuntando(null);
-                          }}
-                        >
-                          <option value="">escolha…</option>
-                          {(concessionarias || []).filter((o) => o.id !== c.id).map((o) => (
-                            <option key={o.id} value={o.id}>{o.sigla}</option>
-                          ))}
-                        </select>
-                      </span>
-                    )}
                   </div>
                 );
               })}

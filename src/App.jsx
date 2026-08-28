@@ -621,28 +621,44 @@ function App() {
      A ordem importa: primeiro as programações e os contratos mudam de dono,
      e só depois a duplicata é apagada. Ao contrário, a FK 'on delete restrict'
      dos contratos barraria — ou, pior, as obras ficariam sem ninguém. */
-  async function juntarConcessionarias(origem, destino) {
-    if (!origem || !destino || origem.id === destino.id) return false;
-    const nObras = db.programacoes.filter((p) => p.concessionaria_id === origem.id).length;
+  /* Juntar N contratantes num só. Vem da seleção: com três grafias da mesma
+     empresa, juntar de dois em dois faria a mesma operação duas vezes.
+
+     A ordem importa e é a mesma de antes: primeiro as obras e os contratos
+     mudam de dono, e SÓ DEPOIS as duplicatas são apagadas. Ao contrário, o
+     'on delete restrict' dos contratos barraria a exclusão — ou, num banco mais
+     frouxo, as obras ficariam sem ninguém. */
+  async function juntarConcessionarias(origens, destino) {
+    const lista = [].concat(origens || []).filter((c) => c && c.id !== destino?.id);
+    if (!lista.length || !destino) return false;
+
+    const ids = lista.map((c) => c.id);
+    const nObras = db.programacoes.filter((p) => ids.includes(p.concessionaria_id)).length;
+    const nCtr = db.contratos.filter((k) => ids.includes(k.concessionaria_id)).length;
+
     if (!window.confirm(
-      `Mover ${nObras} programação(ões) e os contratos de "${origem.sigla}" para "${destino.sigla}" e apagar "${origem.sigla}"?`
+      `Juntar ${lista.map((c) => c.sigla).join(', ')} em "${destino.sigla}"?\n\n`
+      + `${nObras} programação(ões) e ${nCtr} contrato(s) passam para ${destino.sigla}, `
+      + `e ${lista.length === 1 ? 'o outro cadastro é apagado' : 'os outros cadastros são apagados'}.`
     )) return false;
 
     const p1 = await supabase.from('programacoes')
       .update({ concessionaria_id: destino.id, contratante: destino.sigla })
-      .eq('concessionaria_id', origem.id);
+      .in('concessionaria_id', ids);
     const p2 = await supabase.from('contratos')
-      .update({ concessionaria_id: destino.id }).eq('concessionaria_id', origem.id);
+      .update({ concessionaria_id: destino.id }).in('concessionaria_id', ids);
     if (p1.error || p2.error) {
       console.error('Juntar:', p1.error?.message || p2.error?.message);
       await fetchDatabase();
       return false;
     }
-    const del = await supabase.from('concessionarias').delete().eq('id', origem.id);
+
+    const del = await supabase.from('concessionarias').delete().in('id', ids);
     if (del.error) console.error('Juntar:', del.error.message);
     await fetchDatabase();
     return true;
   }
+
 
   /* Ligar um texto antigo ("Motiva") a uma concessionária, de uma vez em todas
      as programações onde ele aparece. */
