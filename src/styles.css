@@ -1854,6 +1854,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   font-size: 13px;
   line-height: 1;
 }
+.veic-tipo svg { width: 17px; height: 17px; display: block; }
 
 /* Placas na linha da equipe viram alvo de clique duplo para remover */
 .eq-veiculos { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }

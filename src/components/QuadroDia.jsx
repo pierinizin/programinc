@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
+import { iconeVeiculo } from './IconeVeiculo';
 import { contratoAutomatico } from '../lib/contratos';
 import { derivarDia } from '../lib/dia';
 
@@ -593,7 +594,7 @@ export function QuadroDia({
                     title={podeEditar ? 'Arraste para uma equipe' : v.modelo}
                   >
                     <span className="veic-tipo" aria-hidden="true">
-                      {v.tipo === 'Caminhão' ? '▭' : v.tipo === 'Caminhonete' ? '▱' : '▬'}
+                      {iconeVeiculo(v.tipo)}
                     </span>
                     <span className="pessoa-nome">
                       <b className="mono">{v.placa}</b>
