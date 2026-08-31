@@ -213,129 +213,243 @@ export function exportProgramacaoXlsx(db, dateStr) {
   downloadExcelXml(xml, `programacao-atual-${formatDateBR(dateStr).replace(/\//g, '-')}.xls`);
 }
 
-export function exportProgramacaoModeloAntigo(db, dateStr) {
+/** Primeiro + último nome — "Adailton José de Jesus Santos" vira "ADAILTON SANTOS". */
+function primeiroUltimoNome(nome) {
+  const partes = String(nome || '').trim().split(/\s+/).filter(Boolean);
+  if (partes.length <= 1) return (partes[0] || '').toUpperCase();
+  return `${partes[0]} ${partes[partes.length - 1]}`.toUpperCase();
+}
+
+/** Apelido é curto por natureza e fica como está; sem apelido, corta o nome. */
+function nomeParaModeloAntigo(pessoa) {
+  if (!pessoa) return '';
+  const apelido = String(pessoa.apelido || '').trim();
+  return apelido ? apelido.toUpperCase() : primeiroUltimoNome(pessoa.nome);
+}
+
+// programacaoForm.tipoEquipe guarda o nome completo do cadastro ("Pintura -
+// Mecânica e Manual", "Implantação de Tachas", "Implantação de Defensa").
+// O modelo antigo sempre usou a palavra curta — é essa que entra na linha.
+// tipoServico foi descontinuado (App.jsx apaga esse campo antes de salvar),
+// por isso não pode mais ser a fonte desta linha.
+function tipoEquipeCurto(tipoEquipe) {
+  const t = String(tipoEquipe || '').toUpperCase();
+  if (t.includes('PINTURA')) return 'PINTURA';
+  if (t.includes('TACHA')) return 'TACHAS';
+  if (t.includes('DEFENSA')) return 'DEFENSAS';
+  return t; // tipo novo, ainda sem abreviação combinada — mostra por extenso.
+}
+
+const MA_BORDA = { style: 'thin', color: { argb: 'FF000000' } };
+const MA_BOX = { top: MA_BORDA, left: MA_BORDA, right: MA_BORDA, bottom: MA_BORDA };
+const MA_VERMELHO = 'FFC00000';
+
+function maCelula(ws, r, col, value, { bold = false, red = false, size = 14, align = 'center' } = {}) {
+  const c = ws.getCell(r, col);
+  c.value = value ?? '';
+  c.font = { name: 'Calibri', size, bold, ...(red ? { color: { argb: MA_VERMELHO } } : {}) };
+  c.alignment = { horizontal: align, vertical: 'middle', wrapText: true };
+  c.border = MA_BOX;
+  return c;
+}
+
+/**
+ * Monta o workbook do "Modelo 02" — o layout que a Incovia usava no Excel
+ * antes do sistema: uma coluna por equipe, encarregado e membros embaixo da
+ * cidade e do contratante, quem faltou naquele dia aparece em vermelho.
+ *
+ * Separado de exportProgramacaoModeloAntigo() porque só a metade que baixa o
+ * arquivo depende do navegador — esta metade roda em teste sem DOM.
+ */
+export async function montarProgramacaoModeloAntigo(db, dateStr) {
+  const { default: ExcelJS } = await import('exceljs');
   const { colaboradoresMap, veiculosMap } = buildMaps(db);
 
   const teams = currentProgramacoes(db, dateStr).sort((a, b) =>
     (a.cidade || '').localeCompare(b.cidade || '', 'pt-BR')
   );
 
+  // Total de faltas do canto: conta quem tem falta registrada NESTA data —
+  // o mesmo critério que já pinta o nome de vermelho na equipe, para os dois
+  // números nunca se contradizerem.
   const faltasSet = new Set(
     (db.faltas || [])
       .filter((f) => f.data === dateStr)
       .map((f) => f.colaboradorId)
   );
 
-  const maxMembros = Math.max(9, ...teams.map((t) => (t.membroIds || []).length));
-  const maxVeiculos = Math.max(2, ...teams.map((t) => (t.veiculoIds || []).length));
+  const maxMembros = Math.max(9, ...teams.map((t) => (t.membroIds || []).length), 0);
+  const maxVeiculos = Math.max(2, ...teams.map((t) => (t.veiculoIds || []).length), 0);
 
   const weekday = new Date(`${dateStr}T12:00:00`)
     .toLocaleDateString('pt-BR', { weekday: 'long' })
     .toUpperCase();
-
   const tituloData = `DIA - ${formatDateBR(dateStr).replace(/\//g, '-')} - ${weekday}`;
 
-  const cellStyle = 'border:1px solid #000;padding:4px 6px;font-family:Arial;font-size:12pt;vertical-align:middle;';
-  const cellCenterStyle = `${cellStyle}text-align:center;`;
-  const cellBoldCenterStyle = `${cellCenterStyle}font-weight:bold;`;
-  const cellRedStyle = `${cellStyle}color:#c00000;font-weight:bold;`;
+  const N = Math.max(teams.length, 1);
+  const COL_TOTAL = N + 1; // coluna extra à direita: total de membros e total de faltas
 
-  const td = (value, style = cellStyle, extra = '') => `<td ${extra} style="${style}">${esc(value ?? '')}</td>`;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Incovia';
+  wb.created = new Date();
 
-  const rows = [];
+  const nomeAba = (formatDateBR(dateStr).replace(/\//g, '-').slice(0, 5)) || 'Programacao';
+  const ws = wb.addWorksheet(nomeAba, {
+    views: [{ showGridLines: false }],
+    pageSetup: {
+      orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+      margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
+    },
+  });
 
-  rows.push(`
-    <tr>
-      <td colspan="${Math.max(teams.length, 1)}" style="${cellBoldCenterStyle}font-size:16pt;">
-        PROGRAMAÇÃO DIÁRIA DE TRABALHOS
-      </td>
-    </tr>
-  `);
+  ws.columns = [
+    ...Array.from({ length: N }, () => ({ width: 19 })),
+    { width: 11 },
+  ];
 
-  rows.push(`
-    <tr>
-      <td colspan="${Math.max(teams.length, 1)}" style="${cellRedStyle}font-size:14pt;">
-        ${esc(tituloData)}
-      </td>
-    </tr>
-  `);
+  let r = 1;
 
-  rows.push(`<tr>${teams.map((item) => td((item.cidade || '').toUpperCase(), cellBoldCenterStyle)).join('')}</tr>`);
-  rows.push(`<tr>${teams.map((item) => td((item.contratante || '').toUpperCase(), cellBoldCenterStyle)).join('')}</tr>`);
-  rows.push(`<tr>${teams.map(() => td('')).join('')}</tr>`);
+  // Título e data, mesclados sobre as colunas das equipes (a coluna de total
+  // fica de fora — só passa a existir a partir da linha de efetivo).
+  ws.mergeCells(r, 1, r, N);
+  maCelula(ws, r, 1, 'PROGRAMAÇÃO DIÁRIA DE TRABALHOS', { bold: true, size: 16 });
+  ws.getRow(r).height = 26;
+  r += 1;
 
+  ws.mergeCells(r, 1, r, N);
+  maCelula(ws, r, 1, tituloData, { bold: true, size: 14, red: true, align: 'left' });
+  ws.getRow(r).height = 22;
+  r += 1;
+
+  // Cidade e contratante, uma coluna por equipe.
+  teams.forEach((item, idx) => maCelula(ws, r, idx + 1, (item.cidade || '').toUpperCase(), { bold: true }));
+  if (!teams.length) maCelula(ws, r, 1, '', { bold: true });
+  ws.getRow(r).height = 20;
+  r += 1;
+
+  teams.forEach((item, idx) => maCelula(ws, r, idx + 1, (item.contratante || '').toUpperCase(), { bold: true }));
+  if (!teams.length) maCelula(ws, r, 1, '', { bold: true });
+  ws.getRow(r).height = 20;
+  r += 1;
+
+  for (let c = 1; c <= N; c += 1) maCelula(ws, r, c, '');
+  r += 1;
+
+  // Encarregado sempre na primeira linha da equipe, depois o resto do time.
+  // Quem tem falta registrada nesta data aparece em vermelho e negrito.
   for (let i = 0; i < maxMembros; i += 1) {
-    rows.push(`
-      <tr>
-        ${teams.map((item) => {
-          // Encarregado sempre na primeira linha, depois o restante da equipe.
-          const ordenados = Array.from(
-            new Set([item.encarregadoId, ...(item.membroIds || [])].filter(Boolean))
-          );
-          const membroId = ordenados[i];
-          const pessoa = membroId ? colaboradoresMap[membroId] : null;
-          const nome = pessoa ? String(pessoa.apelido || pessoa.nome || '').toUpperCase() : '';
-          return td(nome, membroId && faltasSet.has(membroId) ? cellRedStyle : cellStyle);
-        }).join('')}
-      </tr>
-    `);
+    for (let c = 1; c <= N; c += 1) {
+      const item = teams[c - 1];
+      if (!item) { maCelula(ws, r, c, ''); continue; }
+      const ordenados = Array.from(
+        new Set([item.encarregadoId, ...(item.membroIds || [])].filter(Boolean))
+      );
+      const membroId = ordenados[i];
+      const pessoa = membroId ? colaboradoresMap[membroId] : null;
+      const emFalta = Boolean(membroId && faltasSet.has(membroId));
+      maCelula(ws, r, c, nomeParaModeloAntigo(pessoa), { red: emFalta, bold: emFalta, align: 'left' });
+    }
+    r += 1;
   }
 
-  rows.push(`<tr>${teams.map(() => td('')).join('')}</tr>`);
-  rows.push(`<tr>${teams.map(() => td('')).join('')}</tr>`);
-  rows.push(`<tr>${teams.map((item) => td((item.membroIds || []).length, cellBoldCenterStyle)).join('')}</tr>`);
+  for (let c = 1; c <= N; c += 1) maCelula(ws, r, c, '');
+  r += 1;
+  for (let c = 1; c <= N; c += 1) maCelula(ws, r, c, '');
+  r += 1;
+
+  // Efetivo por equipe, com o total geral somado na coluna extra.
+  teams.forEach((item, idx) => maCelula(ws, r, idx + 1, (item.membroIds || []).length, { bold: true }));
+  if (!teams.length) maCelula(ws, r, 1, 0, { bold: true });
+  const cEfetivo = ws.getCell(r, COL_TOTAL);
+  cEfetivo.value = { formula: `SUM(A${r}:${letraColuna(N)}${r})` };
+  cEfetivo.font = { name: 'Calibri', size: 12, bold: true };
+  cEfetivo.alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.getRow(r).height = 20;
+  r += 1;
 
   for (let i = 0; i < maxVeiculos; i += 1) {
-    rows.push(`
-      <tr>
-        ${teams.map((item) => {
-          const veiculoId = (item.veiculoIds || [])[i];
-          const placa = veiculoId ? (veiculosMap[veiculoId]?.placa || '').toUpperCase() : '';
-          return td(placa, cellBoldCenterStyle);
-        }).join('')}
-      </tr>
-    `);
+    teams.forEach((item, idx) => {
+      const veiculoId = (item.veiculoIds || [])[i];
+      const placa = veiculoId ? (veiculosMap[veiculoId]?.placa || '').toUpperCase() : '';
+      maCelula(ws, r, idx + 1, placa, { bold: true });
+    });
+    if (!teams.length) maCelula(ws, r, 1, '', { bold: true });
+    r += 1;
   }
 
-  rows.push(`<tr>${teams.map(() => td('')).join('')}</tr>`);
-  rows.push(`<tr>${teams.map((item) => td((item.tipoServico || '').toUpperCase(), cellBoldCenterStyle)).join('')}</tr>`);
-  rows.push(`<tr>${teams.map((item, idx) => td(idx === 0 ? item.horarioInicio || '07:30' : '', cellBoldCenterStyle)).join('')}</tr>`);
-  rows.push(`<tr>${teams.map((item, idx) => td(idx === 0 ? item.horarioSaidaAlmoco || '11:30' : '', cellBoldCenterStyle)).join('')}</tr>`);
-  rows.push(`<tr>${teams.map((item, idx) => td(idx === 0 ? item.horarioRetornoAlmoco || '13:00' : '', cellBoldCenterStyle)).join('')}</tr>`);
-  rows.push(`<tr>${teams.map((item, idx) => td(idx === 0 ? item.horarioSaida || '17:48' : '', cellBoldCenterStyle)).join('')}</tr>`);
-  rows.push(`<tr>${teams.map(() => td('')).join('')}</tr>`);
-  rows.push(`
-    <tr>
-      <td colspan="${Math.max(teams.length, 1)}" style="${cellBoldCenterStyle}text-align:right;">
-        INCOVIA - SOLUÇÕES EM SINALIZAÇÃO VIÁRIA LTDA
-      </td>
-    </tr>
-  `);
+  for (let c = 1; c <= N; c += 1) maCelula(ws, r, c, '');
+  r += 1;
 
-  const html = `
-    <html xmlns:o="urn:schemas-microsoft-com:office:office"
-          xmlns:x="urn:schemas-microsoft-com:office:excel"
-          xmlns="http://www.w3.org/TR/REC-html40">
-      <head>
-        <meta charset="utf-8" />
-        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-      </head>
-      <body>
-        <table border="1" cellspacing="0" cellpadding="0" style="border-collapse:collapse;table-layout:fixed;">
-          ${rows.join('')}
-        </table>
-      </body>
-    </html>
-  `;
+  teams.forEach((item, idx) => maCelula(ws, r, idx + 1, tipoEquipeCurto(getTeamLabel(item)), { bold: true }));
+  if (!teams.length) maCelula(ws, r, 1, '', { bold: true });
+  r += 1;
 
-  const blob = new Blob([html], {
-    type: 'application/vnd.ms-excel;charset=utf-8;',
+  const horarios = [
+    (item) => item.horarioInicio || '07:30',
+    (item) => item.horarioSaidaAlmoco || '11:30',
+    (item) => item.horarioRetornoAlmoco || '13:00',
+    (item) => item.horarioSaida || '17:48',
+  ];
+  horarios.forEach((getHorario) => {
+    teams.forEach((item, idx) => maCelula(ws, r, idx + 1, idx === 0 ? getHorario(item) : '', { bold: true }));
+    if (!teams.length) maCelula(ws, r, 1, getHorario({}), { bold: true });
+    r += 1;
+  });
+
+  for (let c = 1; c <= N; c += 1) maCelula(ws, r, c, '');
+  r += 1;
+
+  // Rodapé: nome da empresa mesclado sobre as equipes, total de faltas do
+  // dia na coluna extra — o mesmo critério que já pinta os nomes de vermelho.
+  const rodape = r;
+  ws.mergeCells(rodape, 1, rodape, N);
+  maCelula(ws, rodape, 1, 'INCOVIA - SOLUÇÕES EM SINALIZAÇÃO VIÁRIA LTDA', { bold: true, size: 11, align: 'right' });
+  ws.getRow(rodape).height = 18;
+
+  const cRotuloFaltas = ws.getCell(rodape, COL_TOTAL);
+  cRotuloFaltas.value = 'FALTAS';
+  cRotuloFaltas.font = { name: 'Calibri', size: 8, bold: true, color: { argb: 'FF6B7784' } };
+  cRotuloFaltas.alignment = { horizontal: 'center', vertical: 'bottom' };
+
+  r += 1;
+  const cTotalFaltas = ws.getCell(r, COL_TOTAL);
+  cTotalFaltas.value = faltasSet.size;
+  cTotalFaltas.font = { name: 'Calibri', size: 14, bold: true, color: { argb: MA_VERMELHO } };
+  cTotalFaltas.alignment = { horizontal: 'center', vertical: 'middle' };
+  cTotalFaltas.border = MA_BOX;
+  ws.getRow(r).height = 20;
+
+  return {
+    buffer: await wb.xlsx.writeBuffer(),
+    nome: `programacao-modelo-antigo-${formatDateBR(dateStr).replace(/\//g, '-')}.xlsx`,
+  };
+}
+
+function letraColuna(n) {
+  let s = '';
+  let x = n;
+  while (x > 0) {
+    const m = (x - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    x = Math.floor((x - m) / 26);
+  }
+  return s;
+}
+
+/**
+ * Monta e entrega o arquivo. Separado de montarProgramacaoModeloAntigo()
+ * porque só esta metade depende do navegador.
+ */
+export async function exportProgramacaoModeloAntigo(db, dateStr) {
+  const { buffer, nome } = await montarProgramacaoModeloAntigo(db, dateStr);
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
 
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `programacao-modelo-antigo-${formatDateBR(dateStr).replace(/\//g, '-')}.xls`;
+  link.download = nome;
   document.body.appendChild(link);
   link.click();
   link.remove();
