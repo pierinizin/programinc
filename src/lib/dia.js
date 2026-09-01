@@ -20,6 +20,37 @@ export function derivarDia(db, data) {
     if (p.data === data) noPatio.add(p.colaboradorId);
   });
 
+  // Atestado: colaboradorId -> { ate }. Só entra quem tem, NESTE dia, uma
+  // falta que nasceu de atestado (origem_documento_id preenchido) — uma
+  // falta comum, lançada à mão, não bloqueia, só avisa. O "até" é o último
+  // dia de TODO o período do atestado, não só desta falta, então o card
+  // mostra a mesma data que o documento cobre, mesmo se uma linha do meio
+  // tiver sido corrigida à mão.
+  const atestados = new Map();
+  {
+    const fimPorDocumento = new Map();
+    (db.faltas || []).forEach((f) => {
+      if (!f.origem_documento_id) return;
+      const atual = fimPorDocumento.get(f.origem_documento_id);
+      if (!atual || f.data > atual) fimPorDocumento.set(f.origem_documento_id, f.data);
+    });
+    (db.faltas || []).forEach((f) => {
+      if (f.data !== data || !f.origem_documento_id) return;
+      const ate = fimPorDocumento.get(f.origem_documento_id);
+      if (ate) atestados.set(f.colaboradorId, { ate });
+    });
+  }
+
+  // Férias: colaboradorId -> { ate }. Ao contrário de atestado, não mexe em
+  // falta nenhuma — a pessoa continua livre para ser escalada, só ganha o
+  // aviso visual.
+  const feriasHoje = new Map();
+  (db.ferias || []).forEach((f) => {
+    if (f.data_inicio > data || f.data_fim < data) return;
+    const atual = feriasHoje.get(f.colaboradorId);
+    if (!atual || f.data_fim > atual.ate) feriasHoje.set(f.colaboradorId, { ate: f.data_fim });
+  });
+
   const equipesDaPessoa = {};
   const equipesDoVeiculo = {};
   equipes.forEach((eq) => {
@@ -50,6 +81,8 @@ export function derivarDia(db, data) {
     equipes,
     faltosos,
     noPatio,
+    atestados,
+    feriasHoje,
     equipesDaPessoa,
     equipesDoVeiculo,
     pessoasLivres,

@@ -789,6 +789,11 @@ select:disabled, input:disabled {
 .primary-btn:hover { filter: brightness(1.08); border-color: var(--faixa); }
 
 .ghost-btn { background: var(--superficie-2); color: var(--tinta); }
+/* "Registrar atestado"/"Registrar férias": mesmo botão neutro dos outros dois,
+   só a borda e o texto pintados na cor do que vão abrir — vermelho de
+   impedimento, amarelo de atenção — para diferenciar sem virar botão cheio. */
+.ghost-btn.perigo-borda { border-color: var(--erro-texto); color: var(--erro-texto); }
+.ghost-btn.atencao-borda { border-color: var(--faixa-texto); color: var(--faixa-texto); }
 
 .danger-btn, .mini-danger {
   background: var(--erro-fundo);
@@ -1263,6 +1268,9 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .pessoa:hover { background: var(--superficie-2); border-color: var(--borda); }
 .pessoa.arrastando { opacity: .3; }
 .pessoa.alocada { opacity: .5; }
+/* Atestado é o único bloqueio de verdade da lista — só ele muda o cursor.
+   Falta comum e férias continuam de "grab": as duas podem ser arrastadas. */
+.pessoa.atestado { opacity: .45; cursor: not-allowed; }
 .pessoa-nome { flex: 1; min-width: 0; }
 .pessoa-nome b {
   display: block;
@@ -1303,6 +1311,20 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   font-family: var(--fonte-dado);
   letter-spacing: 0;
   text-transform: none;
+}
+/* Mesmo vermelho de falta — atestado também é ausência, só que sem volta
+   pela lista: o bloqueio de verdade está no cursor e no arraste, não aqui. */
+.marca-atestado {
+  background: var(--erro-fundo);
+  color: var(--erro-texto);
+  border: 1px solid var(--erro-texto);
+}
+/* Amarelo = atenção, igual ao resto do sistema. Férias não bloqueia nada —
+   é só o aviso. */
+.marca-ferias {
+  background: var(--faixa-fundo);
+  color: var(--faixa-texto);
+  border: 1px solid var(--faixa-texto);
 }
 
 /* -------------------------- linhas de equipe -------------------------- */
@@ -1420,6 +1442,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 .eq-lider .rot-erro { color: var(--erro-texto); }
 .eq-lider .nome-lider { display: block; font-size: 12px; font-weight: 500; }
+/* Encarregado de férias: mesmo anel amarelo do membro-chip, só que aqui não
+   há chip nenhum — o avatar fica solto ao lado do rótulo "Encarregado". */
+.eq-lider.ferias .avatar {
+  box-shadow: 0 0 0 2px var(--faixa-texto);
+}
 .avatar.vazio { background: var(--superficie-2); border: 1.5px dashed var(--borda-forte); }
 
 .pilha { display: flex; align-items: center; }
@@ -1474,6 +1501,12 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   max-width: 190px;
 }
 .membro-chip:hover { border-color: var(--borda-forte); }
+/* Férias avisa, não bloqueia: mesmo anel amarelo de "atenção" do resto do
+   sistema, mas o chip continua arrastável/removível normalmente. */
+.membro-chip.ferias {
+  border-color: var(--faixa-texto);
+  box-shadow: 0 0 0 1px var(--faixa-texto);
+}
 .membro-nome {
   font-size: 11.5px;
   font-weight: 500;

@@ -49,6 +49,12 @@ export function nomeCurto(nome) {
   return `${partes[0]} ${partes[partes.length - 1]}`;
 }
 
+/* 'AAAA-MM-DD' -> 'DD/MM', para caber no tooltip de atestado e férias. */
+function dataCurta(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  return m ? `${m[3]}/${m[2]}` : '';
+}
+
 function seloDe(item) {
   if (item.statusExecucao === 'EXECUTANDO') return ['selo-campo', 'Em campo'];
   if (item.statusExecucao === 'CONCLUÍDO') return ['selo-ok', 'Concluído'];
@@ -118,7 +124,7 @@ export function QuadroDia({
 
   /* Uma conta só, compartilhada com a fita do cabeçalho (src/lib/dia.js). */
   const {
-    equipes, faltosos, noPatio, equipesDaPessoa, equipesDoVeiculo,
+    equipes, faltosos, noPatio, atestados, feriasHoje, equipesDaPessoa, equipesDoVeiculo,
     pessoasLivres, veiculosLivres,
   } = useMemo(() => derivarDia(db, selectedDate), [db, selectedDate]);
 
@@ -158,6 +164,12 @@ export function QuadroDia({
   function validar(arrasto, equipe, ehNova, zona) {
     if (!arrasto) return { ok: 'nao', msg: '' };
     const { tipo, item } = arrasto;
+
+    // Atestado bloqueia de verdade, em qualquer destino — equipe, pátio ou
+    // nova falta. Diferente de uma falta comum, que só avisa (mais abaixo).
+    if (tipo === 'pessoa' && atestados.has(item.id)) {
+      return { ok: 'nao', msg: 'de atestado' };
+    }
 
     // Pátio e faltas são só de gente. Veículo não falta nem fica de sobreaviso.
     if (zona) {
@@ -259,6 +271,9 @@ export function QuadroDia({
 
   function aoPressionar(ev, tipo, item) {
     if (!podeEditar || ev.button !== 0) return;
+    // Nem chega a levantar o card: sem isto o usuário arrastaria até uma
+    // equipe para só então descobrir, no fantasma vermelho, que não pode.
+    if (tipo === 'pessoa' && atestados.has(item.id)) return;
     arrasteRef.current = {
       arrasto: { tipo, item },
       origem: ev.currentTarget,
@@ -552,28 +567,39 @@ export function QuadroDia({
               itensVisiveis.map((p) => {
                 const alocada = equipesDaPessoa[p.id];
                 const falta = faltosos.has(p.id);
+                const atestado = atestados.get(p.id);
+                const ferias = feriasHoje.get(p.id);
+                const dica = atestado
+                  ? `De atestado até ${dataCurta(atestado.ate)} — não pode ser escalado`
+                  : ferias
+                  ? `De férias até ${dataCurta(ferias.ate)} — pode ser escalado normalmente`
+                  : podeEditar ? 'Arraste para uma equipe' : p.nome;
                 return (
                   <div
                     key={p.id}
-                    className={`pessoa${alocada ? ' alocada' : ''}${falta ? ' falta' : ''}`}
+                    className={`pessoa${alocada ? ' alocada' : ''}${falta ? ' falta' : ''}${atestado ? ' atestado' : ''}${ferias ? ' ferias' : ''}`}
                     onPointerDown={(e) => aoPressionar(e, 'pessoa', p)}
                     onPointerMove={aoMover}
                     onPointerUp={aoSoltar}
                     onPointerCancel={encerrar}
-                    title={podeEditar ? 'Arraste para uma equipe' : p.nome}
+                    title={dica}
                   >
                     <Avatar nome={p.nome} url={p.fotoUrl} tamanho="small" />
                     <span className="pessoa-nome">
                       <b>{p.apelido || p.nome}</b>
                       <span>{p.funcao}</span>
                     </span>
-                    {falta ? (
+                    {atestado ? (
+                      <span className="marca-atestado">Atestado</span>
+                    ) : falta ? (
                       <span className="marca-falta">Falta</span>
                     ) : alocada ? (
                       <span className="marca-alocada">
                         {alocada[0].cidade.slice(0, 8)}
                         {alocada.length > 1 ? ` +${alocada.length - 1}` : ''}
                       </span>
+                    ) : ferias ? (
+                      <span className="marca-ferias">Férias</span>
                     ) : null}
                   </div>
                 );
@@ -676,13 +702,24 @@ export function QuadroDia({
                 </span>
 
                 <span className="eq-equipe">
-                  <span className="eq-lider">
+                  <span className={`eq-lider${lider && feriasHoje.has(lider.id) ? ' ferias' : ''}`}>
                     {lider ? (
                       <>
-                        <Avatar nome={lider.nome} url={lider.fotoUrl} />
+                        <Avatar
+                          nome={lider.nome}
+                          url={lider.fotoUrl}
+                          titulo={feriasHoje.has(lider.id)
+                            ? `${lider.nome} — de férias até ${dataCurta(feriasHoje.get(lider.id).ate)}`
+                            : undefined}
+                        />
                         <span>
                           <span className="rot">Encarregado</span>
-                          <span className="nome-lider" title={lider.nome}>
+                          <span
+                            className="nome-lider"
+                            title={feriasHoje.has(lider.id)
+                              ? `De férias até ${dataCurta(feriasHoje.get(lider.id).ate)}`
+                              : lider.nome}
+                          >
                             {nomeCurto(lider.nome)}
                           </span>
                         </span>
@@ -709,18 +746,27 @@ export function QuadroDia({
                       {lider ? 'só o encarregado' : 'equipe vazia'}
                     </span>
                   ) : (
-                    membros.map((p) => (
-                      <button
-                        type="button"
-                        key={p.id}
-                        className="membro-chip"
-                        title={podeEditar ? `${p.nome} — clique duplo para tirar` : p.nome}
-                        onDoubleClick={() => podeEditar && onRemoverMembro(eq, p.id)}
-                      >
-                        <Avatar nome={p.nome} url={p.fotoUrl} tamanho="small" />
-                        <span className="membro-nome">{nomeCurto(p.nome)}</span>
-                      </button>
-                    ))
+                    membros.map((p) => {
+                      const ferias = feriasHoje.get(p.id);
+                      const sufixo = ferias ? ` — de férias até ${dataCurta(ferias.ate)}` : '';
+                      return (
+                        <button
+                          type="button"
+                          key={p.id}
+                          className={`membro-chip${ferias ? ' ferias' : ''}`}
+                          title={podeEditar ? `${p.nome}${sufixo} — clique duplo para tirar` : `${p.nome}${sufixo}`}
+                          onDoubleClick={() => podeEditar && onRemoverMembro(eq, p.id)}
+                        >
+                          <Avatar
+                            nome={p.nome}
+                            url={p.fotoUrl}
+                            tamanho="small"
+                            titulo={ferias ? `${p.nome}${sufixo}` : undefined}
+                          />
+                          <span className="membro-nome">{nomeCurto(p.nome)}</span>
+                        </button>
+                      );
+                    })
                   )}
                 </span>
 

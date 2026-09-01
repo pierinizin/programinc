@@ -12,6 +12,8 @@ import { FichaVeiculo } from './components/FichaVeiculo';
 import { iconeVeiculo } from './components/IconeVeiculo';
 import { derivarDia } from './lib/dia';
 import { prepararFoto, enviarFoto, assinarFotos, assinarFotosEmCache } from './lib/fotos';
+import { salvarAtestado, abrirArquivo as abrirArquivoDoc } from './lib/arquivosDoc';
+import { salvarFerias, excluirFerias as apagarFerias, abrirArquivoFerias } from './lib/ferias';
 
 import {
   exportProgramacaoModeloAntigo,
@@ -119,6 +121,7 @@ function normalizeDb(data) {
      ? [...data.veiculos].sort((a, b) => String(a.placa || '').localeCompare(String(b.placa || ''), 'pt-BR'))
      : [],
    faltas: Array.isArray(data?.faltas) ? data.faltas : [],
+   ferias: Array.isArray(data?.ferias) ? data.ferias : [],
    patio: Array.isArray(data?.patio) ? data.patio : [],
    perfis: Array.isArray(data?.perfis) ? data.perfis : [],
    concessionarias: Array.isArray(data?.concessionarias)
@@ -202,6 +205,17 @@ function emptyFalta() {
   return { id: '', colaboradorId: null, data: today(), motivo: 'atestado_medico', observacao: '' };
 }
 
+// Atestado é sempre um registro NOVO (repetivel) — não existe "editar", só
+// "registrar outro". Arquivo é opcional, por isso vive solto no form, fora
+// do payload que vai para o banco (ver saveAtestado).
+function emptyAtestado() {
+  return { colaboradorId: null, emitido_em: today(), valido_ate: today(), observacao: '', arquivo: null };
+}
+
+function emptyFerias() {
+  return { colaboradorId: null, data_inicio: today(), data_fim: today(), observacao: '', arquivo: null };
+}
+
 // Traduz o erro cru do Postgres/Supabase numa mensagem que faz sentido para
 // quem está usando o sistema. O erro completo continua indo para o console.
 function reportarErro(contexto, error) {
@@ -252,7 +266,7 @@ function App() {
   const [isRecovering, setIsRecovering] = useState(false);
   const [novaSenha, setNovaSenha] = useState('');
   
-  const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [], patio: [], perfis: [], concessionarias: [], contratos: [] });
+  const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [], ferias: [], patio: [], perfis: [], concessionarias: [], contratos: [] });
   const [page, setPage] = useState('programacao'); 
   const [selectedDate, setSelectedDate] = useState(today());
   const [search, setSearch] = useState('');
@@ -262,6 +276,10 @@ function App() {
   const [colaboradorForm, setColaboradorForm] = useState(emptyColaborador());
   const [veiculoForm, setVeiculoForm] = useState(emptyVeiculo());
   const [faltaForm, setFaltaForm] = useState(emptyFalta());
+  const [atestadoForm, setAtestadoForm] = useState(emptyAtestado());
+  const [feriasForm, setFeriasForm] = useState(emptyFerias());
+  const [salvandoAtestadoFerias, setSalvandoAtestadoFerias] = useState(false);
+  const [erroAtestadoFerias, setErroAtestadoFerias] = useState('');
   const [expandedProgramacaoId, setExpandedProgramacaoId] = useState(null);
   const [colabsSel, setColabsSel] = useState({});
   const [veicsSel, setVeicsSel] = useState({});
@@ -286,12 +304,13 @@ function App() {
   };
 
   const fetchDatabase = async () => {
-    const [resCols, resVeics, resProgs, resFaltas, resPatio, resPerfis,
+    const [resCols, resVeics, resProgs, resFaltas, resFerias, resPatio, resPerfis,
            resConcs, resCtrs] = await Promise.all([
       supabase.from('colaboradores').select('*'),
       supabase.from('veiculos').select('*'),
       supabase.from('programacoes').select('*'),
       supabase.from('faltas').select('*'),
+      supabase.from('ferias').select('*'),
       supabase.from('patio').select('*'),
       supabase.from('perfis').select('*'),
       supabase.from('concessionarias').select('*'),
@@ -300,7 +319,9 @@ function App() {
 
     // Com RLS ligada, uma tabela sem permissão volta com error e data null.
     // Registramos no console em vez de silenciar tudo como lista vazia.
-    [resCols, resVeics, resProgs, resFaltas, resPatio, resPerfis,
+    // 'ferias' pode ainda não existir se o 13-atestados-ferias.sql não tiver
+    // sido rodado — vira lista vazia em vez de quebrar a tela inteira.
+    [resCols, resVeics, resProgs, resFaltas, resFerias, resPatio, resPerfis,
      resConcs, resCtrs].forEach((res) => {
       if (res?.error) console.error('Erro ao carregar dados:', res.error.message);
     });
@@ -324,6 +345,7 @@ function App() {
       veiculos: resVeics.data || [],
       programacoes: resProgs.data || [],
       faltas: resFaltas.data || [],
+      ferias: resFerias?.data || [],
       patio: resPatio?.data || [],
       perfis: resPerfis?.data || [],
       concessionarias: resConcs?.data || [],
@@ -433,7 +455,7 @@ function App() {
     fetchDatabaseRef.current();
 
     const canal = supabase.channel('mudancas-incovia');
-    ['colaboradores', 'veiculos', 'programacoes', 'faltas', 'patio', 'perfis'].forEach((table) => {
+    ['colaboradores', 'veiculos', 'programacoes', 'faltas', 'ferias', 'patio', 'perfis'].forEach((table) => {
       canal.on('postgres_changes', { event: '*', schema: 'public', table }, () => agendarFetchRef.current());
     });
     canal.subscribe();
@@ -1190,6 +1212,20 @@ function App() {
     setModal('falta');
   }
 
+  // Sempre um registro novo — atestado é repetivel, não existe "editar o de
+  // antes" pelo drawer, só lançar outro afastamento.
+  function openAtestadoModal(colaboradorId) {
+    setErroAtestadoFerias('');
+    setAtestadoForm({ ...emptyAtestado(), colaboradorId });
+    setModal('atestado');
+  }
+
+  function openFeriasModal(colaboradorId) {
+    setErroAtestadoFerias('');
+    setFeriasForm({ ...emptyFerias(), colaboradorId });
+    setModal('ferias');
+  }
+
   async function saveProgramacao() {
     if (!programacaoForm.tipoEquipe || !programacaoForm.cidade || !programacaoForm.contratante || !programacaoForm.encarregadoId) {
       alert('Preencha os campos principais da programação.');
@@ -1362,6 +1398,89 @@ function App() {
 
     agendarFetch();
     setModal(null);
+  }
+
+  /* Atestado grava direto em 'documentos' (admin-only): o gatilho do
+     13-atestados-ferias.sql cuida de gerar a falta sozinho. Por isso, ao
+     contrário de saveFalta, aqui não é agendarFetch() — é agendarFetchDocs(),
+     e a falta gerada chega pelo canal realtime de 'faltas' que já existe. */
+  async function saveAtestado() {
+    if (!atestadoForm.colaboradorId) return;
+    const colaborador = maps.colaboradores[atestadoForm.colaboradorId];
+    const tipoAtestado = docs.tipos.find((t) => t.codigo === 'atestado');
+    if (!colaborador || !tipoAtestado) {
+      setErroAtestadoFerias(
+        'Não encontrei o tipo "Atestado médico" no catálogo — rode o 13-atestados-ferias.sql (e o 10-atestados.sql) no Supabase.'
+      );
+      return;
+    }
+    setErroAtestadoFerias('');
+    setSalvandoAtestadoFerias(true);
+    try {
+      await salvarAtestado({
+        colaborador,
+        tipoAtestado,
+        emitidoEm: atestadoForm.emitido_em,
+        validoAte: atestadoForm.valido_ate,
+        observacao: atestadoForm.observacao,
+        arquivo: atestadoForm.arquivo,
+        quem: session?.user?.id,
+      });
+      agendarFetchDocs();
+      agendarFetch();   // a falta gerada pelo gatilho entra em 'db.faltas'
+      setModal(null);
+    } catch (e) {
+      setErroAtestadoFerias(e.message || 'Não consegui registrar o atestado.');
+    }
+    setSalvandoAtestadoFerias(false);
+  }
+
+  async function saveFerias() {
+    if (!feriasForm.colaboradorId) return;
+    const colaborador = maps.colaboradores[feriasForm.colaboradorId];
+    if (!colaborador) return;
+    setErroAtestadoFerias('');
+    setSalvandoAtestadoFerias(true);
+    try {
+      await salvarFerias({
+        colaborador,
+        dataInicio: feriasForm.data_inicio,
+        dataFim: feriasForm.data_fim,
+        observacao: feriasForm.observacao,
+        arquivo: feriasForm.arquivo,
+      });
+      agendarFetch();
+      setModal(null);
+    } catch (e) {
+      setErroAtestadoFerias(e.message || 'Não consegui registrar as férias.');
+    }
+    setSalvandoAtestadoFerias(false);
+  }
+
+  async function deleteFerias(item) {
+    if (!confirm('Excluir este período de férias?')) return;
+    try {
+      await apagarFerias(item);
+      agendarFetch();
+    } catch (e) {
+      reportarErro('Erro ao excluir Férias', e);
+    }
+  }
+
+  async function abrirAtestadoArquivo(doc) {
+    try {
+      await abrirArquivoDoc(doc, session?.user?.id);
+    } catch (e) {
+      alert(e.message || 'Não consegui abrir o arquivo.');
+    }
+  }
+
+  async function abrirFeriasArquivo(item) {
+    try {
+      await abrirArquivoFerias(item);
+    } catch (e) {
+      alert(e.message || 'Não consegui abrir o arquivo.');
+    }
   }
 
   async function deleteProgramacao(itemId) {
@@ -2676,10 +2795,16 @@ function App() {
                 <ColaboradorDrawer
                   item={activeDrawer.item}
                   db={db}
+                  docs={docs}
                   userRole={userRole}
                   openEdit={() => openColaboradorModal(activeDrawer.item)}
                   openFalta={() => openFaltaModal()}
+                  openAtestado={() => openAtestadoModal(activeDrawer.item.id)}
+                  openFerias={() => openFeriasModal(activeDrawer.item.id)}
                   deleteFalta={deleteFalta}
+                  deleteFerias={deleteFerias}
+                  abrirAtestadoArquivo={abrirAtestadoArquivo}
+                  abrirFeriasArquivo={abrirFeriasArquivo}
                 />
               )}
 
@@ -2705,6 +2830,8 @@ function App() {
                 {modal === 'colaborador' && (colaboradorForm.id ? 'Editar Colaborador' : 'Novo Colaborador')}
                 {modal === 'veiculo' && (veiculoForm.id ? 'Editar Veículo' : 'Novo Veículo')}
                 {modal === 'falta' && (faltaForm.id ? 'Editar Falta' : 'Registrar Falta')}
+                {modal === 'atestado' && 'Registrar Atestado'}
+                {modal === 'ferias' && 'Registrar Férias'}
               </strong>
               <button className="icon-btn" onClick={() => setModal(null)}>×</button>
             </div>
@@ -3037,6 +3164,90 @@ function App() {
                 </div>
               </div>
             )}
+
+            {modal === 'atestado' && (
+              <div className="form-grid two">
+                <p className="small-muted full">
+                  Assim que salvar, a pessoa fica indisponível para equipes em todo o
+                  período — o sistema gera a falta sozinho.
+                </p>
+                <Input
+                  label="Início"
+                  type="date"
+                  value={atestadoForm.emitido_em}
+                  onChange={(v) => setAtestadoForm({ ...atestadoForm, emitido_em: v })}
+                />
+                <Input
+                  label="Fim"
+                  type="date"
+                  value={atestadoForm.valido_ate}
+                  onChange={(v) => setAtestadoForm({ ...atestadoForm, valido_ate: v })}
+                />
+                <TextArea
+                  label="Observação"
+                  value={atestadoForm.observacao}
+                  onChange={(v) => setAtestadoForm({ ...atestadoForm, observacao: v })}
+                  full
+                />
+                <label className="full">
+                  <span>Documento (opcional) — PDF, JPG, PNG ou WEBP, até 15 MB</span>
+                  <input
+                    type="file"
+                    accept="application/pdf,image/jpeg,image/png,image/webp"
+                    onChange={(e) => setAtestadoForm({ ...atestadoForm, arquivo: e.target.files?.[0] || null })}
+                  />
+                </label>
+                {erroAtestadoFerias && <div className="mut-erro full">{erroAtestadoFerias}</div>}
+                <div className="modal-actions full">
+                  <button className="ghost-btn" onClick={() => setModal(null)} disabled={salvandoAtestadoFerias}>Cancelar</button>
+                  <button className="primary-btn" onClick={saveAtestado} disabled={salvandoAtestadoFerias}>
+                    {salvandoAtestadoFerias ? 'Salvando…' : 'Salvar'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {modal === 'ferias' && (
+              <div className="form-grid two">
+                <p className="small-muted full">
+                  A pessoa continua disponível para equipes — só ganha o anel amarelo
+                  de aviso no card, com o período ao passar o mouse.
+                </p>
+                <Input
+                  label="Início"
+                  type="date"
+                  value={feriasForm.data_inicio}
+                  onChange={(v) => setFeriasForm({ ...feriasForm, data_inicio: v })}
+                />
+                <Input
+                  label="Fim"
+                  type="date"
+                  value={feriasForm.data_fim}
+                  onChange={(v) => setFeriasForm({ ...feriasForm, data_fim: v })}
+                />
+                <TextArea
+                  label="Observação"
+                  value={feriasForm.observacao}
+                  onChange={(v) => setFeriasForm({ ...feriasForm, observacao: v })}
+                  full
+                />
+                <label className="full">
+                  <span>Anexo (opcional) — PDF, JPG, PNG ou WEBP, até 15 MB</span>
+                  <input
+                    type="file"
+                    accept="application/pdf,image/jpeg,image/png,image/webp"
+                    onChange={(e) => setFeriasForm({ ...feriasForm, arquivo: e.target.files?.[0] || null })}
+                  />
+                </label>
+                {erroAtestadoFerias && <div className="mut-erro full">{erroAtestadoFerias}</div>}
+                <div className="modal-actions full">
+                  <button className="ghost-btn" onClick={() => setModal(null)} disabled={salvandoAtestadoFerias}>Cancelar</button>
+                  <button className="primary-btn" onClick={saveFerias} disabled={salvandoAtestadoFerias}>
+                    {salvandoAtestadoFerias ? 'Salvando…' : 'Salvar'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -3256,13 +3467,25 @@ function ResumoDiaDrawer({ date, db, maps, onGoToDate }) {
   );
 }
 
-function ColaboradorDrawer({ item, db, userRole, openEdit, openFalta, deleteFalta }) {
+function ColaboradorDrawer({
+  item, db, docs, userRole, openEdit, openFalta, openAtestado, openFerias,
+  deleteFalta, deleteFerias, abrirAtestadoArquivo, abrirFeriasArquivo,
+}) {
   const escalas = db.programacoes
     .filter((p) => p.membroIds.includes(item.id))
     .sort((a, b) => b.data.localeCompare(a.data));
   const faltas = db.faltas
     .filter((f) => f.colaboradorId === item.id)
     .sort((a, b) => b.data.localeCompare(a.data));
+  // 'documentos' só chega preenchido para admin (fetchDocumentos), então esta
+  // lista naturalmente fica vazia para os outros cargos — mesma régua que já
+  // vale para o resto da tela de Documentos.
+  const atestados = (docs?.documentos || [])
+    .filter((d) => d.colaboradorId === item.id && d.repetivel)
+    .sort((a, b) => String(b.emitido_em || '').localeCompare(String(a.emitido_em || '')));
+  const ferias = (db.ferias || [])
+    .filter((f) => f.colaboradorId === item.id)
+    .sort((a, b) => b.data_fim.localeCompare(a.data_fim));
 
   return (
     <div className="drawer-body">
@@ -3288,6 +3511,8 @@ function ColaboradorDrawer({ item, db, userRole, openEdit, openFalta, deleteFalt
         <div className="card-actions">
           <button className="ghost-btn" onClick={openEdit}>Editar</button>
           <button className="ghost-btn" onClick={openFalta}>Nova falta</button>
+          <button className="ghost-btn perigo-borda" onClick={openAtestado}>Registrar atestado</button>
+          <button className="ghost-btn atencao-borda" onClick={openFerias}>Registrar férias</button>
         </div>
       )}
 
@@ -3322,6 +3547,61 @@ function ColaboradorDrawer({ item, db, userRole, openEdit, openFalta, deleteFalt
                 )}
               </div>
               <div className="meta-row">{new Date(`${f.data}T12:00:00`).toLocaleDateString('pt-BR')}</div>
+              <p>{f.observacao || 'Sem observação'}</p>
+            </div>
+          ))
+        )}
+      </div>
+
+      {userRole === 'admin' && (
+        <div className="drawer-section">
+          <strong>Registro de Atestados</strong>
+          {atestados.length === 0 ? (
+            <p className="small-muted">Nenhum atestado registrado.</p>
+          ) : (
+            atestados.map((a) => (
+              <div key={a.id} className="mini-card">
+                <div className="between">
+                  <strong>
+                    {new Date(`${a.emitido_em}T12:00:00`).toLocaleDateString('pt-BR')}
+                    {' até '}
+                    {new Date(`${a.valido_ate}T12:00:00`).toLocaleDateString('pt-BR')}
+                  </strong>
+                  {a.caminho && (
+                    <button className="chip-btn" onClick={() => abrirAtestadoArquivo(a)}>Abrir</button>
+                  )}
+                </div>
+                <p>{a.observacao || 'Sem observação'}</p>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Férias fica visível a todo mundo que já lê falta hoje — não é dado
+          admin-only, ao contrário de atestado. */}
+      <div className="drawer-section">
+        <strong>Registro de Férias</strong>
+        {ferias.length === 0 ? (
+          <p className="small-muted">Nenhum período de férias registrado.</p>
+        ) : (
+          ferias.map((f) => (
+            <div key={f.id} className="mini-card">
+              <div className="between">
+                <strong>
+                  {new Date(`${f.data_inicio}T12:00:00`).toLocaleDateString('pt-BR')}
+                  {' até '}
+                  {new Date(`${f.data_fim}T12:00:00`).toLocaleDateString('pt-BR')}
+                </strong>
+                <span className="chips-row tight">
+                  {f.caminho && (
+                    <button className="chip-btn" onClick={() => abrirFeriasArquivo(f)}>Abrir</button>
+                  )}
+                  {userRole === 'admin' && (
+                    <button className="mini-danger" onClick={() => deleteFerias(f)}>Excluir</button>
+                  )}
+                </span>
+              </div>
               <p>{f.observacao || 'Sem observação'}</p>
             </div>
           ))

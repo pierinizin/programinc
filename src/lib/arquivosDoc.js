@@ -48,7 +48,9 @@ export function validarArquivo(arquivo) {
   return '';
 }
 
-function caminhoAleatorio(arquivo) {
+// Exportado porque ferias.js (mesmo esquema de caminho, bucket diferente)
+// reaproveita em vez de duplicar a lógica de nome aleatório.
+export function caminhoAleatorio(arquivo) {
   const ext = EXTENSOES[arquivo.type] || 'bin';
   const id = (crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`);
   return `${id}.${ext}`;
@@ -167,4 +169,69 @@ export async function removerArquivo(doc, quem) {
     documentoId: doc.id, colaboradorId: doc.colaboradorId, acao: 'apagou', quem,
   });
   return res.data[0];
+}
+
+/* =============================================================================
+   ATESTADO — um documento 'repetivel', com período em vez de validade
+   -----------------------------------------------------------------------------
+   Os outros tipos são um por pessoa (RG, ASO): enviarArquivo acima decide entre
+   inserir e atualizar olhando 'existente'. Atestado é o oposto — cada
+   afastamento é um registro novo, então salvarAtestado sempre insere, a menos
+   que quem chamou passe 'existente' de propósito, para corrigir um período já
+   lançado (mesmo uuid, novo emitido_em/valido_ate).
+
+   O arquivo aqui é OPCIONAL: "Subir o documento ou/e o intervalo de tempo" —
+   o período sozinho já é suficiente para o gatilho do banco gerar a falta.
+   ============================================================================= */
+export async function salvarAtestado({
+  colaborador, tipoAtestado, emitidoEm, validoAte, observacao, arquivo, existente, quem,
+}) {
+  if (!emitidoEm || !validoAte) throw new Error('Informe o início e o fim do período.');
+  if (validoAte < emitidoEm) throw new Error('O fim não pode vir antes do início.');
+
+  let caminho = null;
+  let arquivoCampos = {};
+  if (arquivo) {
+    const erro = validarArquivo(arquivo);
+    if (erro) throw new Error(erro);
+    caminho = caminhoAleatorio(arquivo);
+    const up = await supabase.storage.from(BUCKET).upload(caminho, arquivo, {
+      contentType: arquivo.type,
+      upsert: false,
+    });
+    if (up.error) throw up.error;
+    arquivoCampos = {
+      nome_arquivo: arquivo.name, caminho, mime: arquivo.type, tamanho_bytes: arquivo.size,
+    };
+  }
+
+  const payload = {
+    colaboradorId: colaborador.id,
+    tipo_id: tipoAtestado.id,
+    categoria: tipoAtestado.categoria,
+    titulo: tipoAtestado.nome,
+    emitido_em: emitidoEm,
+    valido_ate: validoAte,
+    observacao: observacao || null,
+    repetivel: true,
+    ...arquivoCampos,
+  };
+  if (!existente) payload.enviado_por = quem || null;
+
+  const res = existente
+    ? await supabase.from('documentos').update(payload).eq('id', existente.id).select()
+    : await supabase.from('documentos').insert([payload]).select();
+
+  // Mesmo cuidado do enviarArquivo: se o banco recusar depois do upload, o
+  // arquivo não pode ficar órfão no bucket.
+  if (res.error || !res.data?.length) {
+    if (caminho) await supabase.storage.from(BUCKET).remove([caminho]);
+    throw res.error || new Error('Não consegui salvar o atestado.');
+  }
+
+  const linha = res.data[0];
+  registrarAcesso({
+    documentoId: linha.id, colaboradorId: colaborador.id, acao: 'enviou', quem,
+  });
+  return linha;
 }
