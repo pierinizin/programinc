@@ -4,6 +4,7 @@ import { tiposDaPessoa, dataISO, dataBR, sugerirValidade } from '../lib/document
 import {
   enviarArquivo, abrirArquivo, removerArquivo, validarArquivo,
 } from '../lib/arquivosDoc';
+import { confirmar } from '../lib/dialogos';
 
 /* =============================================================================
    A pasta de uma pessoa
@@ -89,9 +90,12 @@ export function FichaDocumentos({
   async function desanexar(tipo) {
     const doc = docs[tipo.id];
     if (!doc?.caminho) return;
-    if (!window.confirm(
-      `Tirar o arquivo de "${tipo.nome}"? A validade continua registrada — só o PDF sai.`
-    )) return;
+    if (!(await confirmar({
+      titulo: `Tirar o arquivo de "${tipo.nome}"?`,
+      mensagem: 'A validade continua registrada — só o PDF sai.',
+      textoConfirmar: 'Tirar',
+      variante: 'atencao',
+    }))) return;
     setErro('');
     setOcupado(tipo.id);
     try {

@@ -3,6 +3,7 @@ import { Avatar } from './Avatar';
 import { iconeVeiculo } from './IconeVeiculo';
 import { contratoAutomatico } from '../lib/contratos';
 import { derivarDia } from '../lib/dia';
+import { notificar } from '../lib/dialogos';
 
 const MAX_EQUIPE = 10;
 
@@ -379,7 +380,7 @@ export function QuadroDia({
 
   function criarComEncarregado(pessoa) {
     if (!podeCriar) {
-      alert('Preencha tipo, cidade e contratante antes de soltar alguém aqui.');
+      notificar({ mensagem: 'Preencha tipo, cidade e contratante antes de soltar alguém aqui.', variante: 'atencao' });
       return;
     }
     criar(pessoa.id);

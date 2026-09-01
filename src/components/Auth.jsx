@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { notificar } from '../lib/dialogos';
 
 export function Auth() {
 const [loading, setLoading] = useState(false);
@@ -19,16 +20,16 @@ const handleAuth = async (e) => {
   if (view === 'login') {
     // MODO LOGIN
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) alert("Erro ao entrar: " + error.message);
-    
+    if (error) notificar({ titulo: 'Erro ao entrar', mensagem: error.message, variante: 'erro' });
+
   } else if (view === 'cadastro') {
     // MODO CADASTRO
     if (!nome) {
-      alert("Preencha o Nome Completo!");
+      notificar({ mensagem: 'Preencha o Nome Completo!', variante: 'atencao' });
       setLoading(false);
       return;
     }
-    
+
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -36,30 +37,34 @@ const handleAuth = async (e) => {
         data: { nome: nome }
       }
     });
-    
+
     if (error) {
-      alert("Erro ao cadastrar: " + error.message);
+      notificar({ titulo: 'Erro ao cadastrar', mensagem: error.message, variante: 'erro' });
     } else {
-      alert("Conta criada com sucesso! Aguarde a aprovação de um Administrador.");
+      notificar({
+        mensagem: 'Conta criada com sucesso! Aguarde a aprovação de um Administrador.', variante: 'sucesso',
+      });
       setView('login'); // Volta pra tela de login
     }
-    
+
   } else if (view === 'recuperar') {
     // MODO RECUPERAR SENHA
     if (!email) {
-      alert("Digite o seu e-mail para recuperar a senha!");
+      notificar({ mensagem: 'Digite o seu e-mail para recuperar a senha!', variante: 'atencao' });
       setLoading(false);
       return;
     }
-    
+
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: window.location.origin, // Volta para o seu site após clicar no email
     });
 
     if (error) {
-      alert("Erro ao enviar e-mail: " + error.message);
+      notificar({ titulo: 'Erro ao enviar e-mail', mensagem: error.message, variante: 'erro' });
     } else {
-      alert("✅ Link de recuperação enviado! Verifique a sua caixa de entrada (e o spam).");
+      notificar({
+        mensagem: 'Link de recuperação enviado! Verifique a sua caixa de entrada (e o spam).', variante: 'sucesso',
+      });
       setView('login'); // Volta pra tela de login
     }
   }

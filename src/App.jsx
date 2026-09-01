@@ -14,6 +14,7 @@ import { derivarDia } from './lib/dia';
 import { prepararFoto, enviarFoto, assinarFotos, assinarFotosEmCache } from './lib/fotos';
 import { salvarAtestado, abrirArquivo as abrirArquivoDoc } from './lib/arquivosDoc';
 import { salvarFerias, excluirFerias as apagarFerias, abrirArquivoFerias } from './lib/ferias';
+import { confirmar, notificar, DialogosHost } from './lib/dialogos';
 
 import {
   exportProgramacaoModeloAntigo,
@@ -239,13 +240,13 @@ function reportarErro(contexto, error) {
     mensagem = 'Não foi possível concluir. Tente novamente.';
   }
 
-  alert(`${contexto}: ${mensagem}`);
+  notificar({ titulo: contexto, mensagem, variante: 'erro' });
 }
 
 // Com RLS ligada, uma operação sem permissão volta com 0 linhas afetadas e
 // SEM erro. Sem este aviso o botão parecia simplesmente não funcionar.
 function semPermissao(acao) {
-  alert(`Você não tem permissão para ${acao}.`);
+  notificar({ titulo: 'Sem permissão', mensagem: `Você não tem permissão para ${acao}.`, variante: 'erro' });
 }
 
 function toggle(list, value) {
@@ -260,7 +261,10 @@ function toggleLimited(list, value, encarregadoId) {
   return [...list, value];
 }
 
-function App() {
+// Todo o app fica em AppInner; App só acrescenta o host de diálogos por cima,
+// para ele existir em QUALQUER tela — login, aprovação pendente, quadro do
+// dia — já que confirmar()/notificar() podem ser chamados de qualquer uma.
+function AppInner() {
   const [session, setSession] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [isRecovering, setIsRecovering] = useState(false);
@@ -572,9 +576,9 @@ function App() {
     const nObras = alvos.reduce((s, k) => s + (obrasPorContrato[k.id] || 0), 0);
     const nomes = alvos.map((k) => k.numero).join(', ');
     const aviso = nObras > 0
-      ? `Excluir ${nomes}?\n\n${nObras} programação(ões) vão ficar sem contrato — o nome do contratante continua registrado nelas.`
-      : `Excluir ${nomes}?`;
-    if (!window.confirm(aviso)) return false;
+      ? `${nObras} programação(ões) vão ficar sem contrato — o nome do contratante continua registrado nelas.`
+      : '';
+    if (!(await confirmar({ titulo: `Excluir ${nomes}?`, mensagem: aviso, textoConfirmar: 'Excluir' }))) return false;
     const res = await supabase.from('contratos').delete().in('id', alvos.map((k) => k.id)).select();
     if (res.error) { console.error('Contratos:', res.error.message); return false; }
     await fetchDatabase();
@@ -590,10 +594,12 @@ function App() {
 
     const presos = alvos.filter((c) => db.contratos.some((k) => k.concessionaria_id === c.id));
     if (presos.length) {
-      window.alert(
-        `${presos.map((c) => c.sigla).join(', ')} ainda tem contrato cadastrado.\n\n`
-        + 'Apague os contratos antes, ou use "Juntar" para passar tudo para outro contratante.'
-      );
+      notificar({
+        titulo: 'Ainda tem contrato cadastrado',
+        mensagem: `${presos.map((c) => c.sigla).join(', ')} ainda tem contrato cadastrado.\n`
+          + 'Apague os contratos antes, ou use "Juntar" para passar tudo para outro contratante.',
+        variante: 'atencao',
+      });
       return false;
     }
 
@@ -601,9 +607,11 @@ function App() {
       (s, c) => s + db.programacoes.filter((p) => p.concessionaria_id === c.id).length, 0
     );
     const aviso = nObras > 0
-      ? `Excluir ${alvos.map((c) => c.sigla).join(', ')}?\n\n${nObras} programação(ões) vão ficar sem contratante ligado — o nome continua escrito nelas.`
-      : `Excluir ${alvos.map((c) => c.sigla).join(', ')}?`;
-    if (!window.confirm(aviso)) return false;
+      ? `${nObras} programação(ões) vão ficar sem contratante ligado — o nome continua escrito nelas.`
+      : '';
+    if (!(await confirmar({
+      titulo: `Excluir ${alvos.map((c) => c.sigla).join(', ')}?`, mensagem: aviso, textoConfirmar: 'Excluir',
+    }))) return false;
 
     const res = await supabase.from('concessionarias')
       .delete().in('id', alvos.map((c) => c.id)).select();
@@ -631,11 +639,12 @@ function App() {
     const nObras = db.programacoes.filter((p) => ids.includes(p.concessionaria_id)).length;
     const nCtr = db.contratos.filter((k) => ids.includes(k.concessionaria_id)).length;
 
-    if (!window.confirm(
-      `Juntar ${lista.map((c) => c.sigla).join(', ')} em "${destino.sigla}"?\n\n`
-      + `${nObras} programação(ões) e ${nCtr} contrato(s) passam para ${destino.sigla}, `
-      + `e ${lista.length === 1 ? 'o outro cadastro é apagado' : 'os outros cadastros são apagados'}.`
-    )) return false;
+    if (!(await confirmar({
+      titulo: `Juntar ${lista.map((c) => c.sigla).join(', ')} em "${destino.sigla}"?`,
+      mensagem: `${nObras} programação(ões) e ${nCtr} contrato(s) passam para ${destino.sigla}, `
+        + `e ${lista.length === 1 ? 'o outro cadastro é apagado' : 'os outros cadastros são apagados'}.`,
+      textoConfirmar: 'Juntar',
+    }))) return false;
 
     const p1 = await supabase.from('programacoes')
       .update({ concessionaria_id: destino.id, contratante: destino.sigla })
@@ -692,9 +701,11 @@ function App() {
   async function removerDocumento(doc) {
     // Um registro sem arquivo é só uma anotação: apagar é corrigir a
     // conferência. Com PDF anexado é outra coisa, e aí a pessoa confirma.
-    if (doc.caminho && !window.confirm(
-      'Este documento tem um PDF anexado. Apagar o registro deixa o arquivo sem referência. Continuar?'
-    )) return false;
+    if (doc.caminho && !(await confirmar({
+      titulo: 'Apagar registro?',
+      mensagem: 'Este documento tem um PDF anexado. Apagar o registro deixa o arquivo sem referência.',
+      textoConfirmar: 'Apagar',
+    }))) return false;
 
     const antes = docs.documentos;
     setDocs((d) => ({ ...d, documentos: d.documentos.filter((x) => x.id !== doc.id) }));
@@ -919,7 +930,7 @@ function App() {
 
   function removerMembro(equipe, pessoaId) {
     if (equipe.encarregadoId === pessoaId) {
-      alert('Para trocar o encarregado, abra a programação.');
+      notificar({ mensagem: 'Para trocar o encarregado, abra a programação.', variante: 'atencao' });
       return;
     }
     gravarCampos(equipe, { membroIds: (equipe.membroIds || []).filter((id) => id !== pessoaId) });
@@ -1049,7 +1060,10 @@ function App() {
     });
 
     if (!novas.length) {
-      alert('Nenhuma equipe foi copiada: todas tinham alguém indisponível no dia escolhido.');
+      notificar({
+        mensagem: 'Nenhuma equipe foi copiada: todas tinham alguém indisponível no dia escolhido.',
+        variante: 'atencao',
+      });
       return;
     }
 
@@ -1060,7 +1074,7 @@ function App() {
     const partes = [`${novas.length} ${novas.length === 1 ? 'equipe copiada' : 'equipes copiadas'}`];
     if (removidas) partes.push(`${removidas} ${removidas === 1 ? 'pessoa ficou' : 'pessoas ficaram'} de fora`);
     if (ignoradas) partes.push(`${ignoradas} ${ignoradas === 1 ? 'equipe ignorada' : 'equipes ignoradas'}`);
-    alert('✅ ' + partes.join(' · ') + '.');
+    notificar({ titulo: 'Programações copiadas', mensagem: partes.join(' · ') + '.', variante: 'sucesso' });
 
     setSelectedDate(dataDestino);
     agendarFetch();
@@ -1097,11 +1111,13 @@ function App() {
     // Desmarcar uma equipe conciliada desfaz o vínculo com o boletim. Isso some
     // da tela de Apontamentos, então não pode acontecer por clique distraído.
     if (!marcar && seriais.length) {
-      const ok = window.confirm(
-        `Esta equipe está vinculada ao boletim do Kartado (${seriais.join(', ')}).\n\n`
-        + 'Desmarcar desfaz esse vínculo e o apontamento volta para a fila de '
-        + 'conciliação. Continuar?'
-      );
+      const ok = await confirmar({
+        titulo: 'Desfazer vínculo com o Kartado?',
+        mensagem: `Esta equipe está vinculada ao boletim do Kartado (${seriais.join(', ')}).\n`
+          + 'Desmarcar desfaz esse vínculo e o apontamento volta para a fila de conciliação.',
+        textoConfirmar: 'Desmarcar',
+        variante: 'atencao',
+      });
       if (!ok) return;
     }
 
@@ -1228,17 +1244,17 @@ function App() {
 
   async function saveProgramacao() {
     if (!programacaoForm.tipoEquipe || !programacaoForm.cidade || !programacaoForm.contratante || !programacaoForm.encarregadoId) {
-      alert('Preencha os campos principais da programação.');
+      notificar({ mensagem: 'Preencha os campos principais da programação.', variante: 'atencao' });
       return;
     }
     if (programacaoForm.statusExecucao === 'NÃO FOI POSSÍVEL REALIZAR' && !programacaoForm.motivoNaoExecucao) {
-      alert('Selecione o motivo quando não for possível realizar.');
+      notificar({ mensagem: 'Selecione o motivo quando não for possível realizar.', variante: 'atencao' });
       return;
     }
 
     const mergedMemberIds = Array.from(new Set([programacaoForm.encarregadoId, ...programacaoForm.membroIds])).filter(Boolean);
     if (mergedMemberIds.length > MAX_TEAM_MEMBERS) {
-      alert(`Cada equipe pode ter no máximo ${MAX_TEAM_MEMBERS} pessoas.`);
+      notificar({ mensagem: `Cada equipe pode ter no máximo ${MAX_TEAM_MEMBERS} pessoas.`, variante: 'atencao' });
       return;
     }
 
@@ -1272,7 +1288,7 @@ function App() {
 
   async function saveColaborador() {
     if (!colaboradorForm.nome || !colaboradorForm.funcao) {
-      alert('Preencha nome e função.');
+      notificar({ mensagem: 'Preencha nome e função.', variante: 'atencao' });
       return;
     }
     
@@ -1319,7 +1335,11 @@ function App() {
         // A pessoa já foi salva; só a foto falhou. Dizer isso é mais útil do
         // que um erro genérico que faz parecer que nada foi gravado.
         console.error(e);
-        alert('Colaborador salvo, mas a foto não subiu: ' + (e.message || 'erro desconhecido'));
+        notificar({
+          titulo: 'Colaborador salvo',
+          mensagem: 'A foto não subiu: ' + (e.message || 'erro desconhecido'),
+          variante: 'erro',
+        });
       }
     }
 
@@ -1339,13 +1359,13 @@ function App() {
         fotoPreview: URL.createObjectURL(blob),
       }));
     } catch (e) {
-      alert(e.message || 'Não foi possível usar esta imagem.');
+      notificar({ mensagem: e.message || 'Não foi possível usar esta imagem.', variante: 'erro' });
     }
   }
 
   async function saveVeiculo() {
     if (!veiculoForm.placa || !veiculoForm.modelo) {
-      alert('Preencha placa e modelo.');
+      notificar({ mensagem: 'Preencha placa e modelo.', variante: 'atencao' });
       return;
     }
 
@@ -1376,7 +1396,7 @@ function App() {
 
   async function saveFalta() {
     if (!faltaForm.colaboradorId || !faltaForm.data || !faltaForm.motivo) {
-      alert('Preencha colaborador, data e motivo.');
+      notificar({ mensagem: 'Preencha colaborador, data e motivo.', variante: 'atencao' });
       return;
     }
 
@@ -1458,7 +1478,7 @@ function App() {
   }
 
   async function deleteFerias(item) {
-    if (!confirm('Excluir este período de férias?')) return;
+    if (!(await confirmar({ titulo: 'Excluir este período de férias?', textoConfirmar: 'Excluir' }))) return;
     try {
       await apagarFerias(item);
       agendarFetch();
@@ -1471,7 +1491,7 @@ function App() {
     try {
       await abrirArquivoDoc(doc, session?.user?.id);
     } catch (e) {
-      alert(e.message || 'Não consegui abrir o arquivo.');
+      notificar({ mensagem: e.message || 'Não consegui abrir o arquivo.', variante: 'erro' });
     }
   }
 
@@ -1479,12 +1499,12 @@ function App() {
     try {
       await abrirArquivoFerias(item);
     } catch (e) {
-      alert(e.message || 'Não consegui abrir o arquivo.');
+      notificar({ mensagem: e.message || 'Não consegui abrir o arquivo.', variante: 'erro' });
     }
   }
 
   async function deleteProgramacao(itemId) {
-    if (!confirm('Excluir esta programação?')) return;
+    if (!(await confirmar({ titulo: 'Excluir esta programação?', textoConfirmar: 'Excluir' }))) return;
     const res = await supabase.from('programacoes').delete().eq('id', itemId).select();
     if (res.error) return reportarErro('Erro ao excluir Programação', res.error);
     if (!res.data?.length) return semPermissao('excluir esta programação');
@@ -1501,10 +1521,11 @@ function App() {
       .map((e) => `· ${e.tipoEquipe || 'Sem tipo'} — ${e.cidade || 'sem cidade'}`)
       .join('\n');
     const resto = lista.length > 6 ? `\n· e mais ${lista.length - 6}` : '';
-    const ok = window.confirm(
-      `Excluir ${lista.length} ${lista.length === 1 ? 'programação' : 'programações'}?\n\n`
-      + `${nomes}${resto}\n\nEsta ação não pode ser desfeita.`
-    );
+    const ok = await confirmar({
+      titulo: `Excluir ${lista.length} ${lista.length === 1 ? 'programação' : 'programações'}?`,
+      mensagem: `${nomes}${resto}\n\nEsta ação não pode ser desfeita.`,
+      textoConfirmar: 'Excluir',
+    });
     if (!ok) return false;
 
     const ids = lista.map((e) => e.id);
@@ -1647,12 +1668,14 @@ function App() {
     const nomes = alvos.slice(0, 6).map((c) => `· ${c.nome}`).join('\n');
     const resto = alvos.length > 6 ? `\n· e mais ${alvos.length - 6}` : '';
     const jaInativos = lista.length - alvos.length;
-    const ok = window.confirm(
-      `Inativar ${alvos.length} ${alvos.length === 1 ? 'colaborador' : 'colaboradores'}?\n\n`
-      + `${nomes}${resto}\n\n`
-      + (jaInativos ? `${jaInativos} da seleção já ${jaInativos === 1 ? 'está inativo' : 'estão inativos'} e não ${jaInativos === 1 ? 'será tocado' : 'serão tocados'}.\n\n` : '')
-      + 'Eles somem das listas de escalação, mas o histórico é preservado.'
-    );
+    const ok = await confirmar({
+      titulo: `Inativar ${alvos.length} ${alvos.length === 1 ? 'colaborador' : 'colaboradores'}?`,
+      mensagem: `${nomes}${resto}\n\n`
+        + (jaInativos ? `${jaInativos} da seleção já ${jaInativos === 1 ? 'está inativo' : 'estão inativos'} e não ${jaInativos === 1 ? 'será tocado' : 'serão tocados'}.\n\n` : '')
+        + 'Eles somem das listas de escalação, mas o histórico é preservado.',
+      textoConfirmar: 'Inativar',
+      variante: 'atencao',
+    });
     if (!ok) return false;
 
     const res = await supabase.from('colaboradores')
@@ -1667,12 +1690,13 @@ function App() {
     if (!lista.length) return false;
     const nomes = lista.slice(0, 6).map((c) => `· ${c.nome}`).join('\n');
     const resto = lista.length > 6 ? `\n· e mais ${lista.length - 6}` : '';
-    const ok = window.confirm(
-      `Excluir ${lista.length} ${lista.length === 1 ? 'colaborador' : 'colaboradores'}?\n\n`
-      + `${nomes}${resto}\n\n`
-      + 'As faltas atreladas a eles serão apagadas junto. Para apenas tirar '
-      + 'das listas sem perder histórico, use Inativar.\n\nEsta ação não pode ser desfeita.'
-    );
+    const ok = await confirmar({
+      titulo: `Excluir ${lista.length} ${lista.length === 1 ? 'colaborador' : 'colaboradores'}?`,
+      mensagem: `${nomes}${resto}\n\n`
+        + 'As faltas atreladas a eles serão apagadas junto. Para apenas tirar '
+        + 'das listas sem perder histórico, use Inativar.',
+      textoConfirmar: 'Excluir',
+    });
     if (!ok) return false;
 
     const ids = lista.map((c) => c.id);
@@ -1694,7 +1718,11 @@ function App() {
   }
 
   async function deleteColaborador(itemId) {
-    if (!confirm('Excluir este colaborador? Todas as faltas atreladas a ele serão apagadas.')) return;
+    if (!(await confirmar({
+      titulo: 'Excluir este colaborador?',
+      mensagem: 'Todas as faltas atreladas a ele serão apagadas.',
+      textoConfirmar: 'Excluir',
+    }))) return;
     const res = await supabase.from('colaboradores').delete().eq('id', itemId).select();
     if (res.error) return reportarErro('Erro ao excluir Colaborador', res.error);
     if (!res.data?.length) return semPermissao('excluir este colaborador');
@@ -1705,28 +1733,33 @@ function App() {
   }
 
   async function deletePerfil(id) {
-    if (!confirm('Tem certeza que deseja excluir este usuário definitivamente do sistema?')) return;
+    if (!(await confirmar({
+      titulo: 'Excluir este usuário definitivamente do sistema?',
+      textoConfirmar: 'Excluir',
+    }))) return;
     const { error } = await supabase.rpc('deletar_usuario_completo', { uid: id });
 
     if (error) {
       reportarErro('Erro ao excluir usuário', error);
     } else {
-      alert("✅ Usuário e credenciais excluídos com sucesso!");
+      notificar({ mensagem: 'Usuário e credenciais excluídos com sucesso!', variante: 'sucesso' });
       agendarFetch();
     }
   }
 
   async function enviarEmailReset(email) {
    if (!email) {
-     alert('Este usuário não tem e-mail cadastrado.');
+     notificar({ mensagem: 'Este usuário não tem e-mail cadastrado.', variante: 'atencao' });
      return;
    }
-   if (!confirm(`Enviar link de redefinição de senha para ${email}?`)) return;
+   if (!(await confirmar({
+     titulo: `Enviar link de redefinição de senha para ${email}?`, textoConfirmar: 'Enviar', variante: 'atencao',
+   }))) return;
    const { error } = await supabase.auth.resetPasswordForEmail(email, {
      redirectTo: window.location.origin,
    });
    if (error) reportarErro('Erro ao enviar e-mail', error);
-   else alert("✅ E-mail de recuperação enviado com sucesso para " + email);
+   else notificar({ mensagem: 'E-mail de recuperação enviado com sucesso para ' + email, variante: 'sucesso' });
   }
 
   /* Veículo não é liga-desliga: são quatro status. Reativar devolve para
@@ -1749,13 +1782,15 @@ function App() {
     const resto = alvos.length > 6 ? `\n· e mais ${alvos.length - 6}` : '';
     const jaInativos = lista.length - alvos.length;
 
-    const ok = window.confirm(
-      `Inativar ${alvos.length} ${alvos.length === 1 ? 'veículo' : 'veículos'}?\n\n`
-      + `${nomes}${resto}\n\n`
-      + (jaInativos ? `${jaInativos} da seleção já ${jaInativos === 1 ? 'está inativo' : 'estão inativos'} e não ${jaInativos === 1 ? 'será tocado' : 'serão tocados'}.\n\n` : '')
-      + (emUso.length ? `ATENÇÃO: ${emUso.length} ${emUso.length === 1 ? 'está' : 'estão'} EM USO (${emUso.map((v) => v.placa).join(', ')}).\n\n` : '')
-      + 'Eles somem da lista de veículos disponíveis, mas o histórico é preservado.'
-    );
+    const ok = await confirmar({
+      titulo: `Inativar ${alvos.length} ${alvos.length === 1 ? 'veículo' : 'veículos'}?`,
+      mensagem: `${nomes}${resto}\n\n`
+        + (jaInativos ? `${jaInativos} da seleção já ${jaInativos === 1 ? 'está inativo' : 'estão inativos'} e não ${jaInativos === 1 ? 'será tocado' : 'serão tocados'}.\n\n` : '')
+        + (emUso.length ? `ATENÇÃO: ${emUso.length} ${emUso.length === 1 ? 'está' : 'estão'} EM USO (${emUso.map((v) => v.placa).join(', ')}).\n\n` : '')
+        + 'Eles somem da lista de veículos disponíveis, mas o histórico é preservado.',
+      textoConfirmar: 'Inativar',
+      variante: 'atencao',
+    });
     if (!ok) return false;
 
     const res = await supabase.from('veiculos')
@@ -1770,12 +1805,12 @@ function App() {
     if (!lista.length) return false;
     const nomes = lista.slice(0, 6).map((v) => `· ${v.placa} — ${v.modelo}`).join('\n');
     const resto = lista.length > 6 ? `\n· e mais ${lista.length - 6}` : '';
-    const ok = window.confirm(
-      `Excluir ${lista.length} ${lista.length === 1 ? 'veículo' : 'veículos'}?\n\n`
-      + `${nomes}${resto}\n\n`
-      + 'Para apenas tirar da lista de disponíveis sem perder o cadastro, '
-      + 'use Inativar.\n\nEsta ação não pode ser desfeita.'
-    );
+    const ok = await confirmar({
+      titulo: `Excluir ${lista.length} ${lista.length === 1 ? 'veículo' : 'veículos'}?`,
+      mensagem: `${nomes}${resto}\n\n`
+        + 'Para apenas tirar da lista de disponíveis sem perder o cadastro, use Inativar.',
+      textoConfirmar: 'Excluir',
+    });
     if (!ok) return false;
 
     const ids = lista.map((v) => v.id);
@@ -1797,7 +1832,7 @@ function App() {
   }
 
   async function deleteVeiculo(itemId) {
-    if (!confirm('Excluir este veículo?')) return;
+    if (!(await confirmar({ titulo: 'Excluir este veículo?', textoConfirmar: 'Excluir' }))) return;
     const res = await supabase.from('veiculos').delete().eq('id', itemId).select();
     if (res.error) return reportarErro('Erro ao excluir Veículo', res.error);
     if (!res.data?.length) return semPermissao('excluir este veículo');
@@ -1808,7 +1843,7 @@ function App() {
   }
 
   async function deleteFalta(itemId) {
-    if (!confirm('Excluir este registro de falta?')) return;
+    if (!(await confirmar({ titulo: 'Excluir este registro de falta?', textoConfirmar: 'Excluir' }))) return;
     const res = await supabase.from('faltas').delete().eq('id', itemId).select();
     if (res.error) return reportarErro('Erro ao excluir Falta', res.error);
     if (!res.data?.length) return semPermissao('excluir este registro de falta');
@@ -1824,7 +1859,7 @@ function App() {
    });
    if (error) reportarErro('Erro ao alterar acesso', error);
    else {
-     alert("✅ Acesso atualizado com sucesso!");
+     notificar({ mensagem: 'Acesso atualizado com sucesso!', variante: 'sucesso' });
      agendarFetch();
    }
   }
@@ -1849,16 +1884,19 @@ function App() {
             className="primary-btn full"
             style={{ borderRadius: '50px', padding: '12px', fontWeight: 'bold' }}
             onClick={async () => {
-              if (novaSenha.length < 6) return alert("A senha precisa ter pelo menos 6 caracteres!");
-              
+              if (novaSenha.length < 6) {
+                notificar({ mensagem: 'A senha precisa ter pelo menos 6 caracteres!', variante: 'atencao' });
+                return;
+              }
+
               const { error } = await supabase.auth.updateUser({ password: novaSenha });
-              
+
               if (error) {
                 reportarErro('Erro ao salvar senha', error);
               } else {
-                alert("✅ Senha atualizada com sucesso!");
-                window.location.hash = ''; 
-                setIsRecovering(false); 
+                notificar({ mensagem: 'Senha atualizada com sucesso!', variante: 'sucesso' });
+                window.location.hash = '';
+                setIsRecovering(false);
               }
             }}
           >
@@ -3658,6 +3696,15 @@ function VeiculoDrawer({ item, db, userRole, openEdit }) {
         )}
       </div>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <>
+      <AppInner />
+      <DialogosHost />
+    </>
   );
 }
 

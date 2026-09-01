@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { lerArquivo, conciliar, agruparResumo, dataBR, texto } from '../lib/kartado';
 import { exportarBoletim } from '../lib/boletimXlsx';
+import { confirmar, notificar } from '../lib/dialogos';
 
 const GRAU = {
   alta: ['Certeza alta', 'grau-alta'],
@@ -80,7 +81,7 @@ export function Apontamentos({ db, maps, podeEditar, onLancar, onDesfazer }) {
       await exportarBoletim(aps, arquivo || 'kartado.xlsx', mapa);
     } catch (e) {
       console.error(e);
-      alert(`Não consegui gerar o Excel: ${e.message}`);
+      notificar({ titulo: 'Não consegui gerar o Excel', mensagem: e.message, variante: 'erro' });
     }
   }
 
@@ -90,7 +91,11 @@ export function Apontamentos({ db, maps, podeEditar, onLancar, onDesfazer }) {
 
   async function lancarTodas() {
     if (!altasPendentes.length) return;
-    if (!confirm(`Marcar ${altasPendentes.length} apontamento(s) de certeza alta como lançados?`)) return;
+    if (!(await confirmar({
+      titulo: `Marcar ${altasPendentes.length} apontamento(s) de certeza alta como lançados?`,
+      textoConfirmar: 'Marcar',
+      variante: 'atencao',
+    }))) return;
     for (const p of altasPendentes) {
       // sequencial de propósito: cada um é um update, e um erro no meio
       // não deve deixar metade marcada sem você saber
