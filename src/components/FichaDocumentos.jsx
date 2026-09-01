@@ -39,7 +39,9 @@ export function FichaDocumentos({
   const [ocupado, setOcupado] = useState(null);   // tipo_id em operação
   const [erro, setErro] = useState('');
   const [rascunho, setRascunho] = useState({});
+  const [arrastando, setArrastando] = useState(null);   // tipo_id sob o arquivo
   const inputs = useRef({});
+  const contadorArrasto = useRef({});   // dragenter/dragleave disparam nos filhos também
   const hoje = new Date().toISOString().slice(0, 10);
 
   const linhas = useMemo(
@@ -76,6 +78,30 @@ export function FichaDocumentos({
       setErro(e.message || 'Não consegui enviar o arquivo.');
     }
     setOcupado(null);
+  }
+
+  /* Arrastar substitui o clique em "Anexar"/"Trocar", nunca o exige: quem
+     prefere abrir a janela de arquivos continua podendo. dragenter/dragleave
+     disparam de novo a cada filho sobrevoado (span, botão, input) — um
+     contador por linha evita que a tarja pisque enquanto o mouse passeia
+     por dentro dela. */
+  function aoEntrarArrasto(id) {
+    contadorArrasto.current[id] = (contadorArrasto.current[id] || 0) + 1;
+    setArrastando(id);
+  }
+  function aoSairArrasto(id) {
+    contadorArrasto.current[id] = Math.max(0, (contadorArrasto.current[id] || 0) - 1);
+    if (contadorArrasto.current[id] === 0) {
+      setArrastando((atual) => (atual === id ? null : atual));
+    }
+  }
+  function aoSoltarArquivo(e, tipo, emUso) {
+    e.preventDefault();
+    contadorArrasto.current[tipo.id] = 0;
+    setArrastando((atual) => (atual === tipo.id ? null : atual));
+    if (emUso) return;
+    const arquivo = e.dataTransfer.files?.[0];
+    if (arquivo) anexar(tipo, arquivo);
   }
 
   async function abrir(tipo) {
@@ -124,17 +150,29 @@ export function FichaDocumentos({
 
       {erro && <div className="mut-erro">{erro}</div>}
 
-      <div className="pasta-lista">
+      <div
+        className="pasta-lista"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => e.preventDefault()}
+      >
         {linhas.map((t) => {
           const doc = docs[t.id];
           const [classe, texto] = situacaoDe(t, doc, hoje);
           const emUso = ocupado === t.id;
+          const sobre = arrastando === t.id;
           const valor = rascunho[t.id] ?? dataBR(doc?.valido_ate) ?? '';
 
           return (
-            <div key={t.id} className={`plinha s-${classe}${emUso ? ' salvando' : ''}`}>
+            <div
+              key={t.id}
+              className={`plinha s-${classe}${emUso ? ' salvando' : ''}${sobre ? ' sobre' : ''}`}
+              onDragEnter={(e) => { e.preventDefault(); aoEntrarArrasto(t.id); }}
+              onDragOver={(e) => e.preventDefault()}
+              onDragLeave={() => aoSairArrasto(t.id)}
+              onDrop={(e) => aoSoltarArquivo(e, t, emUso)}
+            >
               <span className="pnome">
-                {t.nome}
+                {sobre ? 'Solte para anexar' : t.nome}
                 <i className={`psit s-${classe}`}>{texto}</i>
               </span>
 
