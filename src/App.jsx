@@ -1936,7 +1936,7 @@ function AppInner() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-logo">I</div>
+          <img className="brand-logo" src="/icon-192.png" alt="Incovia" />
           <div>
             <h1>Incovia</h1>
             <p>Gestão de Equipes</p>
