@@ -32,6 +32,13 @@ const CAMPOS = [
   [/^quantidade de faixas/i, 'faixas'],
   [/^extens/i, 'ext'],
   [/^largura/i, 'larg'],
+  // A Kartado exporta DUAS colunas de área por serviço — uma para faixa
+  // contínua, outra para seccionada — e só uma vem preenchida por vez (a
+  // outra vem 0). Um único padrão "^área total" pegaria as duas iguais e
+  // a que vier depois no arquivo sobrescreveria a primeira; separadas,
+  // dá pra somar sem depender de casar o texto do tipo de faixa.
+  [/^[áa]rea total.*seccionada/i, 'areaSeccionada'],
+  [/^[áa]rea total.*cont[ií]nua/i, 'areaContinua'],
   [/^[áa]rea total/i, 'area'],
   [/^observa/i, 'obs'],
   [/^tamanho da se/i, 'secao'],
@@ -40,7 +47,9 @@ const CAMPOS = [
   [/^unidade/i, 'un'],
   [/^lado/i, 'lado'],
 ];
-const NUMERICOS = new Set(['kmIni', 'kmFim', 'faixas', 'ext', 'larg', 'area', 'secao', 'qtd']);
+const NUMERICOS = new Set([
+  'kmIni', 'kmFim', 'faixas', 'ext', 'larg', 'area', 'areaSeccionada', 'areaContinua', 'secao', 'qtd',
+]);
 
 function chaveCampo(nome) {
   const n = String(nome || '').trim();
@@ -165,6 +174,11 @@ export async function lerArquivo(arquivo) {
             const k = chaveCampo(campo);
             if (k) s[k] = NUMERICOS.has(k) ? num(v) : texto(v);
           });
+          // A Kartado sempre deixa uma das duas colunas de área zerada —
+          // somar as duas dá o valor certo sem precisar decidir qual vale.
+          if (s.areaSeccionada != null || s.areaContinua != null) {
+            s.area = (s.areaSeccionada || 0) + (s.areaContinua || 0);
+          }
           // bloco vazio é slot não usado do formulário, não serviço
           const preenchido = ['kmIni', 'ext', 'area', 'qtd'].some(
             (k) => s[k] !== null && s[k] !== undefined

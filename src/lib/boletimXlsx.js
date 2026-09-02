@@ -5,9 +5,11 @@
  *   Boletim — um bloco por apontamento, para ler e imprimir
  *   Dados   — uma linha por SERVIÇO, com filtro, para tabela dinâmica
  *
- * A área é escrita como FÓRMULA (extensão × largura × faixas), que é a conta
- * que o Kartado faz. Quando o valor declarado diverge, a célula fica laranja
- * com um comentário — a diferença aparece em vez de ser herdada em silêncio.
+ * A área é copiada do valor que a própria Kartado declara para o serviço —
+ * sem fórmula própria. "Extensão × largura × faixas" só bate com a área real
+ * numa faixa Contínua; numa Seccionada "faixas" é a quantidade de traços, não
+ * um multiplicador de área, e reaplicar a conta aqui só criava divergência
+ * onde não havia nenhuma.
  */
 import { texto } from './kartado.js';
 
@@ -17,12 +19,11 @@ const CINZA = 'FF6B7784';
 const LINHA = 'FFD7DCE1';
 const CLARO = 'FFF6F7F8';
 const BRANCO = 'FFFFFFFF';
-const ALERTA = 'FFB3401A';
 const FONTE = 'Arial';
 
 const COLS_SERV = [
   ['#', 5], ['KM INI', 9], ['KM FIM', 9], ['COR', 11], ['LOCAL DE APLICAÇÃO', 19],
-  ['TIPO DE FAIXA', 15], ['FAIXAS', 8], ['EXTENSÃO (m)', 12],
+  ['TIPO DE FAIXA', 15], ['CADÊNCIA', 10], ['FAIXAS', 8], ['EXTENSÃO (m)', 12],
   ['LARGURA (m)', 11], ['ÁREA (m²)', 11], ['OBSERVAÇÕES', 28],
 ];
 const NC = COLS_SERV.length;
@@ -32,7 +33,7 @@ const COLS_DADOS = [
   ['Status', 11], ['Cliente', 11], ['Contrato', 11], ['Local de Obra', 22],
   ['Encarregado', 15], ['Engenheiro', 15], ['Criado por', 17],
   ['Serviço nº', 9], ['Km inicial', 10], ['Km final', 10], ['Cor', 11],
-  ['Local de aplicação', 19], ['Tipo de faixa', 15], ['Faixas', 8],
+  ['Local de aplicação', 19], ['Tipo de faixa', 15], ['Cadência', 10], ['Faixas', 8],
   ['Extensão (m)', 12], ['Largura (m)', 11], ['Área (m²)', 11],
   ['Obs. do serviço', 26], ['Equipe (Incovia)', 20], ['Apontamento', 16],
 ];
@@ -222,36 +223,35 @@ export async function montarBoletim(aps, nomeArquivoOrigem, conciliacoes = {}) {
 
       const ini = r;
       ap.servicos.forEach((sv) => {
+        // Cada linha é uma caixa fechada nas 4 bordas — inclusive a célula
+        // da área, escrita fora deste laço — pra não "encavalar" com a de
+        // baixo mesmo quando alguma coluna fica vazia.
         const vals = [sv.n, sv.kmIni, sv.kmFim, sv.cor, sv.local, sv.tipoFaixa,
-          sv.faixas, sv.ext, sv.larg, null, sv.obs];
+          sv.cadencia, sv.faixas, sv.ext, sv.larg, null, sv.obs];
         vals.forEach((v, n) => {
           const col = n + 1;
           const c = ws.getCell(r, col);
           c.value = v === null || v === undefined ? '—' : v;
           c.font = { name: FONTE, size: 9, color: { argb: TINTA } };
           c.border = borda('top', 'bottom', 'left', 'right');
-          if ([1, 2, 3, 7].includes(col)) {
+          if ([1, 2, 3, 7, 8].includes(col)) {
             c.alignment = { horizontal: 'center' };
-          } else if ([8, 9].includes(col)) {
+          } else if ([9, 10].includes(col)) {
             c.alignment = { horizontal: 'right', indent: 1 };
             c.numFmt = '#,##0.00';
           } else {
-            c.alignment = { horizontal: 'left', indent: 1, wrapText: col === 11 };
+            c.alignment = { horizontal: 'left', indent: 1, wrapText: col === 12 };
           }
         });
 
-        const cArea = ws.getCell(r, 10);
-        cArea.value = { formula: `ROUND(H${r}*I${r}*G${r},2)` };
+        // Área copiada direto do que a Kartado declarou pro serviço — sem
+        // fórmula própria, pra não divergir do dado de origem.
+        const cArea = ws.getCell(r, 11);
+        cArea.value = sv.area != null ? sv.area : 0;
         cArea.numFmt = '#,##0.00';
+        cArea.font = { name: FONTE, size: 9, bold: true, color: { argb: TINTA } };
         cArea.alignment = { horizontal: 'right', indent: 1 };
         cArea.border = borda('top', 'bottom', 'left', 'right');
-        const calc = (sv.ext || 0) * (sv.larg || 0) * (sv.faixas || 0);
-        if (sv.area != null && Math.abs(calc - sv.area) > 0.05) {
-          cArea.font = { name: FONTE, size: 9, bold: true, color: { argb: ALERTA } };
-          cArea.note = `O Kartado declarou ${br(sv.area)} m² neste serviço.`;
-        } else {
-          cArea.font = { name: FONTE, size: 9, bold: true, color: { argb: TINTA } };
-        }
         ws.getRow(r).height = 14;
         r += 1;
       });
@@ -261,11 +261,13 @@ export async function montarBoletim(aps, nomeArquivoOrigem, conciliacoes = {}) {
         c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CLARO } };
         c.border = borda('top', 'bottom', 'left', 'right');
       }
-      const cT = ws.getCell(r, 7);
+      const cT = ws.getCell(r, 8);
       cT.value = 'TOTAL';
       cT.font = { name: FONTE, size: 8, bold: true, color: { argb: CINZA } };
       cT.alignment = { horizontal: 'right', indent: 1 };
-      [[8, '#,##0.0'], [10, '#,##0.00']].forEach(([col, fmt]) => {
+      // Soma pura de células que já são cópia da Kartado — não deriva nada
+      // novo, então não reintroduz o risco de divergência.
+      [[9, '#,##0.0'], [11, '#,##0.00']].forEach(([col, fmt]) => {
         const L = letra(col);
         const c = ws.getCell(r, col);
         c.value = { formula: `SUM(${L}${ini}:${L}${r - 1})` };
@@ -361,7 +363,7 @@ export async function montarBoletim(aps, nomeArquivoOrigem, conciliacoes = {}) {
     // apontamento sem serviços (ensaio) ainda vira uma linha, para não sumir
     (ap.servicos.length ? ap.servicos : [{}]).forEach((sv) => {
       const vals = [...base, sv.n ?? '', sv.kmIni, sv.kmFim, sv.cor, sv.local,
-        sv.tipoFaixa, sv.faixas, sv.ext, sv.larg, sv.area, sv.obs,
+        sv.tipoFaixa, sv.cadencia, sv.faixas, sv.ext, sv.larg, sv.area, sv.obs,
         conciliacoes[ap.serial] || '', conciliacoes[ap.serial] ? 'Lançado' : 'Pendente'];
       vals.forEach((v, n) => {
         const c = wd.getCell(rd, n + 1);
