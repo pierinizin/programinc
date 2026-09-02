@@ -1,103 +1,134 @@
 import { useMemo, useState } from 'react';
 import { ImportacaoEmMassa } from './ImportacaoEmMassa';
 import { FichaDocumentos } from './FichaDocumentos';
-import {
-  GRUPOS_PAINEL, ROTULO_SITUACAO, classeUrgencia, dataBR, tiposDaPessoa,
-} from '../lib/documentos';
+import { Avatar } from './Avatar';
+import { ROTULO_STATUS_PASTA, tiposDaPessoa, statusPasta } from '../lib/documentos';
 
 /* =============================================================================
    Documentos
    -----------------------------------------------------------------------------
-   A tela mostra PROBLEMA, não cadastro. Com 47 pessoas em dia ela fica quase
-   vazia — e é esse o objetivo: uma lista que cresce com o número de
-   funcionários vira outra agenda para conferir na mão. Aqui, 47 ou 470, o
-   tamanho da tela é o tamanho do estrago.
+   Uma tela só, por colaborador — "como está a pasta do Fulano?" — em vez da
+   fila antiga de chips por nome empilhada com um painel de pendências por
+   prazo. As duas perguntas ("de quem falta?" e "o que está vencido?") viraram
+   uma: o selo do cartão já diz as duas coisas, e o filtro "Vencidos" é a
+   porta de entrada de quem chegou aqui atrás de um alarme (o sino do menu, a
+   faixa da Programação) — abre com ele já selecionado quando existe alguém
+   vencido, senão abre em "Todos".
    ============================================================================= */
 
-function Fila({ pendencias, onAbrirPessoa }) {
-  /* Grupo grande nasce fechado. Antes da importação terminar, "Nunca
-     entregue" é a empresa inteira — abrir com 600 linhas empurra para fora da
-     tela justamente o treinamento vencido, que é a linha que importa. */
-  const [fechados, setFechados] = useState({});
-  const grande = (n) => n > 20;
-  const [pessoa, setPessoa] = useState('todas');
+const SELO_POR_STATUS = {
+  vencido: 'vencido', 'sem-anexos': 'obra', 'em-andamento': 'atencao', finalizado: 'ok',
+};
 
-  const pessoas = useMemo(
-    () => [...new Set(pendencias.map((p) => p.colaborador))].sort(),
-    [pendencias]
+function StatusAbas({ contagem, status, onStatus }) {
+  const OPCOES = [
+    ['todos', 'Todos', null],
+    ['finalizado', 'Finalizado', 'ok'],
+    ['em-andamento', 'Em andamento', 'atencao'],
+    ['vencido', 'Vencidos', 'vencido'],
+    ['sem-anexos', 'Sem anexos', 'obra'],
+  ];
+  return (
+    <div className="status-abas">
+      {OPCOES.map(([chave, rotulo, cor]) => (
+        <button
+          key={chave}
+          type="button"
+          className={`status-chip${cor ? ` c-${cor}` : ' c-neutro'}${status === chave ? ' on' : ''}`}
+          onClick={() => onStatus(chave)}
+        >
+          {rotulo} <i>{contagem[chave] ?? 0}</i>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function GradeColaboradores({
+  colaboradores, tipos, documentos, onAbrirPessoa,
+}) {
+  const [busca, setBusca] = useState('');
+  const [statusEscolhido, setStatusEscolhido] = useState(null);   // null = ainda não escolheu
+
+  /* Mesmo mapa que FichaDocumentos monta pra uma pessoa só, aqui pra todas —
+     statusPasta usa o mesmo formato (tipo_id -> documento). */
+  const docsPorPessoa = useMemo(() => {
+    const m = {};
+    (documentos || []).forEach((d) => {
+      if (!d.tipo_id) return;
+      (m[d.colaboradorId] ||= {})[d.tipo_id] = d;
+    });
+    return m;
+  }, [documentos]);
+
+  const comStatus = useMemo(
+    () => colaboradores.map((pessoa) => ({
+      pessoa,
+      status: statusPasta(tipos, pessoa, docsPorPessoa[pessoa.id] || {}),
+    })),
+    [colaboradores, tipos, docsPorPessoa]
   );
 
-  const visiveis = pendencias.filter((p) => pessoa === 'todas' || p.colaborador === pessoa);
+  const contagem = useMemo(() => {
+    const c = {
+      todos: comStatus.length, finalizado: 0, vencido: 0, 'em-andamento': 0, 'sem-anexos': 0,
+    };
+    comStatus.forEach((x) => { c[x.status] += 1; });
+    return c;
+  }, [comStatus]);
 
-  if (!pendencias.length) {
-    return (
-      <div className="tudo-ok">
-        <b>Tudo em dia.</b>
-        <span>Nenhum documento vencido, faltando ou sem data. Esta tela fica vazia de propósito.</span>
-      </div>
-    );
-  }
+  /* Sem escolha do usuário, a tela já abre em cima do que é urgente — é o
+     mesmo motivo pelo qual o sino do menu e a faixa da Programação apontam
+     pra cá: documento vencido não deveria depender de alguém lembrar de
+     filtrar. Uma vez que a pessoa clica em qualquer aba (mesmo "Todos"),
+     essa escolha vale até ela sair da tela. */
+  const status = statusEscolhido ?? (contagem.vencido > 0 ? 'vencido' : 'todos');
+
+  const termo = busca.trim().toLowerCase();
+  const visiveis = comStatus.filter(({ pessoa, status: s }) => (
+    (status === 'todos' || status === s)
+    && (!termo || pessoa.nome.toLowerCase().includes(termo))
+  ));
 
   return (
     <>
-      <div className="doc-filtros">
-        <button
-          type="button"
-          className={`chip-btn${pessoa === 'todas' ? ' on' : ''}`}
-          onClick={() => setPessoa('todas')}
-        >Todos ({pendencias.length})</button>
-        {pessoas.map((n) => (
-          <button
-            key={n}
-            type="button"
-            className={`chip-btn${pessoa === n ? ' on' : ''}`}
-            onClick={() => setPessoa(n)}
-          >{n}</button>
-        ))}
+      <div className="doc-busca-linha">
+        <input
+          className="ct-busca"
+          placeholder="Buscar colaborador pelo nome…"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+        />
       </div>
 
-      {GRUPOS_PAINEL.map((g) => {
-        const itens = visiveis.filter((p) => g.urgencias.includes(p.urgencia));
-        if (!itens.length) return null;
-        const fechado = fechados[g.chave] ?? grande(itens.length);
-        return (
-          <div key={g.chave} className="doc-grupo">
-            <button
-              type="button"
-              className={`doc-grupo-topo ${classeUrgencia(g.urgencias[0])}`}
-              // parte do valor que está na tela, não de undefined: senão o
-              // primeiro clique num grupo fechado por padrão o fecharia de novo
-              onClick={() => setFechados((f) => ({ ...f, [g.chave]: !fechado }))}
-              aria-expanded={!fechado}
-            >
-              <b>{g.titulo}</b>
-              <span className="n">{itens.length}</span>
-              <span className="seta">{fechado ? '▸' : '▾'}</span>
-            </button>
+      <StatusAbas contagem={contagem} status={status} onStatus={setStatusEscolhido} />
 
-            {!fechado && itens.map((p, i) => (
-              <button
-                key={`${p.colaborador_id}-${p.assunto}-${i}`}
-                type="button"
-                className={`doc-item ${classeUrgencia(p.urgencia)}`}
-                onClick={() => onAbrirPessoa(p.colaborador_id)}
-              >
-                <span className="bar" />
-                <span className="doc-item-txt">
-                  <h4>{p.assunto}</h4>
-                  <p>
-                    {p.colaborador} · {ROTULO_SITUACAO[p.situacao] || p.situacao}
-                    {p.data_limite ? ` · ${dataBR(p.data_limite)}` : ''}
-                  </p>
-                </span>
-                <span className="dias">
-                  {p.dias_restantes == null ? '—' : `${p.dias_restantes}d`}
-                </span>
-              </button>
-            ))}
-          </div>
-        );
-      })}
+      {!visiveis.length ? (
+        <div className="tudo-ok">
+          <b>Ninguém encontrado.</b>
+          <span>Tente outro nome, ou outro filtro de status.</span>
+        </div>
+      ) : (
+        <div className="pes-grade">
+          {visiveis.map(({ pessoa, status: s }) => (
+            <button
+              key={pessoa.id}
+              type="button"
+              className="pes-card"
+              onClick={() => onAbrirPessoa(pessoa.id)}
+            >
+              <Avatar nome={pessoa.nome} url={pessoa.fotoUrl} />
+              <span className="pes-card-txt">
+                <b>{pessoa.nome}</b>
+                <i>{pessoa.funcao}</i>
+              </span>
+              <span className={`selo selo-${SELO_POR_STATUS[s]}`}>
+                {ROTULO_STATUS_PASTA[s]}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </>
   );
 }
@@ -189,7 +220,12 @@ export function Documentos({
         </button>
       </div>
 
-      <Fila pendencias={pendencias} onAbrirPessoa={abrirPessoa} />
+      <GradeColaboradores
+        colaboradores={ativos}
+        tipos={tipos || []}
+        documentos={documentos || []}
+        onAbrirPessoa={abrirPessoa}
+      />
     </>
   );
 }

@@ -92,6 +92,9 @@ export async function enviarArquivo({
     caminho,
     mime: arquivo.type,
     tamanho_bytes: arquivo.size,
+    // Um arquivo chegando prova que o documento se aplica, então a chavinha
+    // desliga sozinha — ninguém precisa lembrar de destravar antes de anexar.
+    dispensado: false,
   };
 
   let res;
@@ -168,6 +171,36 @@ export async function removerArquivo(doc, quem) {
   registrarAcesso({
     documentoId: doc.id, colaboradorId: doc.colaboradorId, acao: 'apagou', quem,
   });
+  return res.data[0];
+}
+
+/**
+ * Liga ou desliga a chavinha "não se aplica a esta pessoa".
+ * Sem linha registrada ainda, ligar cria uma (sem arquivo, sem validade) —
+ * o mesmo slot pessoa×tipo que um anexo usaria. Desligar sem linha nenhuma
+ * não faz nada, porque não há o que desfazer.
+ */
+export async function marcarDispensado({
+  colaborador, tipo, existente, dispensado, quem,
+}) {
+  if (!existente && !dispensado) return null;
+
+  const res = existente
+    ? await supabase.from('documentos')
+        .update({ dispensado }).eq('id', existente.id).select()
+    : await supabase.from('documentos').insert([{
+        colaboradorId: colaborador.id,
+        tipo_id: tipo.id,
+        categoria: tipo.categoria,
+        titulo: tipo.nome,
+        dispensado: true,
+        repetivel: false,
+        enviado_por: quem || null,
+      }]).select();
+
+  if (res.error || !res.data?.length) {
+    throw res.error || new Error('Não consegui salvar essa marcação.');
+  }
   return res.data[0];
 }
 

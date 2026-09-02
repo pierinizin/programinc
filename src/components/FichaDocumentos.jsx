@@ -1,8 +1,10 @@
 import { useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
-import { tiposDaPessoa, dataISO, dataBR, sugerirValidade } from '../lib/documentos';
 import {
-  enviarArquivo, abrirArquivo, removerArquivo, validarArquivo,
+  tiposDaPessoa, dataISO, dataBR, sugerirValidade, situacaoDoc as situacaoDe,
+} from '../lib/documentos';
+import {
+  enviarArquivo, abrirArquivo, removerArquivo, validarArquivo, marcarDispensado,
 } from '../lib/arquivosDoc';
 import { confirmar } from '../lib/dialogos';
 
@@ -18,20 +20,6 @@ import { confirmar } from '../lib/dialogos';
    abrir a janela de arquivos a cada linha destruiria o ritmo do teclado, que é
    o que faz 47 pessoas caberem numa tarde.
    ============================================================================= */
-
-function situacaoDe(tipo, doc, hoje) {
-  if (!doc) return ['faltando', 'Não entregue'];
-  if (tipo.vence && !doc.valido_ate) return ['sem-data', 'Sem data de validade'];
-  if (tipo.vence && doc.valido_ate < hoje) return ['vencido', `Venceu em ${dataBR(doc.valido_ate)}`];
-  if (tipo.vence) {
-    const dias = Math.round((new Date(doc.valido_ate) - new Date(hoje)) / 86400000);
-    if (dias <= (tipo.alerta_dias || 30)) {
-      return ['atencao', `Vence em ${dias} dia${dias === 1 ? '' : 's'}`];
-    }
-    return [doc.caminho ? 'ok' : 'sem-pdf', `Válido até ${dataBR(doc.valido_ate)}`];
-  }
-  return [doc.caminho ? 'ok' : 'sem-pdf', doc.caminho ? 'Anexado' : 'Registrado, sem o PDF'];
-}
 
 export function FichaDocumentos({
   colaborador, tipos, documentos, quem, onRecarregar, onSalvarValidade, onVoltar,
@@ -58,6 +46,8 @@ export function FichaDocumentos({
   }, [documentos, colaborador.id]);
 
   const comArquivo = linhas.filter((t) => docs[t.id]?.caminho).length;
+  const dispensados = linhas.filter((t) => docs[t.id]?.dispensado).length;
+  const resolvidos = comArquivo + dispensados;
 
   async function anexar(tipo, arquivo) {
     const problema = validarArquivo(arquivo);
@@ -113,6 +103,25 @@ export function FichaDocumentos({
     }
   }
 
+  /* A chavinha: "esta pessoa não precisa deste documento". Sem ela, quem não
+     tem CNH categoria E, por exemplo, nunca chega a "Finalizado" — a pasta
+     fica marcada como falta para sempre, mesmo em dia com tudo que de fato
+     se aplica. Ligar não pede motivo (decisão já tomada): quem marcou está
+     na tela e assina o próprio clique. */
+  async function alternarDispensado(tipo, doc, ligar) {
+    setErro('');
+    setOcupado(tipo.id);
+    try {
+      await marcarDispensado({
+        colaborador, tipo, existente: doc, dispensado: ligar, quem,
+      });
+      await onRecarregar();
+    } catch (e) {
+      setErro(e.message || 'Não consegui salvar essa marcação.');
+    }
+    setOcupado(null);
+  }
+
   async function desanexar(tipo) {
     const doc = docs[tipo.id];
     if (!doc?.caminho) return;
@@ -142,8 +151,11 @@ export function FichaDocumentos({
           <i>{colaborador.funcao}</i>
         </span>
         <span className="mut-contador">
-          <b>{comArquivo} / {linhas.length}</b>
-          <i>com arquivo</i>
+          <b>{resolvidos} / {linhas.length}</b>
+          <i>
+            resolvidos
+            {dispensados ? ` · ${dispensados} não ${dispensados === 1 ? 'se aplica' : 'se aplicam'}` : ''}
+          </i>
         </span>
         <button type="button" className="ghost-btn" onClick={onVoltar}>Voltar</button>
       </div>
@@ -160,6 +172,7 @@ export function FichaDocumentos({
           const [classe, texto] = situacaoDe(t, doc, hoje);
           const emUso = ocupado === t.id;
           const sobre = arrastando === t.id;
+          const dispensadoAtivo = !!doc?.dispensado;
           const valor = rascunho[t.id] ?? dataBR(doc?.valido_ate) ?? '';
 
           return (
@@ -219,17 +232,32 @@ export function FichaDocumentos({
                     </button>
                   </>
                 ) : (
-                  <button
-                    /* Botão neutro de propósito: numa pasta recém-aberta são
-                       doze "Anexar" na tela, e doze botões amarelos viram um
-                       muro em que nada se destaca. A cor de estado está na
-                       tarja da linha, que é o que se lê primeiro. */
-                    type="button" className="chip-btn"
-                    disabled={emUso}
-                    onClick={() => inputs.current[t.id]?.click()}
-                  >
-                    {emUso ? 'Enviando…' : 'Anexar'}
-                  </button>
+                  <>
+                    <button
+                      /* Botão neutro de propósito: numa pasta recém-aberta são
+                         doze "Anexar" na tela, e doze botões amarelos viram um
+                         muro em que nada se destaca. A cor de estado está na
+                         tarja da linha, que é o que se lê primeiro. */
+                      type="button" className="chip-btn"
+                      disabled={emUso}
+                      onClick={() => inputs.current[t.id]?.click()}
+                    >
+                      {emUso ? 'Enviando…' : 'Anexar'}
+                    </button>
+                    <label
+                      className={`chavinha${dispensadoAtivo ? ' on' : ''}`}
+                      title="Este colaborador não precisa deste documento"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={dispensadoAtivo}
+                        disabled={emUso}
+                        onChange={(e) => alternarDispensado(t, doc, e.target.checked)}
+                      />
+                      <span className="trilho"><span className="bolinha" /></span>
+                      <span className="chavinha-rotulo">Não se aplica</span>
+                    </label>
+                  </>
                 )}
 
                 <input

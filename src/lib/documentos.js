@@ -61,6 +61,65 @@ export function sugerirValidade(tipo, base = new Date()) {
   return d.toLocaleDateString('pt-BR');
 }
 
+/* --- situação de UM documento ---------------------------------------------- */
+
+/** A mesma régua que documentos_pendencias usa em SQL, para a pasta de uma
+    pessoa (FichaDocumentos) e para a grade de colaboradores (Documentos)
+    concordarem sobre o que é "resolvido" sem duas cópias divergindo. */
+export function situacaoDoc(tipo, doc, hoje) {
+  if (doc?.dispensado) return ['dispensado', 'Não se aplica a esta pessoa'];
+  if (!doc) return ['faltando', 'Não entregue'];
+  if (tipo.vence && !doc.valido_ate) return ['sem-data', 'Sem data de validade'];
+  if (tipo.vence && doc.valido_ate < hoje) return ['vencido', `Venceu em ${dataBR(doc.valido_ate)}`];
+  if (tipo.vence) {
+    const dias = Math.round((new Date(doc.valido_ate) - new Date(hoje)) / 86400000);
+    if (dias <= (tipo.alerta_dias || 30)) {
+      return ['atencao', `Vence em ${dias} dia${dias === 1 ? '' : 's'}`];
+    }
+    return [doc.caminho ? 'ok' : 'sem-pdf', `Válido até ${dataBR(doc.valido_ate)}`];
+  }
+  return [doc.caminho ? 'ok' : 'sem-pdf', doc.caminho ? 'Anexado' : 'Registrado, sem o PDF'];
+}
+
+/* --- situação da PASTA inteira (grade de colaboradores) -------------------- */
+
+/** 'finalizado'   = nada pendente (anexado ou dispensado em cada tipo que se aplica)
+    'vencido'      = tem pendência, e pelo menos um documento já passou da validade —
+                     o mais grave dos três, por isso vem na frente dos outros dois
+    'sem-anexos'   = tem pendência, nada vencido, e nenhum arquivo foi anexado ainda
+    'em-andamento' = o meio-termo: já tem alguma coisa, falta o resto, nada vencido
+    `docsPessoa` é um mapa tipo_id -> documento, do jeito que FichaDocumentos já monta. */
+export function statusPasta(tipos, colaborador, docsPessoa) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  const aplicaveis = tiposDaPessoa(tipos, colaborador);
+  if (!aplicaveis.length) return 'finalizado';
+
+  let pendentes = 0;
+  let comArquivo = 0;
+  let vencido = false;
+  aplicaveis.forEach((t) => {
+    const doc = docsPessoa[t.id];
+    if (doc?.caminho) comArquivo += 1;
+    const [classe] = situacaoDoc(t, doc, hoje);
+    if (classe !== 'ok' && classe !== 'dispensado') pendentes += 1;
+    if (classe === 'vencido') vencido = true;
+  });
+
+  if (pendentes === 0) return 'finalizado';
+  if (vencido) return 'vencido';
+  if (comArquivo === 0) return 'sem-anexos';
+  return 'em-andamento';
+}
+
+export const ORDEM_STATUS_PASTA = ['vencido', 'sem-anexos', 'em-andamento', 'finalizado'];
+
+export const ROTULO_STATUS_PASTA = {
+  finalizado: 'Finalizado',
+  vencido: 'Vencidos',
+  'em-andamento': 'Em andamento',
+  'sem-anexos': 'Sem anexos',
+};
+
 /* --- situação ------------------------------------------------------------- */
 
 export const ROTULO_SITUACAO = {
@@ -87,7 +146,7 @@ export function classeUrgencia(urgencia) {
    Falta de PDF não entra: são centenas de linhas logo depois da importação, e
    um painel que sempre tem centenas de itens deixa de ser painel. */
 export const GRUPOS_PAINEL = [
-  { chave: 'estourou', titulo: 'Estourou', urgencias: [1] },
+  { chave: 'estourou', titulo: 'Vencidos', urgencias: [1] },
   { chave: 'proximo', titulo: 'Vence em breve', urgencias: [3, 4] },
-  { chave: 'nunca', titulo: 'Nunca entregue', urgencias: [2] },
+  { chave: 'nunca', titulo: 'Pendente', urgencias: [2] },
 ];

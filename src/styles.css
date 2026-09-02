@@ -1699,6 +1699,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .selo-campo  { background: var(--campo-fundo); color: var(--campo-texto); border: 1px solid var(--campo-texto); }
 .selo-ok     { background: var(--ok-fundo); color: var(--ok-texto); border: 1px solid var(--ok-texto); }
 .selo-parado { background: var(--erro-fundo); color: var(--erro-texto); border: 1px solid var(--erro-texto); }
+.selo-atencao { background: var(--faixa-fundo); color: var(--faixa-texto); border: 1px solid var(--faixa-texto); }
+.selo-vencido { background: var(--erro-fundo); color: var(--erro-texto); border: 1px solid var(--erro-texto); }
 
 /* ---- selo clicável: troca de status sem abrir a equipe ---- */
 .selo-menu { position: relative; display: inline-flex; }
@@ -2383,44 +2385,58 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .doc-barra-txt b { font: 700 20px var(--fonte-dado); color: var(--tinta); }
 .doc-barra-txt span { font-size: 12px; color: var(--tinta-media); }
 
-.doc-filtros { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.doc-busca-linha { margin-bottom: 10px; }
+.doc-busca-linha .ct-busca { width: 100%; }
+
+/* Abas de status da grade de colaboradores — mesma cor de cada estado no
+   selo do cartão, só que clicável e com contagem. */
+.status-abas { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.status-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px; border: 1px solid var(--borda);
+  background: var(--superficie); color: var(--tinta-media);
+  font: 600 12.5px var(--fonte-display); cursor: pointer; transition: all .12s;
+}
+.status-chip:hover { border-color: var(--borda-forte); color: var(--tinta); }
+.status-chip i {
+  font-style: normal; padding: 1px 6px; border-radius: 999px;
+  background: var(--superficie-2); color: var(--tinta-media); font: 11px var(--fonte-dado);
+}
+.status-chip.on { color: #fff; border-color: transparent; }
+.status-chip.on i { background: rgba(255,255,255,.22); color: #fff; }
+.status-chip.on.c-ok { background: var(--ok); }
+.status-chip.on.c-atencao { background: var(--faixa); color: #16191C; }
+.status-chip.on.c-atencao i { background: rgba(0,0,0,.14); color: #16191C; }
+.status-chip.on.c-obra { background: var(--obra); }
+.status-chip.on.c-vencido { background: var(--erro); }
+.status-chip.on.c-neutro { background: var(--tinta-media); }
+
+/* Grade de colaboradores — rola dentro de si mesma, então a aba inteira
+   nunca empurra a tela até o fim, não importa quantas pessoas existam. */
+.pes-grade {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px; max-height: min(58vh, 560px); overflow-y: auto;
+  overscroll-behavior: contain; padding: 2px 2px 6px;
+}
+.pes-card {
+  display: flex; align-items: flex-start; gap: 10px; text-align: left;
+  padding: 10px 11px; border: 1px solid var(--borda); border-radius: var(--r-sm);
+  background: var(--superficie); cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.pes-card:hover { border-color: var(--borda-forte); background: var(--superficie-2); }
+.pes-card .avatar { margin-top: 1px; }
+.pes-card-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pes-card-txt b {
+  font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* A função (cargo) não trunca: "Operador de máquina de pintura" cortado vira
+   ilegível, e o cartão pode crescer uma linha sem prejuízo nenhum. */
+.pes-card-txt i {
+  font-style: normal; font-size: 11.5px; color: var(--tinta-fraca); line-height: 1.3;
+}
+.pes-card .selo { flex-shrink: 0; margin-top: 2px; }
 .chip-btn.on { background: var(--faixa); color: #16191C; border-color: var(--faixa); }
-
-.doc-grupo { margin-bottom: 14px; }
-.doc-grupo-topo {
-  display: flex; align-items: center; gap: 10px; width: 100%;
-  padding: 8px 12px; border: 1px solid var(--borda); border-radius: var(--r-sm);
-  background: var(--superficie); color: var(--tinta);
-  font: 600 12px var(--fonte-display); letter-spacing: .04em; text-transform: uppercase;
-  cursor: pointer;
-}
-.doc-grupo-topo .n {
-  padding: 0 7px; border-radius: 999px;
-  background: var(--superficie-2); font-family: var(--fonte-dado);
-}
-.doc-grupo-topo .seta { margin-left: auto; color: var(--tinta-media); }
-.doc-grupo-topo.u-erro    { border-left: 4px solid var(--erro); }
-.doc-grupo-topo.u-nunca   { border-left: 4px solid var(--obra); }
-.doc-grupo-topo.u-atencao { border-left: 4px solid var(--faixa); }
-.doc-grupo-topo.u-leve    { border-left: 4px solid var(--borda-forte); }
-
-.doc-item {
-  display: flex; align-items: center; gap: 12px; width: 100%;
-  margin-top: 6px; padding: 9px 12px;
-  border: 1px solid var(--borda); border-radius: var(--r-sm);
-  background: var(--asfalto-alto); color: var(--tinta); text-align: left; cursor: pointer;
-}
-.doc-item:hover { border-color: var(--borda-forte); }
-.doc-item .bar { width: 3px; align-self: stretch; border-radius: 2px; }
-.doc-item.u-erro    .bar { background: var(--erro); }
-.doc-item.u-nunca   .bar { background: var(--obra); }
-.doc-item.u-atencao .bar { background: var(--faixa); }
-.doc-item.u-leve    .bar { background: var(--borda-forte); }
-.doc-item-txt { flex: 1; min-width: 0; }
-.doc-item-txt h4 { margin: 0; font-size: 13px; font-weight: 600; }
-.doc-item-txt p  { margin: 2px 0 0; font-size: 12px; color: var(--tinta-media); }
-.doc-item .dias { font: 600 13px var(--fonte-dado); color: var(--tinta-media); }
-.doc-item.u-erro .dias { color: var(--erro-texto); }
 
 .tudo-ok {
   display: flex; flex-direction: column; gap: 4px;
@@ -2531,6 +2547,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .plinha.s-faltando { border-left-color: var(--obra); }
 .plinha.s-atencao, .plinha.s-sem-data { border-left-color: var(--faixa); }
 .plinha.s-ok       { border-left-color: var(--ok); }
+.plinha.s-dispensado { border-left-color: var(--campo); }
 .plinha.sobre {
   border-left-color: var(--faixa); background: var(--faixa-fundo);
   outline: 1px dashed var(--faixa-texto); outline-offset: -1px;
@@ -2543,6 +2560,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .psit.s-faltando { color: var(--obra-texto); }
 .psit.s-atencao, .psit.s-sem-data { color: var(--faixa-texto); }
 .psit.s-ok       { color: var(--ok-texto); }
+.psit.s-dispensado { color: var(--campo-texto); }
 
 .plinha .dt {
   width: 100%; padding: 5px 8px; border-radius: var(--r-sm);
@@ -2551,8 +2569,30 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 .plinha .dt:disabled { opacity: .35; border-style: dashed; }
 
-.pacoes { display: flex; gap: 6px; justify-content: flex-end; }
+.pacoes { display: flex; align-items: center; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
 .chip-btn:disabled { opacity: .5; cursor: default; }
+
+/* A chavinha: "este colaborador não precisa deste documento". Azul de
+   propósito — fora da semântica ANSI de perigo/atenção/ok, porque não é um
+   alarme, é uma decisão administrativa. */
+.chavinha { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+.chavinha input { position: absolute; opacity: 0; width: 0; height: 0; }
+.chavinha .trilho {
+  position: relative; flex-shrink: 0; width: 30px; height: 17px;
+  border-radius: 999px; background: var(--asfalto-alto); border: 1px solid var(--borda-forte);
+  transition: background .15s, border-color .15s;
+}
+.chavinha .bolinha {
+  position: absolute; top: 1px; left: 1px; width: 13px; height: 13px;
+  border-radius: 50%; background: var(--tinta-fraca);
+  transition: transform .15s, background .15s;
+}
+.chavinha.on .trilho { background: var(--campo-fundo); border-color: var(--campo-texto); }
+.chavinha.on .bolinha { transform: translateX(13px); background: var(--campo-texto); }
+.chavinha input:disabled ~ .trilho { opacity: .5; }
+.chavinha input:focus-visible ~ .trilho { outline: 2px solid var(--campo-texto); outline-offset: 2px; }
+.chavinha-rotulo { font-size: 11.5px; color: var(--tinta-fraca); white-space: nowrap; }
+.chavinha.on .chavinha-rotulo { color: var(--campo-texto); font-weight: 600; }
 
 .pasta-pe {
   padding: 10px 18px; border-top: 1px solid var(--borda);
