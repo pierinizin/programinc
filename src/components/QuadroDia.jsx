@@ -38,8 +38,18 @@ const MOTIVOS_FALTA = [
   ['falta_injustificada', 'Falta injustificada'],
   ['licenca', 'Licença'],
   ['acidente_trabalho', 'Acidente de trabalho'],
+  ['ferias', 'Férias'],
   ['outro', 'Outro'],
 ];
+
+/* Rótulo legível de um motivo de falta — usado onde o valor cru apareceria
+   pra quem só está passando o mouse (o chip da zona de Faltas). Motivo fora
+   da lista (base antiga, ou digitado direto no banco) ainda mostra alguma
+   coisa legível, só sem a tradução. */
+function rotuloMotivo(valor) {
+  const achado = MOTIVOS_FALTA.find(([v]) => v === valor);
+  return achado ? achado[1] : String(valor || '').replace(/_/g, ' ');
+}
 
 /* Primeiro + último nome. "José Carlos da Silva Souza" vira "José Souza":
    é como a equipe chama a pessoa, e é o que cabe no card. */
@@ -343,7 +353,12 @@ export function QuadroDia({
       if (v.ok !== 'nao' && zona) {
         encerrar();
         if (zona === 'patio') onAoPatio(arrasto.item.id);
-        // falta exige motivo: pergunta antes de gravar
+        // Quem já está de férias não precisa que perguntem o motivo — só tem
+        // um motivo possível, e é o mesmo aviso que o anel do card já dava.
+        // Perguntar aqui seria repetir uma informação que a pessoa já
+        // registrou lá no cadastro de férias.
+        else if (feriasHoje.has(arrasto.item.id)) onRegistrarFalta(arrasto.item.id, 'ferias');
+        // Qualquer outro motivo é ambíguo — falta exige motivo: pergunta antes de gravar.
         else setPedindoFalta(arrasto.item);
         return;
       }
@@ -1003,7 +1018,7 @@ export function QuadroDia({
                   type="button"
                   key={p.id}
                   className="membro-chip"
-                  title={`${p.nome}${reg?.motivo ? ` — ${reg.motivo.replace(/_/g, ' ')}` : ''}`
+                  title={`${p.nome}${reg?.motivo ? ` — ${rotuloMotivo(reg.motivo)}` : ''}`
                     + (podeEditar ? ' — clique duplo para tirar' : '')}
                   onDoubleClick={() => podeEditar && onRemoverFalta(p.id)}
                 >
