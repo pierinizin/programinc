@@ -2836,6 +2836,14 @@ function AppInner() {
                     setSelectedDate(activeDrawer.date);
                     changePage('programacao');
                   }}
+                  onAbrirEquipe={(equipe) => {
+                    // changePage() zera expandedProgramacaoId (é o comportamento certo
+                    // ao trocar de tela) — por isso a equipe só é marcada DEPOIS dele
+                    // rodar, senão a própria troca de página apagava a escolha.
+                    changePage('programacao');
+                    setSelectedDate(activeDrawer.date);
+                    setExpandedProgramacaoId(equipe.id);
+                  }}
                 />
               )}
 
@@ -3468,7 +3476,7 @@ function MultiSelect({ label, items, selectedIds, labelKey, subtitleKey, subtitl
   );
 }
 
-function ResumoDiaDrawer({ date, db, maps, onGoToDate }) {
+function ResumoDiaDrawer({ date, db, maps, onGoToDate, onAbrirEquipe }) {
   const programacoes = db.programacoes.filter(p => p.data === date);
   const faltas = db.faltas.filter(f => f.data === date);
   const totalPessoas = programacoes.reduce((acc, p) => acc + p.membroIds.length, 0);
@@ -3514,7 +3522,13 @@ function ResumoDiaDrawer({ date, db, maps, onGoToDate }) {
             const nomeEncarregado = encarregado ? encarregado.nome.split(' ')[0] : 'Sem Líder';
 
             return (
-              <div key={p.id} className="mini-card" style={{ borderLeft: '3px solid var(--faixa)' }}>
+              <div
+                key={p.id}
+                className="mini-card clicavel"
+                style={{ borderLeft: '3px solid var(--faixa)' }}
+                onClick={() => onAbrirEquipe(p)}
+                title="Ir direto para esta equipe na Programação"
+              >
                 <strong>{p.tipoEquipe}</strong>
                 <div className="meta-row">📍 {p.cidade.toUpperCase()} · Líder: {nomeEncarregado} · {p.membroIds.length} pessoas</div>
                 <StatusBadge status={p.statusExecucao} motivo={p.motivoNaoExecucao} />

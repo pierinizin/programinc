@@ -859,6 +859,16 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   display: grid;
   gap: 3px;
 }
+/* Só a equipe do resumo do dia (calendário) usa isto — é a única mini-card
+   que leva pra outro lugar em vez de só mostrar informação. */
+.mini-card.clicavel {
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+.mini-card.clicavel:hover {
+  border-color: var(--faixa-texto);
+  background: var(--faixa-fundo);
+}
 
 .modal-backdrop {
   position: fixed;
