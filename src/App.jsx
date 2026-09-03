@@ -1242,9 +1242,12 @@ function AppInner() {
     setModal('atestado');
   }
 
-  function openFeriasModal(colaboradorId) {
+  // Ao contrário de atestado, férias pode ser corrigida — a data foi digitada
+  // errada, ou o período mudou depois de já lançado. 'item' vindo preenchido
+  // é o período existente a editar; sem ele, é um período novo.
+  function openFeriasModal(colaboradorId, item = null) {
     setErroAtestadoFerias('');
-    setFeriasForm({ ...emptyFerias(), colaboradorId });
+    setFeriasForm(item ? { ...item, arquivo: null } : { ...emptyFerias(), colaboradorId });
     setModal('ferias');
   }
 
@@ -1474,6 +1477,7 @@ function AppInner() {
         dataFim: feriasForm.data_fim,
         observacao: feriasForm.observacao,
         arquivo: feriasForm.arquivo,
+        existente: feriasForm.id ? feriasForm : null,
       });
       agendarFetch();
       setModal(null);
@@ -2844,7 +2848,7 @@ function AppInner() {
                   openEdit={() => openColaboradorModal(activeDrawer.item)}
                   openFalta={() => openFaltaModal()}
                   openAtestado={() => openAtestadoModal(activeDrawer.item.id)}
-                  openFerias={() => openFeriasModal(activeDrawer.item.id)}
+                  openFerias={(item) => openFeriasModal(activeDrawer.item.id, item)}
                   deleteFalta={deleteFalta}
                   deleteFerias={deleteFerias}
                   abrirAtestadoArquivo={abrirAtestadoArquivo}
@@ -2875,7 +2879,7 @@ function AppInner() {
                 {modal === 'veiculo' && (veiculoForm.id ? 'Editar Veículo' : 'Novo Veículo')}
                 {modal === 'falta' && (faltaForm.id ? 'Editar Falta' : 'Registrar Falta')}
                 {modal === 'atestado' && 'Registrar Atestado'}
-                {modal === 'ferias' && 'Registrar Férias'}
+                {modal === 'ferias' && (feriasForm.id ? 'Editar Férias' : 'Registrar Férias')}
               </strong>
               <button className="icon-btn" onClick={() => setModal(null)}>×</button>
             </div>
@@ -3284,7 +3288,11 @@ function AppInner() {
                   full
                 />
                 <label className="full">
-                  <span>Anexo (opcional) — PDF, JPG, PNG ou WEBP, até 15 MB</span>
+                  <span>
+                    {feriasForm.nome_arquivo
+                      ? `Anexo — já tem "${feriasForm.nome_arquivo}". Escolha outro só se quiser substituir.`
+                      : 'Anexo (opcional) — PDF, JPG, PNG ou WEBP, até 15 MB'}
+                  </span>
                   <input
                     type="file"
                     accept="application/pdf,image/jpeg,image/png,image/webp"
@@ -3564,7 +3572,43 @@ function ColaboradorDrawer({
           <button className="ghost-btn" onClick={openEdit}>Editar</button>
           <button className="ghost-btn" onClick={openFalta}>Nova falta</button>
           <button className="ghost-btn perigo-borda" onClick={openAtestado}>Registrar atestado</button>
-          <button className="ghost-btn atencao-borda" onClick={openFerias}>Registrar férias</button>
+          <button className="ghost-btn atencao-borda" onClick={() => openFerias()}>Registrar férias</button>
+        </div>
+      )}
+
+      {/* Logo depois dos botões, antes do histórico de escalas — de propósito.
+          Isto é o que muda com mais frequência e o que alguém vem editar
+          (corrigir uma data, por exemplo), e o histórico de escalas de quem
+          já tem muita escala passa de dezenas de cartões: lá embaixo, o
+          período de férias nunca seria encontrado sem rolar a lista toda.
+          Fica visível a todo mundo que já lê falta hoje — não é dado
+          admin-only, ao contrário de atestado. */}
+      {ferias.length > 0 && (
+        <div className="drawer-section">
+          <strong>Registro de Férias</strong>
+          {ferias.map((f) => (
+            <div key={f.id} className="mini-card">
+              <div className="between">
+                <strong>
+                  {new Date(`${f.data_inicio}T12:00:00`).toLocaleDateString('pt-BR')}
+                  {' até '}
+                  {new Date(`${f.data_fim}T12:00:00`).toLocaleDateString('pt-BR')}
+                </strong>
+                <span className="chips-row tight">
+                  {f.caminho && (
+                    <button className="chip-btn" onClick={() => abrirFeriasArquivo(f)}>Abrir</button>
+                  )}
+                  {userRole === 'admin' && (
+                    <button className="chip-btn" onClick={() => openFerias(f)}>Editar</button>
+                  )}
+                  {userRole === 'admin' && (
+                    <button className="mini-danger" onClick={() => deleteFerias(f)}>Excluir</button>
+                  )}
+                </span>
+              </div>
+              <p>{f.observacao || 'Sem observação'}</p>
+            </div>
+          ))}
         </div>
       )}
 
@@ -3630,35 +3674,6 @@ function ColaboradorDrawer({
         </div>
       )}
 
-      {/* Férias fica visível a todo mundo que já lê falta hoje — não é dado
-          admin-only, ao contrário de atestado. */}
-      <div className="drawer-section">
-        <strong>Registro de Férias</strong>
-        {ferias.length === 0 ? (
-          <p className="small-muted">Nenhum período de férias registrado.</p>
-        ) : (
-          ferias.map((f) => (
-            <div key={f.id} className="mini-card">
-              <div className="between">
-                <strong>
-                  {new Date(`${f.data_inicio}T12:00:00`).toLocaleDateString('pt-BR')}
-                  {' até '}
-                  {new Date(`${f.data_fim}T12:00:00`).toLocaleDateString('pt-BR')}
-                </strong>
-                <span className="chips-row tight">
-                  {f.caminho && (
-                    <button className="chip-btn" onClick={() => abrirFeriasArquivo(f)}>Abrir</button>
-                  )}
-                  {userRole === 'admin' && (
-                    <button className="mini-danger" onClick={() => deleteFerias(f)}>Excluir</button>
-                  )}
-                </span>
-              </div>
-              <p>{f.observacao || 'Sem observação'}</p>
-            </div>
-          ))
-        )}
-      </div>
     </div>
   );
 }
