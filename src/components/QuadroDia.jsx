@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
 import { iconeVeiculo } from './IconeVeiculo';
 import { contratoAutomatico } from '../lib/contratos';
-import { derivarDia } from '../lib/dia';
+import { derivarDia, disponivelEm } from '../lib/dia';
 import { notificar } from '../lib/dialogos';
 
 const MAX_EQUIPE = 10;
@@ -142,7 +142,9 @@ export function QuadroDia({
         )
         .sort((a, b) => (equipesDoVeiculo[a.id] ? 1 : 0) - (equipesDoVeiculo[b.id] ? 1 : 0));
     }
-    const base = soLivres ? pessoasLivres : db.colaboradores.filter((c) => c.status !== 'inativo');
+    const base = soLivres
+      ? pessoasLivres
+      : db.colaboradores.filter((c) => disponivelEm(db.historicoStatus, c, selectedDate));
     return base
       .filter(
         (p) =>
@@ -153,8 +155,8 @@ export function QuadroDia({
       )
       .sort((a, b) => (equipesDaPessoa[a.id] ? 1 : 0) - (equipesDaPessoa[b.id] ? 1 : 0));
   }, [
-    aba, busca, soLivres, pessoasLivres, veiculosLivres,
-    db.colaboradores, db.veiculos, equipesDaPessoa, equipesDoVeiculo,
+    aba, busca, soLivres, pessoasLivres, veiculosLivres, selectedDate,
+    db.colaboradores, db.veiculos, db.historicoStatus, equipesDaPessoa, equipesDoVeiculo,
   ]);
 
   /* ---------------------------------------------------------------

@@ -1,4 +1,27 @@
 /**
+ * Um colaborador está disponível na data D se o HISTÓRICO tem, para ele, um
+ * período com status 'ativo' cobrindo essa data — nunca só o status de agora.
+ * Sem isto, inativar alguém hoje também apagava ele das programações de dias
+ * passados (quando ele realmente estava ativo), e um colaborador novo
+ * aparecia como opção em dias anteriores à própria contratação.
+ *
+ * Sem NENHUM período registrado para a pessoa (base ainda não migrada com
+ * 15-colaboradores-historico-status.sql, ou alguma linha que escapou do
+ * backfill), cai de volta no status simples de agora — do jeito que sempre
+ * funcionou — em vez de fingir que ninguém está disponível.
+ *
+ * Comparação em texto funciona porque `data` e os limites do período vêm no
+ * mesmo formato 'aaaa-mm-dd' (coluna `date` do Postgres).
+ */
+export function disponivelEm(historicoStatus, colaborador, data) {
+  const periodos = (historicoStatus || []).filter((h) => h.colaboradorId === colaborador.id);
+  if (!periodos.length) return colaborador.status !== 'inativo';
+  return periodos.some((h) => (
+    h.status === 'ativo' && h.inicio <= data && (h.fim == null || data <= h.fim)
+  ));
+}
+
+/**
  * Tudo que se deriva de "o dia X": quem está escalado, quem sobrou, quem
  * faltou, quem ficou no pátio.
  *
@@ -62,10 +85,11 @@ export function derivarDia(db, data) {
     });
   });
 
-  // Livre = ativo, sem equipe hoje, sem falta e fora do pátio. Quem está no
-  // pátio veio trabalhar, mas já tem destino — não conta como disponível.
+  // Livre = disponível NESTE dia (histórico, não status de agora), sem
+  // equipe hoje, sem falta e fora do pátio. Quem está no pátio veio
+  // trabalhar, mas já tem destino — não conta como disponível.
   const pessoasLivres = (db.colaboradores || []).filter(
-    (c) => c.status !== 'inativo'
+    (c) => disponivelEm(db.historicoStatus, c, data)
       && !equipesDaPessoa[c.id]
       && !noPatio.has(c.id)
       && !faltosos.has(c.id)

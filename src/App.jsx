@@ -10,7 +10,7 @@ import { Apontamentos } from './components/Apontamentos';
 import { FichaColaborador } from './components/FichaColaborador';
 import { FichaVeiculo } from './components/FichaVeiculo';
 import { iconeVeiculo } from './components/IconeVeiculo';
-import { derivarDia } from './lib/dia';
+import { derivarDia, disponivelEm } from './lib/dia';
 import { prepararFoto, enviarFoto, assinarFotos, assinarFotosEmCache } from './lib/fotos';
 import { salvarAtestado, abrirArquivo as abrirArquivoDoc } from './lib/arquivosDoc';
 import { salvarFerias, excluirFerias as apagarFerias, abrirArquivoFerias } from './lib/ferias';
@@ -123,6 +123,7 @@ function normalizeDb(data) {
      : [],
    faltas: Array.isArray(data?.faltas) ? data.faltas : [],
    ferias: Array.isArray(data?.ferias) ? data.ferias : [],
+   historicoStatus: Array.isArray(data?.historicoStatus) ? data.historicoStatus : [],
    patio: Array.isArray(data?.patio) ? data.patio : [],
    perfis: Array.isArray(data?.perfis) ? data.perfis : [],
    concessionarias: Array.isArray(data?.concessionarias)
@@ -270,7 +271,7 @@ function AppInner() {
   const [isRecovering, setIsRecovering] = useState(false);
   const [novaSenha, setNovaSenha] = useState('');
   
-  const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [], ferias: [], patio: [], perfis: [], concessionarias: [], contratos: [] });
+  const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [], ferias: [], historicoStatus: [], patio: [], perfis: [], concessionarias: [], contratos: [] });
   const [page, setPage] = useState('programacao'); 
   const [selectedDate, setSelectedDate] = useState(today());
   const [search, setSearch] = useState('');
@@ -308,13 +309,14 @@ function AppInner() {
   };
 
   const fetchDatabase = async () => {
-    const [resCols, resVeics, resProgs, resFaltas, resFerias, resPatio, resPerfis,
+    const [resCols, resVeics, resProgs, resFaltas, resFerias, resHistorico, resPatio, resPerfis,
            resConcs, resCtrs] = await Promise.all([
       supabase.from('colaboradores').select('*'),
       supabase.from('veiculos').select('*'),
       supabase.from('programacoes').select('*'),
       supabase.from('faltas').select('*'),
       supabase.from('ferias').select('*'),
+      supabase.from('colaboradores_status_historico').select('*'),
       supabase.from('patio').select('*'),
       supabase.from('perfis').select('*'),
       supabase.from('concessionarias').select('*'),
@@ -323,9 +325,12 @@ function AppInner() {
 
     // Com RLS ligada, uma tabela sem permissão volta com error e data null.
     // Registramos no console em vez de silenciar tudo como lista vazia.
-    // 'ferias' pode ainda não existir se o 13-atestados-ferias.sql não tiver
-    // sido rodado — vira lista vazia em vez de quebrar a tela inteira.
-    [resCols, resVeics, resProgs, resFaltas, resFerias, resPatio, resPerfis,
+    // 'ferias' e 'colaboradores_status_historico' podem ainda não existir se
+    // o 13-atestados-ferias.sql / 15-colaboradores-historico-status.sql não
+    // tiverem sido rodados — viram lista vazia em vez de quebrar a tela
+    // inteira. Sem histórico, disponivelEm() (lib/dia.js) cai de volta no
+    // status simples de agora, então a Programação continua funcionando.
+    [resCols, resVeics, resProgs, resFaltas, resFerias, resHistorico, resPatio, resPerfis,
      resConcs, resCtrs].forEach((res) => {
       if (res?.error) console.error('Erro ao carregar dados:', res.error.message);
     });
@@ -350,6 +355,7 @@ function AppInner() {
       programacoes: resProgs.data || [],
       faltas: resFaltas.data || [],
       ferias: resFerias?.data || [],
+      historicoStatus: resHistorico?.data || [],
       patio: resPatio?.data || [],
       perfis: resPerfis?.data || [],
       concessionarias: resConcs?.data || [],
@@ -459,7 +465,7 @@ function AppInner() {
     fetchDatabaseRef.current();
 
     const canal = supabase.channel('mudancas-incovia');
-    ['colaboradores', 'veiculos', 'programacoes', 'faltas', 'ferias', 'patio', 'perfis'].forEach((table) => {
+    ['colaboradores', 'veiculos', 'programacoes', 'faltas', 'ferias', 'colaboradores_status_historico', 'patio', 'perfis'].forEach((table) => {
       canal.on('postgres_changes', { event: '*', schema: 'public', table }, () => agendarFetchRef.current());
     });
     canal.subscribe();
@@ -2940,7 +2946,12 @@ function AppInner() {
                   value={programacaoForm.encarregadoId || ''}
                   onChange={(v) => setProgramacaoForm({ ...programacaoForm, encarregadoId: v })}
                   options={db.colaboradores
-                    .filter((x) => x.funcao === 'Encarregado')
+                    .filter((x) => x.funcao === 'Encarregado'
+                      // Disponível na data desta programação (não a de hoje) —
+                      // e nunca esconde quem já está escolhido, mesmo que a
+                      // data do formulário tenha mudado depois da escolha.
+                      && (disponivelEm(db.historicoStatus, x, programacaoForm.data)
+                        || x.id === programacaoForm.encarregadoId))
                     .map((x) => ({ value: x.id, label: x.nome }))}
                   placeholder="Selecione"
                 />
@@ -3009,7 +3020,10 @@ function AppInner() {
 
                 <MultiSelect
                   label={`Membros da equipe (máx. ${MAX_TEAM_MEMBERS})`}
-                  items={db.colaboradores}
+                  items={db.colaboradores.filter((x) => (
+                    disponivelEm(db.historicoStatus, x, programacaoForm.data)
+                    || programacaoForm.membroIds.includes(x.id)
+                  ))}
                   selectedIds={programacaoForm.membroIds}
                   labelKey="nome"
                   subtitleKey="funcao"
