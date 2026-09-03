@@ -92,6 +92,12 @@ export function QuadroDia({
   onExcluir,
 }) {
   const [aba, setAba] = useState('pessoas');
+  // Tooltip de férias: guarda a posição em tela (não o estado de :hover do CSS)
+  // porque o cartão da pessoa vive dentro de .banco-lista, que rola o
+  // conteúdo — um tooltip posicionado por CSS relativo à própria linha seria
+  // cortado pela rolagem sempre que a linha estivesse perto do topo da lista.
+  // position: fixed com coordenadas calculadas na hora escapa desse corte.
+  const [dicaFerias, setDicaFerias] = useState(null);
   const [busca, setBusca] = useState('');
   const [soLivres, setSoLivres] = useState(true);
   const [selecionadas, setSelecionadas] = useState({});
@@ -572,10 +578,11 @@ export function QuadroDia({
                 const falta = faltosos.has(p.id);
                 const atestado = atestados.get(p.id);
                 const ferias = feriasHoje.get(p.id);
+                // Férias ganhou um cartão próprio (tooltip-ferias, no CSS) em vez do
+                // title() nativo — só ela: atestado e o convite pra arrastar continuam
+                // no title do navegador mesmo, que já basta pra um aviso mais simples.
                 const dica = atestado
                   ? `De atestado até ${dataCurta(atestado.ate)} — não pode ser escalado`
-                  : ferias
-                  ? `De férias até ${dataCurta(ferias.ate)} — pode ser escalado normalmente`
                   : podeEditar ? 'Arraste para uma equipe' : p.nome;
                 return (
                   <div
@@ -585,13 +592,20 @@ export function QuadroDia({
                     onPointerMove={aoMover}
                     onPointerUp={aoSoltar}
                     onPointerCancel={encerrar}
-                    title={dica}
+                    onMouseEnter={ferias
+                      ? (e) => setDicaFerias({ id: p.id, ate: ferias.ate, rect: e.currentTarget.getBoundingClientRect() })
+                      : undefined}
+                    onMouseLeave={ferias ? () => setDicaFerias((atual) => (atual?.id === p.id ? null : atual)) : undefined}
+                    title={ferias ? undefined : dica}
                   >
                     <Avatar nome={p.nome} url={p.fotoUrl} tamanho="small" />
                     <span className="pessoa-nome">
                       <b>{p.apelido || p.nome}</b>
                       <span>{p.funcao}</span>
                     </span>
+                    {/* Férias não tem mais etiqueta de texto aqui — o anel no avatar já
+                        avisa, e o tooltip conta o resto ao passar o mouse. Uma etiqueta
+                        escrita virou barulho repetindo o que o anel já mostra. */}
                     {atestado ? (
                       <span className="marca-atestado">Atestado</span>
                     ) : falta ? (
@@ -601,12 +615,31 @@ export function QuadroDia({
                         {alocada[0].cidade.slice(0, 8)}
                         {alocada.length > 1 ? ` +${alocada.length - 1}` : ''}
                       </span>
-                    ) : ferias ? (
-                      <span className="marca-ferias">Férias</span>
                     ) : null}
                   </div>
                 );
               })}
+
+            {dicaFerias ? (
+              <div
+                className="tooltip-ferias"
+                role="tooltip"
+                style={{
+                  position: 'fixed',
+                  left: dicaFerias.rect.left,
+                  top: dicaFerias.rect.top - 8,
+                  transform: 'translateY(-100%)',
+                }}
+              >
+                <div className="tt-topo">
+                  <span className="tt-icone" aria-hidden="true">🌴</span>
+                  <span className="tt-titulo">Em férias</span>
+                </div>
+                <p className="tt-linha">
+                  Até <b>{dataCurta(dicaFerias.ate)}</b> — pode ser escalado normalmente se precisar.
+                </p>
+              </div>
+            ) : null}
 
             {aba === 'veiculos' &&
               itensVisiveis.map((v) => {

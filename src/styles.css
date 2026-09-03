@@ -1422,11 +1422,77 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 /* Amarelo = atenção, igual ao resto do sistema. Férias não bloqueia nada —
    é só o aviso. */
-.marca-ferias {
-  background: var(--faixa-fundo);
-  color: var(--faixa-texto);
-  border: 1px solid var(--faixa-texto);
+/* Anel amarelo em volta do avatar de quem está de férias — a onda que sai
+   dele de tempos em tempos é só pra chamar o olho na lista, nada de errado
+   está acontecendo. Mesma animação usada no avatar do encarregado (mais
+   abaixo, .eq-lider.ferias), pra ficar igual em qualquer lugar do app onde
+   uma foto aparece com o marcador de férias do lado.
+
+   O box-shadow "parado" (as duas primeiras camadas) é declarado FORA da
+   animação de propósito: quem usa "reduzir movimento" no sistema tem
+   "animation: none !important" aplicado em tudo (lá embaixo, no bloco
+   prefers-reduced-motion), e sem essa base parada o anel inteiro sumia pra
+   essas pessoas — sobrava só o aviso ao passar o mouse, sem nada visível na
+   lista. Com a base fora da animação, quem tem motion ligado vê o anel
+   pulsando, e quem não tem vê o mesmo anel só que parado — nunca invisível. */
+@keyframes anel-ferias-onda {
+  0%   { box-shadow: 0 0 0 2px var(--superficie), 0 0 0 4px var(--faixa-texto), 0 0 0 4px rgba(255, 199, 44, .55); }
+  100% { box-shadow: 0 0 0 2px var(--superficie), 0 0 0 4px var(--faixa-texto), 0 0 0 15px rgba(255, 199, 44, 0); }
 }
+.pessoa.ferias .avatar {
+  box-shadow: 0 0 0 2px var(--superficie), 0 0 0 4px var(--faixa-texto);
+  animation: anel-ferias-onda 2.2s ease-out infinite;
+}
+
+/* Tooltip novo de férias — troca o title() cinza padrão do navegador por um
+   cartão no estilo do resto do app. Só existe pra este estado: atestado e
+   "arraste para uma equipe" continuam no title nativo, que já basta pra
+   avisos mais simples.
+
+   A posição (left/top) vem de dentro do componente, calculada na hora do
+   hover com getBoundingClientRect — não dá pra resolver só com CSS porque a
+   linha vive dentro de .banco-lista, que rola o conteúdo, e um tooltip
+   "position: absolute" relativo à própria linha seria cortado pela rolagem
+   sempre que a linha estivesse perto do topo da lista visível. Com
+   "position: fixed" o tooltip é posicionado relativo à tela toda, então essa
+   rolagem deixa de valer — mas o "fixed" só ganha esse efeito porque nenhum
+   ancestral usa transform/filter/contain (o que criaria um novo raio de
+   referência e traria o corte de volta). */
+@keyframes tooltip-ferias-entra {
+  from { opacity: 0; transform: translateY(-100%) translateY(4px); }
+  to   { opacity: 1; transform: translateY(-100%) translateY(0); }
+}
+.tooltip-ferias {
+  z-index: 50;
+  min-width: 190px;
+  background: var(--superficie-2);
+  border: 1px solid var(--borda-forte);
+  border-radius: var(--r-md);
+  box-shadow: var(--sombra-lg);
+  padding: 9px 11px;
+  pointer-events: none;
+  animation: tooltip-ferias-entra .12s ease-out;
+}
+.tooltip-ferias::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 22px;
+  border: 6px solid transparent;
+  border-top-color: var(--superficie-2);
+}
+.tt-topo { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
+.tt-icone {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: var(--faixa-fundo);
+  display: grid; place-items: center;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.tt-titulo { font-family: var(--fonte-display); font-weight: 700; font-size: 12px; color: var(--faixa-texto); }
+.tt-linha { font-size: 11.5px; color: var(--tinta-media); line-height: 1.4; margin: 0; }
+.tt-linha b { color: var(--tinta); font-weight: 600; }
 
 /* -------------------------- linhas de equipe -------------------------- */
 .equipes {
@@ -1543,10 +1609,12 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 .eq-lider .rot-erro { color: var(--erro-texto); }
 .eq-lider .nome-lider { display: block; font-size: 12px; font-weight: 500; }
-/* Encarregado de férias: mesmo anel amarelo do membro-chip, só que aqui não
-   há chip nenhum — o avatar fica solto ao lado do rótulo "Encarregado". */
+/* Encarregado de férias: mesmo anel amarelo pulsante da lista de livres
+   (.pessoa.ferias .avatar, lá em cima) — aqui não há chip nenhum, o avatar
+   fica solto ao lado do rótulo "Encarregado". */
 .eq-lider.ferias .avatar {
-  box-shadow: 0 0 0 2px var(--faixa-texto);
+  box-shadow: 0 0 0 2px var(--superficie), 0 0 0 4px var(--faixa-texto);
+  animation: anel-ferias-onda 2.2s ease-out infinite;
 }
 .avatar.vazio { background: var(--superficie-2); border: 1.5px dashed var(--borda-forte); }
 
