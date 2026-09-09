@@ -13,9 +13,14 @@ import { contratosDe, dataBR, dataISO, textosSoltos } from '../lib/contratos';
    ocupa espaço e ensina a pular a tela.
    ============================================================================= */
 
+// Sinal de "ninguém escolheu uma cor ainda" — os Relatórios usam essa mesma
+// cor pra saber quando ainda é pra atribuir automaticamente, em vez de tratar
+// o padrão de fábrica como se fosse uma escolha de verdade.
+const COR_PADRAO = '#FFC72C';
+
 const VAZIO_CONC = {
   id: '', sigla: '', nome: '', cnpj: '',
-  contato_nome: '', contato_email: '', contato_telefone: '', cor: '#FFC72C',
+  contato_nome: '', contato_email: '', contato_telefone: '', cor: COR_PADRAO,
 };
 const VAZIO_CTR = { id: '', concessionaria_id: '', numero: '', inicio: '', fim: '', ativo: true };
 
@@ -27,6 +32,37 @@ function Campo({ label, value, onChange, placeholder, largo }) {
         type="text" value={value || ''} placeholder={placeholder || ''}
         onChange={(e) => onChange(e.target.value)}
       />
+    </label>
+  );
+}
+
+/* Cor livre (qualquer tom, sem paleta fixa) — pra distinguir contratantes de
+   vez quando a atribuição automática dos Relatórios fica sem tom sobrando
+   (dois contratantes acabam no mesmo cinza "sem cor"). Enquanto ficar na cor
+   de fábrica, os Relatórios continuam escolhendo por conta própria; escolher
+   qualquer outra cor aqui passa a valer lá. */
+function CampoCor({ value, onChange }) {
+  const cor = (value || COR_PADRAO).toUpperCase();
+  const automatica = cor === COR_PADRAO;
+  return (
+    <label className="ct-campo ct-campo-cor">
+      <span>Cor nos relatórios</span>
+      <div className="ct-cor-linha">
+        <input
+          type="color" className="ct-cor-input" value={cor}
+          onChange={(e) => onChange(e.target.value)}
+          title="Escolher uma cor pra esse contratante"
+        />
+        <span className="ct-cor-estado">{automatica ? 'Automática' : cor}</span>
+        {!automatica && (
+          <button
+            type="button" className="ct-cor-reset"
+            onClick={() => onChange(COR_PADRAO)}
+          >
+            usar automática
+          </button>
+        )}
+      </div>
     </label>
   );
 }
@@ -250,6 +286,8 @@ export function Contratos({
                 onChange={(v) => setForm((f) => ({ ...f, dados: { ...f.dados, contato_email: v } }))} />
               <Campo label="Telefone" value={form.dados.contato_telefone}
                 onChange={(v) => setForm((f) => ({ ...f, dados: { ...f.dados, contato_telefone: v } }))} />
+              <CampoCor value={form.dados.cor}
+                onChange={(v) => setForm((f) => ({ ...f, dados: { ...f.dados, cor: v } }))} />
             </div>
           ) : (
             <div className="ct-grade">

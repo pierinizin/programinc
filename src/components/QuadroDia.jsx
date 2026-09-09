@@ -4,6 +4,7 @@ import { iconeVeiculo } from './IconeVeiculo';
 import { contratoAutomatico } from '../lib/contratos';
 import { derivarDia, disponivelEm } from '../lib/dia';
 import { notificar } from '../lib/dialogos';
+import { MOTIVOS_FALTA, rotuloMotivo } from '../lib/motivos';
 
 const MAX_EQUIPE = 10;
 
@@ -29,27 +30,6 @@ const OPCOES_STATUS = [
   ['NÃO FOI POSSÍVEL REALIZAR', 'VIAGEM', 'Não realizado · viagem', 'selo-parado'],
   ['NÃO FOI POSSÍVEL REALIZAR', 'OUTROS', 'Não realizado · outros', 'selo-parado'],
 ];
-
-/* Os mesmos motivos do formulário de falta — o valor gravado é idêntico, só o
-   rótulo fica legível. Mudar aqui sem mudar lá cria dois vocabulários. */
-const MOTIVOS_FALTA = [
-  ['atestado_medico', 'Atestado médico'],
-  ['falta_justificada', 'Falta justificada'],
-  ['falta_injustificada', 'Falta injustificada'],
-  ['licenca', 'Licença'],
-  ['acidente_trabalho', 'Acidente de trabalho'],
-  ['ferias', 'Férias'],
-  ['outro', 'Outro'],
-];
-
-/* Rótulo legível de um motivo de falta — usado onde o valor cru apareceria
-   pra quem só está passando o mouse (o chip da zona de Faltas). Motivo fora
-   da lista (base antiga, ou digitado direto no banco) ainda mostra alguma
-   coisa legível, só sem a tradução. */
-function rotuloMotivo(valor) {
-  const achado = MOTIVOS_FALTA.find(([v]) => v === valor);
-  return achado ? achado[1] : String(valor || '').replace(/_/g, ' ');
-}
 
 /* Primeiro + último nome. "José Carlos da Silva Souza" vira "José Souza":
    é como a equipe chama a pessoa, e é o que cabe no card. */

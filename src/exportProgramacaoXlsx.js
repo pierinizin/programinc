@@ -254,15 +254,20 @@ function maCelula(ws, r, col, value, { bold = false, red = false, size = 14, ali
 }
 
 /**
- * Monta o workbook do "Modelo 02" — o layout que a Incovia usava no Excel
- * antes do sistema: uma coluna por equipe, encarregado e membros embaixo da
- * cidade e do contratante, quem faltou naquele dia aparece em vermelho.
+ * Adiciona ao workbook `wb` uma aba com o layout do "Modelo 02" — o mesmo
+ * que a Incovia usava no Excel antes do sistema: uma coluna por equipe,
+ * encarregado e membros embaixo da cidade e do contratante, quem faltou
+ * naquele dia aparece em vermelho.
  *
- * Separado de exportProgramacaoModeloAntigo() porque só a metade que baixa o
- * arquivo depende do navegador — esta metade roda em teste sem DOM.
+ * Extraído de montarProgramacaoModeloAntigo() para poder ser chamado várias
+ * vezes — uma aba por dia — na exportação em massa (várias datas juntas no
+ * mesmo arquivo), mantendo cada aba idêntica à da exportação de um único
+ * dia. `nomeAba` deixa o chamador escolher o nome da aba: a exportação de
+ * um dia só usa o formato curto "DD-MM" (mantido por compatibilidade); a
+ * exportação em massa usa "DD-MM-AAAA" para nunca colidir entre datas de
+ * meses ou anos diferentes.
  */
-export async function montarProgramacaoModeloAntigo(db, dateStr) {
-  const { default: ExcelJS } = await import('exceljs');
+function adicionarAbaModeloAntigo(wb, db, dateStr, { nomeAba } = {}) {
   const { colaboradoresMap, veiculosMap } = buildMaps(db);
 
   const teams = currentProgramacoes(db, dateStr).sort((a, b) =>
@@ -289,12 +294,8 @@ export async function montarProgramacaoModeloAntigo(db, dateStr) {
   const N = Math.max(teams.length, 1);
   const COL_TOTAL = N + 1; // coluna extra à direita: total de membros e total de faltas
 
-  const wb = new ExcelJS.Workbook();
-  wb.creator = 'Incovia';
-  wb.created = new Date();
-
-  const nomeAba = (formatDateBR(dateStr).replace(/\//g, '-').slice(0, 5)) || 'Programacao';
-  const ws = wb.addWorksheet(nomeAba, {
+  const nomeAbaFinal = nomeAba || (formatDateBR(dateStr).replace(/\//g, '-').slice(0, 5)) || 'Programacao';
+  const ws = wb.addWorksheet(nomeAbaFinal, {
     views: [{ showGridLines: false }],
     pageSetup: {
       orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
@@ -419,10 +420,7 @@ export async function montarProgramacaoModeloAntigo(db, dateStr) {
   cTotalFaltas.border = MA_BOX;
   ws.getRow(r).height = 20;
 
-  return {
-    buffer: await wb.xlsx.writeBuffer(),
-    nome: `programacao-modelo-antigo-${formatDateBR(dateStr).replace(/\//g, '-')}.xlsx`,
-  };
+  return ws;
 }
 
 function letraColuna(n) {
@@ -434,6 +432,26 @@ function letraColuna(n) {
     x = Math.floor((x - m) / 26);
   }
   return s;
+}
+
+/**
+ * Monta o workbook do "Modelo 02" para um único dia — comportamento e nome
+ * de arquivo idênticos aos de sempre. Separado de exportProgramacaoModeloAntigo()
+ * porque só a metade que baixa o arquivo depende do navegador — esta metade
+ * roda em teste sem DOM.
+ */
+export async function montarProgramacaoModeloAntigo(db, dateStr) {
+  const { default: ExcelJS } = await import('exceljs');
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Incovia';
+  wb.created = new Date();
+
+  adicionarAbaModeloAntigo(wb, db, dateStr);
+
+  return {
+    buffer: await wb.xlsx.writeBuffer(),
+    nome: `programacao-modelo-antigo-${formatDateBR(dateStr).replace(/\//g, '-')}.xlsx`,
+  };
 }
 
 /**
@@ -455,6 +473,127 @@ export async function exportProgramacaoModeloAntigo(db, dateStr) {
   link.remove();
 
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** "AAAA-MM-DD" a partir de um objeto Date, usando o calendário local. */
+function isoDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dia}`;
+}
+
+/**
+ * Lista de datas ("AAAA-MM-DD") entre `deISO` e `ateISO`, inclusive nas duas
+ * pontas. Ancorado em meio-dia (mesma técnica usada no resto do arquivo)
+ * para não cair em armadilha de fuso horário / horário de verão ao somar
+ * dias. Datas inválidas ou `ate` antes de `de` resultam em lista vazia.
+ */
+export function listaDatasEntre(deISO, ateISO) {
+  const datas = [];
+  const inicio = new Date(`${deISO}T12:00:00`);
+  const fim = new Date(`${ateISO}T12:00:00`);
+  if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime())) return datas;
+
+  const cursor = new Date(inicio.getTime());
+  while (cursor.getTime() <= fim.getTime()) {
+    datas.push(isoDate(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return datas;
+}
+
+// Teto de segurança: uma exportação muito grande gera o Excel inteiro no
+// navegador (ExcelJS roda no cliente), e um período gigante travaria a aba.
+export const MAX_DIAS_EXPORTACAO_MASSA = 90;
+
+/**
+ * Monta o workbook da exportação em massa do "Modelo 02": uma aba por dia
+ * do período `deISO`–`ateISO`, todas no mesmo arquivo. Por padrão, dias sem
+ * nenhuma programação são pulados (`pularDiasSemProgramacao`) — mas o
+ * arquivo final sempre tem pelo menos uma aba, mesmo que todo o período
+ * esteja vazio.
+ */
+export async function montarProgramacaoModeloAntigoIntervalo(
+  db,
+  deISO,
+  ateISO,
+  { pularDiasSemProgramacao = true } = {}
+) {
+  const { default: ExcelJS } = await import('exceljs');
+
+  const todasDatas = listaDatasEntre(deISO, ateISO);
+  if (!todasDatas.length) {
+    throw new Error('Período inválido: selecione uma data inicial e final válidas.');
+  }
+  if (todasDatas.length > MAX_DIAS_EXPORTACAO_MASSA) {
+    throw new Error(
+      `O período selecionado tem ${todasDatas.length} dias — o máximo por exportação é ${MAX_DIAS_EXPORTACAO_MASSA} dias. Selecione um período menor.`
+    );
+  }
+
+  const temProgramacao = (dateStr) => (db.programacoes || []).some((p) => p.data === dateStr);
+  let datas = pularDiasSemProgramacao ? todasDatas.filter(temProgramacao) : todasDatas;
+  // Garante pelo menos uma aba mesmo se o período inteiro estiver vazio —
+  // melhor um arquivo com uma aba em branco do que nenhum arquivo.
+  if (!datas.length) datas = [todasDatas[0]];
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Incovia';
+  wb.created = new Date();
+
+  const nomesUsados = new Set();
+  datas.forEach((dateStr) => {
+    const base = formatDateBR(dateStr).replace(/\//g, '-');
+    let nomeAba = base;
+    let sufixo = 2;
+    // As datas de listaDatasEntre já são todas distintas, então isto não
+    // deveria disparar — é só uma proteção extra contra nomes duplicados.
+    while (nomesUsados.has(nomeAba)) {
+      nomeAba = `${base} (${sufixo})`;
+      sufixo += 1;
+    }
+    nomesUsados.add(nomeAba);
+    adicionarAbaModeloAntigo(wb, db, dateStr, { nomeAba });
+  });
+
+  const nomeArquivo = todasDatas.length > 1
+    ? `programacao-modelo-antigo-${formatDateBR(deISO).replace(/\//g, '-')}_a_${formatDateBR(ateISO).replace(/\//g, '-')}.xlsx`
+    : `programacao-modelo-antigo-${formatDateBR(deISO).replace(/\//g, '-')}.xlsx`;
+
+  return {
+    buffer: await wb.xlsx.writeBuffer(),
+    nome: nomeArquivo,
+    diasNoPeriodo: todasDatas.length,
+    diasExportados: datas.length,
+    diasPulados: todasDatas.length - datas.length,
+  };
+}
+
+/**
+ * Monta e entrega o arquivo da exportação em massa. Separado de
+ * montarProgramacaoModeloAntigoIntervalo() porque só esta metade depende do
+ * navegador. Retorna o mesmo resumo (dias no período/exportados/pulados)
+ * para o chamador poder avisar o usuário.
+ */
+export async function exportProgramacaoModeloAntigoIntervalo(db, deISO, ateISO, opts) {
+  const resultado = await montarProgramacaoModeloAntigoIntervalo(db, deISO, ateISO, opts);
+  const { buffer, nome } = resultado;
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = nome;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  return resultado;
 }
 
 export function exportPessoasXlsx(db) {

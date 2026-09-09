@@ -7,6 +7,7 @@ import { Documentos } from './components/Documentos';
 import { Contratos } from './components/Contratos';
 import { contratosVigentes, contratoAutomatico } from './lib/contratos';
 import { Apontamentos } from './components/Apontamentos';
+import { Relatorios } from './components/Relatorios';
 import { FichaColaborador } from './components/FichaColaborador';
 import { FichaVeiculo } from './components/FichaVeiculo';
 import { iconeVeiculo } from './components/IconeVeiculo';
@@ -18,6 +19,7 @@ import { confirmar, notificar, DialogosHost } from './lib/dialogos';
 
 import {
   exportProgramacaoModeloAntigo,
+  exportProgramacaoModeloAntigoIntervalo,
   exportProgramacaoXlsx,
   exportPessoasXlsx,
   exportVeiculosXlsx,
@@ -290,6 +292,8 @@ function AppInner() {
   const [veicsSel, setVeicsSel] = useState({});
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [salvandoFoto, setSalvandoFoto] = useState(false);
+  const [exportModelo02Form, setExportModelo02Form] = useState({ de: today(), ate: today() });
+  const [exportandoModelo02, setExportandoModelo02] = useState(false);
 
   /* Documentos ficam FORA de `db` de propósito: só admin enxerga, a carga é
      mais cara (uma view que cruza pessoa × tipo) e não tem por que entrar no
@@ -1251,6 +1255,43 @@ function AppInner() {
     setModal('ferias');
   }
 
+  async function exportarModelo02Intervalo() {
+    const { de, ate } = exportModelo02Form;
+    if (!de || !ate) {
+      notificar({ mensagem: 'Selecione a data inicial e a data final do período.', variante: 'atencao' });
+      return;
+    }
+    if (ate < de) {
+      notificar({ mensagem: 'A data final não pode ser anterior à data inicial.', variante: 'atencao' });
+      return;
+    }
+
+    setExportandoModelo02(true);
+    try {
+      if (de === ate) {
+        // Um único dia: comportamento e nome de arquivo idênticos aos de sempre.
+        await exportProgramacaoModeloAntigo(db, de);
+      } else {
+        const resultado = await exportProgramacaoModeloAntigoIntervalo(db, de, ate);
+        notificar({
+          mensagem: resultado.diasPulados > 0
+            ? `Arquivo exportado com ${resultado.diasExportados} aba(s) — ${resultado.diasPulados} dia(s) sem programação foram pulados.`
+            : `Arquivo exportado com ${resultado.diasExportados} aba(s), uma por dia.`,
+          variante: 'sucesso',
+        });
+      }
+      setModal(null);
+    } catch (error) {
+      notificar({
+        titulo: 'Exportar Modelo 02',
+        mensagem: error.message || 'Não foi possível exportar. Tente novamente.',
+        variante: 'erro',
+      });
+    } finally {
+      setExportandoModelo02(false);
+    }
+  }
+
   async function saveProgramacao() {
     if (!programacaoForm.tipoEquipe || !programacaoForm.cidade || !programacaoForm.contratante || !programacaoForm.encarregadoId) {
       notificar({ mensagem: 'Preencha os campos principais da programação.', variante: 'atencao' });
@@ -1995,6 +2036,9 @@ function AppInner() {
              <NavButton active={page === 'historico'} onClick={() => changePage('historico')}>
                Histórico
              </NavButton>
+             <NavButton active={page === 'relatorios'} onClick={() => changePage('relatorios')}>
+               Relatórios
+             </NavButton>
            </>
          )}
 
@@ -2034,7 +2078,13 @@ function AppInner() {
                     <button className="ghost-btn" onClick={() => exportProgramacaoXlsx(db, selectedDate)}>
                       Exportar Modelo 01
                     </button>
-                    <button className="ghost-btn" onClick={() => exportProgramacaoModeloAntigo(db, selectedDate)}>
+                    <button
+                      className="ghost-btn"
+                      onClick={() => {
+                        setExportModelo02Form({ de: selectedDate, ate: selectedDate });
+                        setModal('exportarModelo02');
+                      }}
+                    >
                       Exportar Modelo 02
                     </button>
                     <button className="ghost-btn" onClick={() => exportProgramacaoPdfModelo03(db, selectedDate)}>
@@ -2107,6 +2157,23 @@ function AppInner() {
                   podeEditar={userRole === 'admin' || userRole === 'editor'}
                   onLancar={lancarApontamento}
                   onDesfazer={desfazerApontamento}
+                />
+              </>
+            )}
+
+            {page === 'relatorios' && (userRole === 'admin' || userRole === 'editor') && (
+              <>
+                <div className="page-head">
+                  <div>
+                    <h2>Relatórios</h2>
+                    <p>Onde cada equipe esteve e como andam as faltas</p>
+                  </div>
+                </div>
+                <Relatorios
+                  colaboradores={db.colaboradores}
+                  programacoes={db.programacoes}
+                  faltas={db.faltas}
+                  concessionarias={db.concessionarias}
                 />
               </>
             )}
@@ -2888,6 +2955,7 @@ function AppInner() {
                 {modal === 'falta' && (faltaForm.id ? 'Editar Falta' : 'Registrar Falta')}
                 {modal === 'atestado' && 'Registrar Atestado'}
                 {modal === 'ferias' && (feriasForm.id ? 'Editar Férias' : 'Registrar Férias')}
+                {modal === 'exportarModelo02' && 'Exportar Modelo 02'}
               </strong>
               <button className="icon-btn" onClick={() => setModal(null)}>×</button>
             </div>
@@ -3312,6 +3380,34 @@ function AppInner() {
                   <button className="ghost-btn" onClick={() => setModal(null)} disabled={salvandoAtestadoFerias}>Cancelar</button>
                   <button className="primary-btn" onClick={saveFerias} disabled={salvandoAtestadoFerias}>
                     {salvandoAtestadoFerias ? 'Salvando…' : 'Salvar'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {modal === 'exportarModelo02' && (
+              <div className="form-grid two">
+                <p className="small-muted full">
+                  Selecione o período que deseja exportar. Escolhendo mais de um dia,
+                  todos são reunidos no mesmo arquivo — uma aba por dia. Dias sem
+                  programação são pulados automaticamente.
+                </p>
+                <Input
+                  label="De"
+                  type="date"
+                  value={exportModelo02Form.de}
+                  onChange={(v) => setExportModelo02Form({ ...exportModelo02Form, de: v })}
+                />
+                <Input
+                  label="Até"
+                  type="date"
+                  value={exportModelo02Form.ate}
+                  onChange={(v) => setExportModelo02Form({ ...exportModelo02Form, ate: v })}
+                />
+                <div className="modal-actions full">
+                  <button className="ghost-btn" onClick={() => setModal(null)} disabled={exportandoModelo02}>Cancelar</button>
+                  <button className="primary-btn" onClick={exportarModelo02Intervalo} disabled={exportandoModelo02}>
+                    {exportandoModelo02 ? 'Exportando…' : 'Exportar'}
                   </button>
                 </div>
               </div>

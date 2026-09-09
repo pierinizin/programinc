@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Incovia — Relatórios (2 layouts)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --asfalto:#16191C; --asfalto-alto:#1E2226; --superficie:#24292E; --superficie-2:#2C3238;
+  --borda:#363D44; --borda-forte:#49525B;
+  --tinta:#EDF0F2; --tinta-media:#A3ADB6; --tinta-fraca:#6C7780;
+  --faixa:#FFC72C; --faixa-fundo:#3A2F0E; --faixa-texto:#FFC72C;
+  --obra-texto:#FF8A44; --campo-texto:#6FB0FF; --ok-texto:#4FD494; --erro-texto:#FF7A7E;
+  --sombra-lg:0 2px 4px rgba(0,0,0,.45),0 18px 44px rgba(0,0,0,.4);
+  --r-sm:6px; --r-md:10px;
+  --fonte-display:'Archivo','Arial Narrow',system-ui,sans-serif;
+  --fonte-corpo:'IBM Plex Sans',system-ui,Segoe UI,Arial,sans-serif;
+  --fonte-dado:'IBM Plex Mono','Courier New',monospace;
+  --s-azul:#3987e5; --s-laranja:#d95926; --s-aqua:#199e70;
+  --s-mostarda:#c98500; --s-magenta:#d55181; --s-violeta:#9085e9;
+  --grade:#2F353B; --eixo:#3D444B;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--asfalto);color:var(--tinta);font-family:var(--fonte-corpo);font-size:14px;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,h5{font-family:var(--fonte-display);margin:0}
+button{font:inherit;color:inherit}
+
+/* ---------- barra do modelo (não faz parte do app) ---------- */
+.modelo-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:9px 20px;background:var(--faixa-fundo);border-bottom:1px solid #5A4A18;font-size:12.5px;color:var(--faixa-texto)}
+.modelo-bar b{color:var(--faixa)}
+.seg{display:flex;background:var(--asfalto);border:1px solid var(--borda);border-radius:999px;padding:3px;margin-left:auto}
+.seg button{background:none;border:0;border-radius:999px;padding:5px 13px;font-size:12px;font-weight:600;color:var(--tinta-media);cursor:pointer;font-family:var(--fonte-display);letter-spacing:.02em}
+.seg button.on{background:var(--faixa);color:#16190C}
+
+/* ---------- casca do app ---------- */
+.topbar{display:flex;align-items:center;gap:22px;padding:0 20px;height:54px;background:var(--asfalto-alto);border-bottom:1px solid var(--borda);position:sticky;top:0;z-index:8}
+.logo{font-family:var(--fonte-display);font-weight:700;letter-spacing:.14em;font-size:15px;color:var(--faixa)}
+.nav{display:flex;gap:2px}
+.nav a{padding:7px 11px;border-radius:var(--r-sm);color:var(--tinta-media);text-decoration:none;font-size:13px;font-weight:500}
+.nav a.on{background:var(--superficie);color:var(--tinta)}
+.novo{margin-left:6px;font-family:var(--fonte-display);font-size:8.5px;letter-spacing:.09em;background:var(--faixa);color:#16190C;border-radius:3px;padding:2px 5px;vertical-align:2px}
+
+.wrap{margin:0 auto;padding:22px 20px 60px}
+[data-layout="a"] .wrap{max-width:1180px}
+[data-layout="b"] .wrap{max-width:860px}
+
+/* ---------- cabeçalho da página + abas ---------- */
+.pg{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.pg h1{font-size:20px;letter-spacing:.01em}
+.abas{display:flex;gap:2px;margin-left:auto;background:var(--superficie);border:1px solid var(--borda);border-radius:999px;padding:3px}
+.aba{background:none;border:0;border-radius:999px;padding:6px 15px;cursor:pointer;color:var(--tinta-media);font-family:var(--fonte-display);font-weight:600;font-size:12.5px}
+.aba:hover{color:var(--tinta)}
+.aba.on{background:var(--superficie-2);color:var(--faixa-texto)}
+
+/* ---------- filtros ---------- */
+.filtros{display:flex;flex-wrap:wrap;gap:14px;align-items:end;padding:0 0 14px;border-bottom:1px solid var(--borda);margin-bottom:20px}
+.campo{display:grid;gap:4px}
+.campo label{font-family:var(--fonte-display);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--tinta-fraca)}
+.campo input,.campo select{background:var(--asfalto-alto);border:1px solid var(--borda);border-radius:var(--r-sm);color:var(--tinta);padding:6px 9px;font-size:13px;min-width:126px}
+.campo select:focus,.campo input:focus{outline:2px solid var(--faixa-texto);outline-offset:-1px}
+.presets{display:flex;gap:3px;margin-left:auto}
+.presets button{background:none;border:1px solid var(--borda);border-radius:999px;padding:5px 11px;font-size:12px;color:var(--tinta-media);cursor:pointer}
+.presets button.on{border-color:var(--faixa-texto);color:var(--faixa-texto)}
+.switch{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--tinta-media);cursor:pointer;user-select:none;margin-left:auto}
+.switch .tr{width:36px;height:20px;border-radius:999px;background:var(--borda-forte);position:relative;transition:background .15s ease;flex:none}
+.switch .tr::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--tinta);transition:transform .15s ease}
+.switch.on .tr{background:var(--faixa)}
+.switch.on .tr::after{transform:translateX(16px);background:#16190C}
+
+/* ---------- KPIs ---------- */
+.kpis{margin-bottom:22px}
+.kpi .rot{font-size:11.5px;color:var(--tinta-fraca)}
+.kpi .val{font-family:var(--fonte-display);font-weight:700;line-height:1}
+.kpi .nota{font-size:11.5px;color:var(--tinta-fraca)}
+
+/* A: faixa única dividida por fios */
+[data-layout="a"] .kpis{display:flex;background:var(--superficie);border:1px solid var(--borda);border-radius:var(--r-md);overflow:hidden}
+[data-layout="a"] .kpi{flex:1;padding:14px 16px;border-left:1px solid var(--borda)}
+[data-layout="a"] .kpi:first-child{border-left:0}
+[data-layout="a"] .kpi .rot{margin-bottom:6px}
+[data-layout="a"] .kpi .val{font-size:26px}
+[data-layout="a"] .kpi .nota{margin-top:5px}
+
+/* B: linha de leitura, sem caixas */
+[data-layout="b"] .kpis{display:flex;flex-wrap:wrap;gap:0 26px;align-items:baseline;padding-bottom:20px;border-bottom:1px solid var(--borda)}
+[data-layout="b"] .kpi{display:flex;align-items:baseline;gap:7px}
+[data-layout="b"] .kpi .val{font-size:19px;order:1}
+[data-layout="b"] .kpi .rot{order:2;font-size:13px;color:var(--tinta-media)}
+[data-layout="b"] .kpi .nota{display:none}
+[data-layout="b"] .kpi:first-child .val{font-size:40px;color:var(--faixa-texto)}
+[data-layout="b"] .kpi:first-child{gap:10px;margin-right:8px}
+
+/* ---------- blocos de conteúdo ---------- */
+.blocos{display:grid;gap:16px}
+[data-layout="a"] .blocos{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+[data-layout="a"] .bloco{background:var(--superficie);border:1px solid var(--borda);border-radius:var(--r-md);padding:16px}
+[data-layout="a"] .larga{grid-column:1/-1}
+[data-layout="b"] .blocos{grid-template-columns:1fr;gap:34px}
+[data-layout="b"] .bloco{padding-top:4px}
+[data-layout="b"] .bloco>h3{padding-bottom:9px;border-bottom:1px solid var(--borda);margin-bottom:12px}
+
+.bloco>h3{font-size:13.5px;letter-spacing:.02em}
+[data-layout="a"] .bloco>h3{margin-bottom:2px}
+.bloco .sub{font-size:12px;color:var(--tinta-fraca);margin-bottom:15px}
+[data-layout="b"] .bloco>h3+.sub{margin-top:-6px}
+
+/* ---------- linha do tempo ---------- */
+.tl-eixo{display:flex;justify-content:space-between;font-family:var(--fonte-dado);font-size:10.5px;color:var(--tinta-fraca);border-bottom:1px solid var(--eixo);padding-bottom:5px;margin-bottom:10px}
+.tl-linha{display:grid;grid-template-columns:78px minmax(0,1fr);gap:12px;align-items:center;margin-bottom:8px}
+.tl-nome{font-family:var(--fonte-display);font-size:11px;letter-spacing:.05em;color:var(--tinta-media);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-trilho{position:relative;height:26px;background:linear-gradient(var(--grade),var(--grade)) no-repeat center/100% 1px}
+.tl-bloco{position:absolute;top:2px;height:22px;border-radius:4px;cursor:pointer;border:0;padding:0 8px;display:flex;align-items:center;font-size:11px;color:#0E1114;font-weight:600;overflow:hidden;white-space:nowrap;box-shadow:0 0 0 2px var(--asfalto);transition:filter .12s ease}
+[data-layout="a"] .tl-bloco{box-shadow:0 0 0 2px var(--superficie)}
+.tl-bloco:hover{filter:brightness(1.14)}
+.tl-bloco.sel{box-shadow:0 0 0 2px var(--asfalto),0 0 0 4px var(--faixa-texto)}
+[data-layout="a"] .tl-bloco.sel{box-shadow:0 0 0 2px var(--superficie),0 0 0 4px var(--faixa-texto)}
+
+/* ---------- barras ---------- */
+.barras{display:grid;gap:8px}
+.barra-l{display:grid;grid-template-columns:158px minmax(0,1fr) 52px;gap:12px;align-items:center;cursor:pointer;border:0;background:none;padding:4px 6px;margin:0 -6px;border-radius:var(--r-sm);text-align:left;transition:background .12s ease}
+.barra-l:hover{background:var(--superficie-2)}
+.barra-l.sel{background:var(--superficie-2);box-shadow:inset 2px 0 0 var(--faixa-texto)}
+.barra-rot{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--tinta-media);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pt{width:9px;height:9px;border-radius:50%;flex:none}
+.barra-trilho{height:20px;display:flex;align-items:center}
+.barra-fill{height:18px;border-radius:0 4px 4px 0;min-width:3px}
+.barra-val{font-family:var(--fonte-dado);font-size:12px;color:var(--tinta);text-align:right}
+
+.colunas{display:flex;align-items:end;gap:16px;height:132px;border-bottom:1px solid var(--eixo);max-width:460px}
+.col-w{flex:1;display:flex;flex-direction:column;justify-content:end;align-items:center;gap:6px;height:100%;cursor:pointer;background:none;border:0;padding:0;border-radius:var(--r-sm) var(--r-sm) 0 0;transition:background .12s ease}
+.col-w:hover{background:var(--superficie-2)}
+.col-cap{font-family:var(--fonte-dado);font-size:11.5px;color:var(--tinta)}
+.col-bar{width:100%;max-width:24px;border-radius:4px 4px 0 0;background:var(--s-azul)}
+.eixo-rots{display:flex;gap:16px;max-width:460px}
+.eixo-rots>div{flex:1;text-align:center;font-size:11px;color:var(--tinta-fraca);padding-top:7px}
+
+.legenda{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;padding-top:12px;border-top:1px solid var(--borda)}
+.legenda span{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--tinta-media)}
+.dica{font-size:11.5px;color:var(--tinta-fraca);margin-top:12px;display:flex;align-items:center;gap:6px}
+.dica::before{content:'☞';color:var(--faixa-texto)}
+
+/* ---------- ranking ---------- */
+.rank{display:grid;gap:1px}
+.rank-l{display:grid;grid-template-columns:26px minmax(0,1fr) 42px;gap:11px;align-items:center;padding:7px 6px;margin:0 -6px;border-radius:var(--r-sm);cursor:pointer;border:0;background:none;text-align:left;transition:background .12s ease}
+.rank-l:hover{background:var(--superficie-2)}
+.rank-nome{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank-fn{font-size:11px;color:var(--tinta-fraca)}
+.rank-n{font-family:var(--fonte-dado);font-size:13px;text-align:right}
+
+/* ---------- avatar (igual ao app) ---------- */
+.avatar{width:34px;height:34px;flex:none;border-radius:50%;background:var(--borda-forte);color:#16190C;display:grid;place-items:center;overflow:hidden;font-family:var(--fonte-display);font-weight:700;font-size:12px;line-height:1}
+.avatar.small{width:26px;height:26px;font-size:10px}
+.avatar.big{width:46px;height:46px;font-size:16px}
+.avatar svg{width:100%;height:100%;display:block}
+
+/* ---------- painel deslizante (sobreposto — nos DOIS layouts) ---------- */
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .16s ease;z-index:19}
+.fundo.on{opacity:1;pointer-events:auto}
+.painel{position:fixed;top:0;right:0;bottom:0;width:396px;max-width:92vw;background:var(--superficie);border-left:1px solid var(--borda);box-shadow:var(--sombra-lg);z-index:20;transform:translateX(100%);transition:transform .2s cubic-bezier(.2,.7,.3,1);overflow:auto;padding:16px}
+.painel.on{transform:none}
+.p-head{display:flex;justify-content:space-between;align-items:start;gap:10px;padding-bottom:12px;border-bottom:1px solid var(--borda)}
+.p-head h4{font-size:14.5px;line-height:1.35}
+.p-head .p-sub{font-size:12px;color:var(--tinta-fraca);margin-top:3px}
+.fechar{background:none;border:1px solid var(--borda);border-radius:var(--r-sm);width:27px;height:27px;flex:none;cursor:pointer;color:var(--tinta-media);line-height:1}
+.fechar:hover{border-color:var(--borda-forte);color:var(--tinta)}
+.p-body{display:grid;gap:16px;padding-top:14px}
+.p-sec{display:grid;gap:7px}
+.p-sec>h5{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--tinta-fraca);font-weight:700}
+.linhas{display:grid;gap:5px}
+.linha{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding-bottom:5px;border-bottom:1px solid var(--borda)}
+.linha:last-child{border-bottom:0;padding-bottom:0}
+.linha .k{color:var(--tinta-fraca)}
+.pessoa{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:var(--r-sm);background:var(--superficie-2)}
+.pessoa .nm,.pbloco .nm{font-size:12.5px;line-height:1.25}
+.pessoa .fn,.pbloco .fn{font-size:10.5px;color:var(--tinta-fraca)}
+.pessoa .dr,.pbloco .dr{margin-left:auto;font-family:var(--fonte-dado);font-size:11.5px;color:var(--tinta-media);flex:none}
+.pbloco{background:var(--superficie-2);border-radius:var(--r-sm);padding:9px;display:grid;gap:8px}
+.pbloco .topo{display:flex;align-items:center;gap:9px}
+.datas{display:flex;flex-wrap:wrap;gap:4px}
+.data-chip{font-family:var(--fonte-dado);font-size:11px;background:var(--asfalto);border:1px solid var(--borda);border-radius:4px;padding:2px 6px;color:var(--tinta-media)}
+.faixa-cor{height:3px;border-radius:2px;margin-top:10px}
+.btn{background:none;border:1px solid var(--borda-forte);color:var(--tinta-media);border-radius:var(--r-sm);padding:8px 14px;font-family:var(--fonte-display);font-weight:600;font-size:12px;cursor:pointer;justify-self:start}
+.btn:hover{border-color:var(--faixa-texto);color:var(--faixa-texto)}
+
+/* ---------- tooltip ---------- */
+.tooltip{position:fixed;z-index:40;background:var(--asfalto-alto);border:1px solid var(--borda-forte);border-radius:var(--r-sm);box-shadow:var(--sombra-lg);padding:9px 11px;min-width:170px;pointer-events:none;opacity:0;transform:translateY(3px);transition:opacity .11s ease,transform .11s ease}
+.tooltip.on{opacity:1;transform:translateY(0)}
+.tt-tit{font-family:var(--fonte-display);font-size:12px;margin-bottom:5px}
+.tt-l{display:flex;justify-content:space-between;gap:14px;font-size:11.5px;color:var(--tinta-media)}
+.tt-l b{color:var(--tinta);font-weight:500}
+.esconde{display:none!important}
+@media(max-width:820px){[data-layout="a"] .blocos{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body data-layout="a">
+
+<div class="modelo-bar">
+  <span><b>Modelo.</b> Dados fictícios. Duas propostas de layout — escolha uma:</span>
+  <div class="seg">
+    <button data-lay="a" class="on">A · Painel</button>
+    <button data-lay="b">B · Relatório</button>
+  </div>
+</div>
+
+<div class="topbar">
+  <span class="logo">INCOVIA</span>
+  <nav class="nav">
+    <a href="#">Painel</a><a href="#">Calendário</a><a href="#">Programação</a>
+    <a href="#">Colaboradores</a><a href="#">Contratos</a>
+    <a href="#" class="on">Relatórios<span class="novo">NOVO</span></a>
+  </nav>
+</div>
+
+<div class="wrap">
+  <div class="pg">
+    <h1>Relatórios</h1>
+    <div class="abas">
+      <button class="aba on" data-aba="equipes">Equipes</button>
+      <button class="aba" data-aba="faltas">Faltas</button>
+    </div>
+  </div>
+
+  <!-- ============== EQUIPES ============== -->
+  <section id="aba-equipes">
+    <div class="filtros">
+      <div class="campo"><label>De</label><input type="date" value="2026-06-01"></div>
+      <div class="campo"><label>Até</label><input type="date" value="2026-09-04"></div>
+      <div class="campo"><label>Encarregado</label><select id="selEnc"></select></div>
+      <div class="campo"><label>Contratante</label>
+        <select><option>Todos</option><option>MOTIVA</option><option>MLC</option><option>ARTESP</option></select></div>
+      <div class="presets"><button class="on">Todo o histórico</button><button>Este mês</button><button>90 dias</button></div>
+    </div>
+
+    <div class="kpis" id="kpisEq"></div>
+
+    <div class="blocos">
+      <div class="bloco larga">
+        <h3>Onde a equipe esteve</h3>
+        <div class="sub" id="subTl"></div>
+        <div class="tl-eixo" id="tlEixo"></div>
+        <div id="tlCorpo"></div>
+        <div class="legenda" id="tlLeg"></div>
+        <div class="dica">Clique num bloco para ver a equipe daquele período, com as datas.</div>
+      </div>
+
+      <div class="bloco">
+        <h3>Dias por contratante</h3>
+        <div class="sub">Total de dias de programação no período.</div>
+        <div class="barras" id="barrasCt"></div>
+        <div class="dica">Clique para ver as obras do contratante.</div>
+      </div>
+
+      <div class="bloco">
+        <h3>Obras no período</h3>
+        <div class="sub">Da mais recente para a mais antiga.</div>
+        <div class="rank" id="listaObras"></div>
+        <div class="dica">Clique numa obra para abrir o detalhe da equipe.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============== FALTAS ============== -->
+  <section id="aba-faltas" class="esconde">
+    <div class="filtros">
+      <div class="campo"><label>De</label><input type="date" value="2026-06-01"></div>
+      <div class="campo"><label>Até</label><input type="date" value="2026-09-04"></div>
+      <div class="campo"><label>Colaborador</label><select><option>Todos</option></select></div>
+      <label class="switch" id="swFerias"><span class="tr"></span> Incluir férias na contagem</label>
+    </div>
+
+    <div class="kpis" id="kpisFa"></div>
+
+    <div class="blocos">
+      <div class="bloco">
+        <h3>Faltas por motivo</h3>
+        <div class="sub">Cada ocorrência é um dia de ausência.</div>
+        <div class="barras" id="barrasMot"></div>
+        <div class="dica">Clique num motivo para ver quem faltou e quando.</div>
+      </div>
+
+      <div class="bloco">
+        <h3>Faltas por mês</h3>
+        <div class="sub">Volume total, para enxergar a tendência.</div>
+        <div class="colunas" id="colMes"></div>
+        <div class="eixo-rots" id="colMesRot"></div>
+        <div class="dica">Clique numa coluna para ver as faltas do mês.</div>
+      </div>
+
+      <div class="bloco larga">
+        <h3>Quem mais faltou</h3>
+        <div class="sub">Ordenado pelo total de ausências no período.</div>
+        <div class="rank" id="rankFa"></div>
+        <div class="dica">Clique num nome para ver os dias exatos, motivo por motivo.</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="fundo" id="fundo"></div>
+<aside class="painel" id="painel"></aside>
+<div class="tooltip" id="tt"></div>
+
+<script>
+/* ================= DADOS FICTÍCIOS ================= */
+const CORES_AV=['#FFC72C','#FF9E4A','#8FD3A8','#9CC7F0','#E8A0A3','#C9B6E4','#9FD8D3','#F0C48A'];
+function corAvatar(s){let t=0;s=String(s||'');for(let i=0;i<s.length;i++)t=(t+s.charCodeAt(i))%997;return CORES_AV[t%CORES_AV.length];}
+function iniciais(n){return String(n||'').split(' ').filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase();}
+const SILHUETA='<svg viewBox="0 0 40 40"><rect width="40" height="40" fill="#5A646E"/><circle cx="20" cy="15" r="7.5" fill="#AEB8C2"/><path d="M3 40c0-9.5 7.6-13.5 17-13.5S37 30.5 37 40z" fill="#AEB8C2"/></svg>';
+function avatar(nome,foto,cls){
+  const c='avatar'+(cls?' '+cls:'');
+  if(foto) return '<span class="'+c+'" title="'+nome+'">'+SILHUETA+'</span>';
+  return '<span class="'+c+'" title="'+nome+'" style="background:'+corAvatar(nome)+'">'+(iniciais(nome)||'?')+'</span>';
+}
+const PESSOAS={
+  'Alan Fernando':{fn:'Encarregado',foto:true},'Josué Ribeiro':{fn:'Encarregado',foto:false},
+  'Marcos Antônio':{fn:'Encarregado',foto:false},'Cleiton Souza':{fn:'Pintor',foto:true},
+  'Rogério Alves':{fn:'Ajudante de produção',foto:false},'Wanderson Lima':{fn:'Ajudante de produção',foto:false},
+  'Diego Martins':{fn:'Operador de máquina',foto:false},'Paulo Henrique':{fn:'Pintor',foto:false},
+  'Anderson Reis':{fn:'Ajudante de produção',foto:false},'Tiago Nunes':{fn:'Motorista',foto:false},
+  'Everton Dias':{fn:'Sinalizador',foto:false},
+};
+const fn=n=>(PESSOAS[n]||{}).fn||'';
+const temFoto=n=>!!(PESSOAS[n]||{}).foto;
+const CT_HEX={MOTIVA:'#3987e5',MLC:'#d95926',ARTESP:'#199e70'};
+
+const PERIODOS=[
+  {enc:'Alan Fernando',ct:'MOTIVA',obra:'Rod. dos Bandeirantes — km 42 ao 51',cid:'Jundiaí',tipo:'Pintura',ini:'2026-06-01',fim:'2026-06-14',
+   eq:[['Cleiton Souza',12],['Rogério Alves',12],['Wanderson Lima',10],['Tiago Nunes',12]]},
+  {enc:'Alan Fernando',ct:'MLC',obra:'Rod. Anhanguera — km 88 ao 96',cid:'Limeira',tipo:'Pintura',ini:'2026-06-17',fim:'2026-07-03',
+   eq:[['Cleiton Souza',15],['Rogério Alves',13],['Diego Martins',15],['Tiago Nunes',15]]},
+  {enc:'Alan Fernando',ct:'MOTIVA',obra:'Rod. dos Bandeirantes — km 60 ao 68',cid:'Campinas',tipo:'Pintura',ini:'2026-07-07',fim:'2026-07-24',
+   eq:[['Cleiton Souza',14],['Wanderson Lima',14],['Diego Martins',11],['Tiago Nunes',14]]},
+  {enc:'Alan Fernando',ct:'ARTESP',obra:'Rod. Castello Branco — km 31 ao 39',cid:'Barueri',tipo:'Pintura',ini:'2026-07-28',fim:'2026-08-12',
+   eq:[['Paulo Henrique',13],['Rogério Alves',13],['Wanderson Lima',9],['Tiago Nunes',13]]},
+  {enc:'Alan Fernando',ct:'MOTIVA',obra:'Rod. Dom Pedro I — km 12 ao 20',cid:'Atibaia',tipo:'Pintura',ini:'2026-08-17',fim:'2026-09-04',
+   eq:[['Cleiton Souza',15],['Paulo Henrique',15],['Diego Martins',12],['Tiago Nunes',15]]},
+  {enc:'Josué Ribeiro',ct:'MLC',obra:'Rod. Anhanguera — km 100 ao 112',cid:'Americana',tipo:'Tachas',ini:'2026-06-02',fim:'2026-06-26',
+   eq:[['Anderson Reis',20],['Everton Dias',20],['Wanderson Lima',14]]},
+  {enc:'Josué Ribeiro',ct:'ARTESP',obra:'Rod. Raposo Tavares — km 55 ao 63',cid:'Sorocaba',tipo:'Tachas',ini:'2026-06-30',fim:'2026-07-31',
+   eq:[['Anderson Reis',24],['Everton Dias',22],['Diego Martins',18]]},
+  {enc:'Josué Ribeiro',ct:'MOTIVA',obra:'Rod. Dom Pedro I — km 30 ao 41',cid:'Itatiba',tipo:'Tachas',ini:'2026-08-04',fim:'2026-09-03',
+   eq:[['Anderson Reis',24],['Everton Dias',24],['Rogério Alves',16]]},
+  {enc:'Marcos Antônio',ct:'ARTESP',obra:'Rod. Castello Branco — km 12 ao 24',cid:'Osasco',tipo:'Defensa',ini:'2026-06-08',fim:'2026-07-10',
+   eq:[['Diego Martins',26],['Everton Dias',18],['Tiago Nunes',22]]},
+  {enc:'Marcos Antônio',ct:'MLC',obra:'Rod. Anhanguera — km 70 ao 80',cid:'Campinas',tipo:'Defensa',ini:'2026-07-14',fim:'2026-08-21',
+   eq:[['Diego Martins',30],['Anderson Reis',20],['Tiago Nunes',28]]},
+];
+const MOTIVOS=[
+  ['atestado_medico','Atestado médico','#3987e5'],['falta_injustificada','Falta injustificada','#d95926'],
+  ['falta_justificada','Falta justificada','#199e70'],['licenca','Licença','#c98500'],
+  ['acidente_trabalho','Acidente de trabalho','#d55181'],['ferias','Férias','#9085e9'],
+];
+const rotMot=k=>(MOTIVOS.find(m=>m[0]===k)||[])[1]||k;
+const corMot=k=>(MOTIVOS.find(m=>m[0]===k)||[])[2]||'#6C7780';
+
+function seedRnd(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return function(){h^=h<<13;h^=h>>>17;h^=h<<5;return((h>>>0)%100000)/100000;};}
+function datasFicticias(chave,n,de,ate){
+  const r=seedRnd(chave),d0=new Date(de),d1=new Date(ate);
+  const span=Math.round((d1-d0)/86400000),out=new Set();let g=0;
+  while(out.size<n&&g<900){g++;
+    const dia=new Date(d0.getTime()+Math.floor(r()*span)*86400000);
+    if(dia.getUTCDay()===0)continue;
+    out.add(dia.toISOString().slice(0,10));}
+  return Array.from(out);
+}
+const PLANO={
+  atestado_medico:{'Alan Fernando':3,'Cleiton Souza':5,'Rogério Alves':2,'Wanderson Lima':4,'Josué Ribeiro':3,'Diego Martins':4,'Paulo Henrique':3},
+  falta_injustificada:{'Rogério Alves':4,'Cleiton Souza':3,'Wanderson Lima':2,'Diego Martins':5,'Anderson Reis':4},
+  falta_justificada:{'Paulo Henrique':3,'Alan Fernando':2,'Anderson Reis':4,'Josué Ribeiro':2},
+  licenca:{'Marcos Antônio':4,'Diego Martins':2},
+  acidente_trabalho:{'Wanderson Lima':2,'Cleiton Souza':1},
+  ferias:{'Alan Fernando':15,'Josué Ribeiro':12,'Paulo Henrique':14},
+};
+const FALTAS=[];const ocupado=new Set();
+Object.keys(PLANO).forEach(function(mot){
+  Object.keys(PLANO[mot]).forEach(function(nome){
+    const alvo=PLANO[mot][nome];let posto=0;
+    datasFicticias(mot+nome,alvo*4,'2026-06-01','2026-09-04').forEach(function(d){
+      if(posto>=alvo||ocupado.has(nome+d))return;
+      ocupado.add(nome+d);posto++;FALTAS.push({nome:nome,motivo:mot,data:d});
+    });
+  });
+});
+
+/* ================= UTIL ================= */
+const MESES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const fmt=iso=>iso.slice(8,10)+'/'+iso.slice(5,7);
+const fmtL=iso=>iso.slice(8,10)+'/'+iso.slice(5,7)+'/'+iso.slice(0,4);
+function diasUteis(i,f){let n=0,d=new Date(i);const e=new Date(f);while(d<=e){if(d.getUTCDay()!==0)n++;d=new Date(d.getTime()+86400000);}return n;}
+function listaDias(i,f){const o=[],e=new Date(f);let d=new Date(i);while(d<=e){if(d.getUTCDay()!==0)o.push(d.toISOString().slice(0,10));d=new Date(d.getTime()+86400000);}return o;}
+const el=id=>document.getElementById(id);
+
+const tt=el('tt');
+function moveTT(ev){const r=tt.getBoundingClientRect();let x=ev.clientX+14,y=ev.clientY-r.height-10;if(x+r.width>innerWidth-8)x=ev.clientX-r.width-14;if(y<8)y=ev.clientY+18;tt.style.left=x+'px';tt.style.top=y+'px';}
+function escondeTT(){tt.classList.remove('on');}
+function ligaTT(node,html){
+  node.addEventListener('mouseenter',function(e){tt.innerHTML=html;tt.classList.add('on');moveTT(e);});
+  node.addEventListener('mousemove',moveTT);
+  node.addEventListener('mouseleave',escondeTT);
+}
+
+/* ================= PAINEL ================= */
+const painel=el('painel'),fundo=el('fundo');
+function abrePainel(html){painel.innerHTML=html;painel.classList.add('on');fundo.classList.add('on');escondeTT();}
+function fecharPainel(){
+  painel.classList.remove('on');fundo.classList.remove('on');
+  document.querySelectorAll('.sel').forEach(x=>x.classList.remove('sel'));
+}
+fundo.addEventListener('click',fecharPainel);
+addEventListener('keydown',e=>{if(e.key==='Escape')fecharPainel();});
+function marca(node){document.querySelectorAll('.sel').forEach(x=>x.classList.remove('sel'));node.classList.add('sel');}
+
+/* ================= EQUIPES ================= */
+const ENCS=Array.from(new Set(PERIODOS.map(p=>p.enc)));
+el('selEnc').innerHTML=ENCS.map(e=>'<option>'+e+'</option>').join('');
+let encAtual=ENCS[0];
+el('selEnc').addEventListener('change',function(e){encAtual=e.target.value;fecharPainel();renderEquipes();});
+
+const EIXO_INI=new Date('2026-06-01'),EIXO_FIM=new Date('2026-09-10');
+const pct=d=>((new Date(d)-EIXO_INI)/(EIXO_FIM-EIXO_INI))*100;
+
+function renderEquipes(){
+  const ps=PERIODOS.filter(p=>p.enc===encAtual);
+  const dias=ps.reduce((s,p)=>s+diasUteis(p.ini,p.fim),0);
+  const cts=Array.from(new Set(ps.map(p=>p.ct)));
+  const faltasEnc=FALTAS.filter(f=>f.nome===encAtual&&f.motivo!=='ferias').length;
+
+  el('kpisEq').innerHTML=[
+    ['dias em campo',dias,'somando todas as obras'],
+    ['contratantes',cts.length,cts.join(' · ')],
+    ['obras atendidas',ps.length,'trechos distintos'],
+    ['faltas do encarregado',faltasEnc,'férias não entram'],
+  ].map(x=>'<div class="kpi"><div class="rot">'+x[0]+'</div><div class="val">'+x[1]+'</div><div class="nota">'+x[2]+'</div></div>').join('');
+
+  el('subTl').textContent='Cada bloco é um período contínuo na mesma obra — equipe de '+encAtual+'.';
+  el('tlEixo').innerHTML=['2026-06-01','2026-07-01','2026-08-01','2026-09-01']
+    .map(m=>'<span>'+MESES[+m.slice(5,7)-1]+'/'+m.slice(2,4)+'</span>').join('');
+
+  const corpo=el('tlCorpo');corpo.innerHTML='';
+  cts.forEach(function(ct){
+    const lin=document.createElement('div');lin.className='tl-linha';
+    lin.innerHTML='<div class="tl-nome">'+ct+'</div><div class="tl-trilho"></div>';
+    const tr=lin.querySelector('.tl-trilho');
+    ps.filter(p=>p.ct===ct).forEach(function(p){
+      const b=document.createElement('button');b.className='tl-bloco';
+      b.style.left=pct(p.ini)+'%';b.style.width=Math.max(pct(p.fim)-pct(p.ini),3)+'%';
+      b.style.background=CT_HEX[p.ct];b.textContent=p.cid;
+      ligaTT(b,'<div class="tt-tit">'+p.cid+' — '+p.ct+'</div>'+
+        '<div class="tt-l"><span>Período</span><b>'+fmt(p.ini)+' a '+fmt(p.fim)+'</b></div>'+
+        '<div class="tt-l"><span>Dias</span><b>'+diasUteis(p.ini,p.fim)+'</b></div>'+
+        '<div class="tt-l"><span>Equipe</span><b>'+(p.eq.length+1)+' pessoas</b></div>');
+      b.addEventListener('click',function(){marca(b);abrirPeriodo(p);});
+      tr.appendChild(b);
+    });
+    corpo.appendChild(lin);
+  });
+  el('tlLeg').innerHTML=cts.map(c=>'<span><i class="pt" style="background:'+CT_HEX[c]+'"></i>'+c+'</span>').join('');
+
+  const porCt={};ps.forEach(p=>{porCt[p.ct]=(porCt[p.ct]||0)+diasUteis(p.ini,p.fim);});
+  const max=Math.max.apply(null,Object.keys(porCt).map(k=>porCt[k]));
+  const cb=el('barrasCt');cb.innerHTML='';
+  Object.keys(porCt).sort((a,b)=>porCt[b]-porCt[a]).forEach(function(ct){
+    const v=porCt[ct];
+    const b=document.createElement('button');b.className='barra-l';
+    b.innerHTML='<div class="barra-rot"><i class="pt" style="background:'+CT_HEX[ct]+'"></i>'+ct+'</div>'+
+      '<div class="barra-trilho"><div class="barra-fill" style="width:'+(v/max*100)+'%;background:'+CT_HEX[ct]+'"></div></div>'+
+      '<div class="barra-val">'+v+' d</div>';
+    ligaTT(b,'<div class="tt-tit">'+ct+'</div>'+
+      '<div class="tt-l"><span>Dias em campo</span><b>'+v+'</b></div>'+
+      '<div class="tt-l"><span>Obras</span><b>'+ps.filter(p=>p.ct===ct).length+'</b></div>'+
+      '<div class="tt-l"><span>Participação</span><b>'+Math.round(v/dias*100)+'%</b></div>');
+    b.addEventListener('click',function(){marca(b);abrirContratante(ct,ps.filter(p=>p.ct===ct));});
+    cb.appendChild(b);
+  });
+
+  const lo=el('listaObras');lo.innerHTML='';
+  ps.slice().sort((a,b)=>b.ini.localeCompare(a.ini)).forEach(function(p){
+    const b=document.createElement('button');b.className='rank-l';
+    b.innerHTML='<i class="pt" style="background:'+CT_HEX[p.ct]+';margin-left:8px"></i>'+
+      '<div><div class="rank-nome">'+p.cid+' · '+p.ct+'</div><div class="rank-fn">'+fmt(p.ini)+' a '+fmt(p.fim)+'</div></div>'+
+      '<div class="rank-n">'+diasUteis(p.ini,p.fim)+' d</div>';
+    b.addEventListener('click',function(){marca(b);abrirPeriodo(p);});
+    lo.appendChild(b);
+  });
+}
+
+function abrirPeriodo(p){
+  const dias=listaDias(p.ini,p.fim);
+  const equipe=[[p.enc,dias.length,'Encarregado']].concat(p.eq.map(e=>[e[0],e[1],fn(e[0])]));
+  abrePainel(
+    '<div class="p-head"><div><h4>'+p.cid+' — '+p.ct+'</h4><div class="p-sub">'+p.obra+'</div></div>'+
+      '<button class="fechar" onclick="fecharPainel()">✕</button></div>'+
+    '<div class="faixa-cor" style="background:'+CT_HEX[p.ct]+'"></div>'+
+    '<div class="p-body">'+
+      '<div class="p-sec"><div class="linhas">'+
+        '<div class="linha"><span class="k">Período</span><span>'+fmtL(p.ini)+' a '+fmtL(p.fim)+'</span></div>'+
+        '<div class="linha"><span class="k">Dias trabalhados</span><span>'+dias.length+'</span></div>'+
+        '<div class="linha"><span class="k">Tipo de equipe</span><span>'+p.tipo+'</span></div>'+
+        '<div class="linha"><span class="k">Cidade</span><span>'+p.cid+'</span></div>'+
+      '</div></div>'+
+      '<div class="p-sec"><h5>Equipe no período ('+equipe.length+')</h5>'+
+        equipe.map(e=>'<div class="pessoa">'+avatar(e[0],temFoto(e[0]),'small')+
+          '<div><div class="nm">'+e[0]+'</div><div class="fn">'+e[2]+'</div></div>'+
+          '<div class="dr">'+e[1]+'/'+dias.length+' dias</div></div>').join('')+
+      '</div>'+
+      '<div class="p-sec"><h5>Dias de programação ('+dias.length+')</h5>'+
+        '<div class="datas">'+dias.map(d=>'<span class="data-chip">'+fmt(d)+'</span>').join('')+'</div></div>'+
+      '<button class="btn">Abrir na Programação</button>'+
+    '</div>');
+}
+
+function abrirContratante(ct,ps){
+  const total=ps.reduce((s,p)=>s+diasUteis(p.ini,p.fim),0);
+  abrePainel(
+    '<div class="p-head"><div><h4>'+ct+'</h4><div class="p-sub">Equipe de '+encAtual+' · '+total+' dias em '+ps.length+' obras</div></div>'+
+      '<button class="fechar" onclick="fecharPainel()">✕</button></div>'+
+    '<div class="faixa-cor" style="background:'+CT_HEX[ct]+'"></div>'+
+    '<div class="p-body"><div class="p-sec"><h5>Obras atendidas</h5>'+
+      ps.map(p=>'<div class="pbloco"><div class="topo">'+
+        '<div><div class="nm">'+p.cid+'</div><div class="fn">'+p.obra+'</div></div>'+
+        '<div class="dr">'+diasUteis(p.ini,p.fim)+' dias</div></div>'+
+        '<div class="datas"><span class="data-chip">'+fmtL(p.ini)+' → '+fmtL(p.fim)+'</span></div></div>').join('')+
+    '</div></div>');
+}
+
+/* ================= FALTAS ================= */
+let incluiFerias=false;
+el('swFerias').addEventListener('click',function(){
+  incluiFerias=!incluiFerias;
+  el('swFerias').classList.toggle('on',incluiFerias);
+  fecharPainel();renderFaltas();
+});
+const base=()=>FALTAS.filter(f=>incluiFerias||f.motivo!=='ferias');
+
+function renderFaltas(){
+  const F=base();
+  const pessoas=new Set(F.map(f=>f.nome));
+  const porMot={};F.forEach(f=>{porMot[f.motivo]=(porMot[f.motivo]||0)+1;});
+  const ord=Object.keys(porMot).sort((a,b)=>porMot[b]-porMot[a]);
+
+  el('kpisFa').innerHTML=[
+    ['ausências no período',F.length,incluiFerias?'férias incluídas':'férias fora da conta'],
+    ['colaboradores afetados',pessoas.size,'de '+Object.keys(PESSOAS).length+' no quadro'],
+    ['no motivo mais comum',porMot[ord[0]],rotMot(ord[0])],
+    ['dias por colaborador',(F.length/pessoas.size).toFixed(1),'média no período'],
+  ].map(x=>'<div class="kpi"><div class="rot">'+x[0]+'</div><div class="val">'+x[1]+'</div><div class="nota">'+x[2]+'</div></div>').join('');
+
+  const cont=el('barrasMot');cont.innerHTML='';
+  const max=porMot[ord[0]];
+  ord.forEach(function(m){
+    const v=porMot[m];
+    const b=document.createElement('button');b.className='barra-l';
+    b.innerHTML='<div class="barra-rot"><i class="pt" style="background:'+corMot(m)+'"></i>'+rotMot(m)+'</div>'+
+      '<div class="barra-trilho"><div class="barra-fill" style="width:'+(v/max*100)+'%;background:'+corMot(m)+'"></div></div>'+
+      '<div class="barra-val">'+v+'</div>';
+    const qp=new Set(F.filter(f=>f.motivo===m).map(f=>f.nome)).size;
+    ligaTT(b,'<div class="tt-tit">'+rotMot(m)+'</div>'+
+      '<div class="tt-l"><span>Ocorrências</span><b>'+v+'</b></div>'+
+      '<div class="tt-l"><span>Pessoas</span><b>'+qp+'</b></div>'+
+      '<div class="tt-l"><span>Do total</span><b>'+Math.round(v/F.length*100)+'%</b></div>');
+    b.addEventListener('click',function(){marca(b);abrirMotivo(m);});
+    cont.appendChild(b);
+  });
+
+  const porMes={};F.forEach(f=>{const k=f.data.slice(0,7);porMes[k]=(porMes[k]||0)+1;});
+  const meses=Object.keys(porMes).sort();
+  const maxM=Math.max.apply(null,meses.map(k=>porMes[k]));
+  const cm=el('colMes');cm.innerHTML='';
+  meses.forEach(function(k){
+    const v=porMes[k];
+    const b=document.createElement('button');b.className='col-w';
+    b.innerHTML='<div class="col-cap">'+v+'</div><div class="col-bar" style="height:'+(v/maxM*92)+'px"></div>';
+    ligaTT(b,'<div class="tt-tit">'+MESES[+k.slice(5,7)-1]+'/'+k.slice(0,4)+'</div>'+
+      '<div class="tt-l"><span>Ausências</span><b>'+v+'</b></div>');
+    b.addEventListener('click',function(){abrirMes(k);});
+    cm.appendChild(b);
+  });
+  el('colMesRot').innerHTML=meses.map(k=>'<div>'+MESES[+k.slice(5,7)-1]+'</div>').join('');
+
+  const porP={};F.forEach(f=>{porP[f.nome]=(porP[f.nome]||0)+1;});
+  const nomes=Object.keys(porP).sort((a,b)=>porP[b]-porP[a]);
+  const maxP=porP[nomes[0]];
+  const rk=el('rankFa');rk.innerHTML='';
+  nomes.forEach(function(n){
+    const b=document.createElement('button');b.className='rank-l';
+    b.style.gridTemplateColumns='26px 208px minmax(0,1fr) 40px';
+    b.innerHTML=avatar(n,temFoto(n),'small')+
+      '<div><div class="rank-nome">'+n+'</div><div class="rank-fn">'+fn(n)+'</div></div>'+
+      '<div class="barra-trilho"><div class="barra-fill" style="width:'+(porP[n]/maxP*100)+'%;background:var(--borda-forte)"></div></div>'+
+      '<div class="rank-n">'+porP[n]+'</div>';
+    b.addEventListener('click',function(){marca(b);abrirPessoa(n);});
+    rk.appendChild(b);
+  });
+}
+
+function agrupaPorPessoa(l){
+  const m={};l.forEach(f=>{(m[f.nome]=m[f.nome]||[]).push(f.data);});
+  return Object.keys(m).map(n=>[n,m[n].sort()]).sort((a,b)=>b[1].length-a[1].length);
+}
+function blocoPessoa(nome,datas){
+  return '<div class="pbloco"><div class="topo">'+avatar(nome,temFoto(nome),'small')+
+    '<div><div class="nm">'+nome+'</div><div class="fn">'+fn(nome)+'</div></div>'+
+    '<div class="dr">'+datas.length+(datas.length===1?' dia':' dias')+'</div></div>'+
+    '<div class="datas">'+datas.map(d=>'<span class="data-chip">'+fmt(d)+'</span>').join('')+'</div></div>';
+}
+function abrirMotivo(m){
+  const F=base().filter(f=>f.motivo===m),g=agrupaPorPessoa(F);
+  abrePainel('<div class="p-head"><div><h4>'+rotMot(m)+'</h4><div class="p-sub">'+F.length+' ocorrências · '+g.length+' pessoas</div></div>'+
+    '<button class="fechar" onclick="fecharPainel()">✕</button></div>'+
+    '<div class="faixa-cor" style="background:'+corMot(m)+'"></div>'+
+    '<div class="p-body"><div class="p-sec"><h5>Quem faltou e quando</h5>'+
+      g.map(x=>blocoPessoa(x[0],x[1])).join('')+'</div></div>');
+}
+function abrirMes(k){
+  const F=base().filter(f=>f.data.slice(0,7)===k),g=agrupaPorPessoa(F);
+  abrePainel('<div class="p-head"><div><h4>'+MESES[+k.slice(5,7)-1]+'/'+k.slice(0,4)+'</h4>'+
+    '<div class="p-sub">'+F.length+' ausências · '+g.length+' pessoas</div></div>'+
+    '<button class="fechar" onclick="fecharPainel()">✕</button></div>'+
+    '<div class="p-body"><div class="p-sec"><h5>Quem faltou e quando</h5>'+
+      g.map(x=>blocoPessoa(x[0],x[1])).join('')+'</div></div>');
+}
+function abrirPessoa(n){
+  const F=base().filter(f=>f.nome===n),porM={};
+  F.forEach(f=>{(porM[f.motivo]=porM[f.motivo]||[]).push(f.data);});
+  const ord=Object.keys(porM).sort((a,b)=>porM[b].length-porM[a].length);
+  abrePainel('<div class="p-head"><div style="display:flex;gap:11px;align-items:center">'+avatar(n,temFoto(n),'big')+
+    '<div><h4>'+n+'</h4><div class="p-sub">'+fn(n)+' · '+F.length+' ausências</div></div></div>'+
+    '<button class="fechar" onclick="fecharPainel()">✕</button></div>'+
+    '<div class="p-body">'+
+      ord.map(m=>'<div class="p-sec"><h5><i class="pt" style="background:'+corMot(m)+';display:inline-block;margin-right:6px"></i>'+
+        rotMot(m)+' ('+porM[m].length+')</h5><div class="datas">'+
+        porM[m].sort().map(d=>'<span class="data-chip">'+fmtL(d)+'</span>').join('')+'</div></div>').join('')+
+      '<button class="btn">Abrir ficha do colaborador</button>'+
+    '</div>');
+}
+
+/* ================= ABAS + LAYOUT ================= */
+document.querySelectorAll('.aba').forEach(function(a){
+  a.addEventListener('click',function(){
+    document.querySelectorAll('.aba').forEach(x=>x.classList.remove('on'));
+    a.classList.add('on');
+    el('aba-equipes').classList.toggle('esconde',a.dataset.aba!=='equipes');
+    el('aba-faltas').classList.toggle('esconde',a.dataset.aba!=='faltas');
+    fecharPainel();escondeTT();
+  });
+});
+document.querySelectorAll('.seg button').forEach(function(b){
+  b.addEventListener('click',function(){
+    document.querySelectorAll('.seg button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    document.body.dataset.layout=b.dataset.lay;
+    fecharPainel();escondeTT();
+  });
+});
+
+renderEquipes();renderFaltas();
+</script>
+</body>
+</html>

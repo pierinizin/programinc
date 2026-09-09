@@ -2721,6 +2721,24 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 .ct-campo.ct-check { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 8px; }
 .ct-campo.ct-check > span { text-transform: none; letter-spacing: 0; font-size: 12.5px; color: var(--tinta-media); }
+.ct-cor-linha { display: flex; align-items: center; gap: 8px; height: 33px; }
+.ct-cor-input {
+  width: 30px; height: 30px; padding: 0; border: 1px solid var(--borda); border-radius: var(--r-sm);
+  background: none; cursor: pointer; flex: none;
+}
+/* Reset de aparência do color picker nativo — sem isso ele vem com uma borda
+   e um respiro internos que não combinam com o resto do formulário. */
+.ct-cor-input::-webkit-color-swatch-wrapper { padding: 2px; }
+.ct-cor-input::-webkit-color-swatch { border: 0; border-radius: 3px; }
+.ct-cor-input::-moz-color-swatch { border: 0; border-radius: 3px; }
+.ct-cor-estado {
+  font-family: var(--fonte-dado); font-size: 12.5px; color: var(--tinta-media);
+}
+.ct-cor-reset {
+  border: 0; background: none; padding: 0; cursor: pointer;
+  font-size: 11.5px; color: var(--tinta-fraca); text-decoration: underline;
+}
+.ct-cor-reset:hover { color: var(--tinta-media); }
 .ct-acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 
 /* --- tabela --- */
@@ -2839,4 +2857,306 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .ct-juntar-painel select {
   padding: 6px 10px; border: 1px solid var(--borda-forte); border-radius: var(--r-sm);
   background: var(--superficie); color: var(--tinta); font: inherit; font-size: 13px;
+}
+
+
+/* ==========================================================================
+   RELATÓRIOS
+   --------------------------------------------------------------------------
+   Paleta de SÉRIE (--serie-N): identidade, não gravidade. Contratante e motivo
+   de falta precisam ser distinguíveis entre si; não têm nada a ver com risco,
+   então não podem usar as cores de estado do app — se contratante nº 6 fosse
+   vermelho, vermelho deixaria de significar impedimento no resto da tela.
+
+   Os valores foram escolhidos e conferidos contra a superfície real de cada
+   tema (escuro #1E2226, claro #F6F7F8): todos passam nas faixas de luminância
+   e na separação para daltonismo, com contraste >= 3:1 no escuro. No claro,
+   aqua/mostarda/magenta ficam abaixo de 3:1 — por isso a cor nunca carrega o
+   dado sozinha ali: a lista "Obras no período" (texto puro, sem cor) é o
+   relief exigido, então a linha do tempo e a legenda podem ficar só na cor.
+
+   Sete séries, não oito: a paleta de referência do método (--serie-N) tem 8
+   matizes fixos, mas verde e vermelho já significam "concluído" e
+   "impedimento" no resto do app — usá-los aqui pra identidade de contratante
+   ia fazer um bloco vermelho parecer um alerta. --serie-7 (roxo) foi validado
+   contra os 6 já existentes (separação de daltonismo e contraste na
+   superfície real, luz e escuro); não sobrou vizinhança segura no círculo
+   cromático pra um oitavo sem cair em verde/vermelho ou ficar indistinguível
+   de um vizinho — daí "--serie-outros" continuar existindo pro que passar
+   disso.
+   ========================================================================== */
+
+:root {
+  --serie-1: #3987e5;   /* azul    */
+  --serie-2: #d95926;   /* laranja */
+  --serie-3: #199e70;   /* aqua    */
+  --serie-4: #c98500;   /* mostarda*/
+  --serie-5: #d55181;   /* magenta */
+  --serie-6: #9085e9;   /* violeta */
+  --serie-7: #8639aa;   /* roxo    */
+  --serie-outros: #6C7780;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --serie-1: #2a78d6;
+    --serie-2: #eb6834;
+    --serie-3: #1baf7a;
+    --serie-4: #eda100;
+    --serie-5: #e87ba4;
+    --serie-6: #4a3aa7;
+    --serie-7: #946aee;
+    --serie-outros: #838E97;
+  }
+}
+
+.rel { max-width: 880px; }
+.rel-vazio { color: var(--tinta-fraca); font-size: 14px; padding: 22px 0; }
+
+/* ---- abas: duas perguntas diferentes, dois conjuntos de números ---- */
+.rel-abas {
+  display: inline-flex; gap: 2px; padding: 3px; margin-bottom: 16px;
+  background: var(--superficie); border: 1px solid var(--borda); border-radius: 999px;
+}
+.rel-aba {
+  border: 0; background: none; border-radius: 999px; padding: 6px 16px;
+  font-family: var(--fonte-display); font-weight: 600; font-size: 12.5px;
+  color: var(--tinta-media);
+}
+.rel-aba:hover { color: var(--tinta); }
+.rel-aba.on { background: var(--superficie-2); color: var(--faixa-texto); }
+
+/* ---- filtros: linha limpa, sem caixa ---- */
+.rel-filtros {
+  display: flex; flex-wrap: wrap; gap: 14px; align-items: end;
+  padding-bottom: 14px; margin-bottom: 20px; border-bottom: 1px solid var(--borda);
+}
+.rel-campo { display: grid; gap: 4px; }
+.rel-campo > span {
+  font-family: var(--fonte-display); font-size: 9px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--tinta-fraca);
+}
+.rel-campo input, .rel-campo select {
+  background: var(--asfalto-alto); border: 1px solid var(--borda);
+  border-radius: var(--r-sm); color: var(--tinta); padding: 6px 9px;
+  font-size: 13px; min-width: 132px;
+}
+.rel-presets { display: flex; gap: 3px; margin-left: auto; }
+.rel-presets button {
+  background: none; border: 1px solid var(--borda); border-radius: 999px;
+  padding: 5px 11px; font-size: 12px; color: var(--tinta-media);
+}
+.rel-presets button.on { border-color: var(--faixa-texto); color: var(--faixa-texto); }
+
+.rel-switch {
+  display: flex; align-items: center; gap: 9px; margin-left: auto;
+  background: none; border: 0; padding: 0; font-size: 13px; color: var(--tinta-media);
+}
+.rel-tr {
+  width: 36px; height: 20px; border-radius: 999px; background: var(--borda-forte);
+  position: relative; flex: none; transition: background .15s ease;
+}
+.rel-tr::after {
+  content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--tinta); transition: transform .15s ease;
+}
+.rel-switch.on .rel-tr { background: var(--faixa); }
+.rel-switch.on .rel-tr::after { transform: translateX(16px); background: #16190C; }
+
+/* ---- números de abertura: frase de leitura, não quatro caixas ---- */
+.rel-kpis {
+  display: flex; flex-wrap: wrap; gap: 6px 26px; align-items: baseline;
+  padding-bottom: 20px; border-bottom: 1px solid var(--borda);
+}
+.rel-kpi { display: flex; align-items: baseline; gap: 7px; }
+.rel-kpi b { font-family: var(--fonte-display); font-size: 19px; line-height: 1; }
+.rel-kpi span { font-size: 13px; color: var(--tinta-media); }
+.rel-kpi:first-child { gap: 10px; margin-right: 8px; }
+.rel-kpi:first-child b { font-size: 38px; color: var(--faixa-texto); }
+
+/* ---- seções ---- */
+.rel-bloco { padding-top: 30px; }
+.rel-bloco > h3 {
+  font-family: var(--fonte-display); font-size: 13.5px; margin: 0 0 9px;
+  padding-bottom: 9px; border-bottom: 1px solid var(--borda);
+}
+.rel-sub { font-size: 12px; color: var(--tinta-fraca); margin: 0 0 15px; }
+.rel-dicaclique {
+  font-size: 11.5px; color: var(--tinta-fraca); margin: 12px 0 0;
+  display: flex; align-items: center; gap: 6px;
+}
+.rel-dicaclique::before { content: '☞'; color: var(--faixa-texto); }
+.rel-pt { width: 9px; height: 9px; border-radius: 50%; flex: none; display: inline-block; }
+
+/* ---- linha do tempo ----
+   Sem nome escrito em lugar nenhum da linha do tempo — nem na linha (por
+   contratante), nem dentro do bloco (por obra). Contratante é texto livre no
+   cadastro ("FIRCON", "FIRCON - EPR VIAS DO CAFÉ" convivem de verdade) e
+   qualquer largura de coluna reservada pra isso cedo ou tarde corta um nome
+   feio. A cor já é única por contratante (ver SERIES/corContratante) e a
+   legenda abaixo do gráfico é a única fonte de texto — passar o mouse ou
+   clicar um bloco continua entregando o nome exato e as datas. */
+.rel-tl-eixo {
+  position: relative; height: 16px;
+  border-bottom: 1px solid var(--borda); margin-bottom: 10px;
+}
+.rel-tl-eixo span {
+  position: absolute; transform: translateX(-50%);
+  font-family: var(--fonte-dado); font-size: 10.5px; color: var(--tinta-fraca);
+}
+.rel-tl-linha { margin-bottom: 10px; }
+.rel-tl-trilho {
+  /* A altura vem inline (nº de raias × 26px) — este 26px é só o mínimo de
+     uma linha sem obras concorrentes. */
+  position: relative; height: 26px; min-height: 26px;
+  background: linear-gradient(var(--borda), var(--borda)) no-repeat left bottom / 100% 1px;
+  /* Um período de um dia só fica mais estreito que o próprio respiro do bloco;
+     no último dia do eixo isso o faria vazar uns pixels pra fora do trilho. */
+  overflow: hidden;
+}
+/* O anel de 2px na cor do fundo é o que separa blocos vizinhos sem desenhar
+   uma borda por cima do dado. Sem texto dentro (ver comentário acima), o
+   bloco é só a cor + o anel — identidade e período exatos vêm do hover/clique. */
+.rel-tl-bloco {
+  position: absolute; top: 2px; height: 22px; min-width: 22px; border: 0; border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--asfalto);
+  transition: filter .12s ease;
+}
+.rel-tl-bloco:hover { filter: brightness(1.14); }
+
+/* ---- barras ---- */
+.rel-barras { display: grid; gap: 8px; }
+.rel-barra {
+  display: grid; grid-template-columns: 158px minmax(0, 1fr) 52px; gap: 12px;
+  align-items: center; border: 0; background: none; text-align: left;
+  padding: 4px 6px; margin: 0 -6px; border-radius: var(--r-sm);
+  transition: background .12s ease;
+}
+.rel-barra:hover { background: var(--superficie-2); }
+.rel-barra-rot {
+  display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--tinta-media);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.rel-trilho { height: 20px; display: flex; align-items: center; }
+.rel-fill { height: 18px; border-radius: 0 4px 4px 0; min-width: 3px; }
+.rel-fill-neutro { background: var(--borda-forte); }
+.rel-val { font-family: var(--fonte-dado); font-size: 12px; text-align: right; }
+
+/* ---- colunas ---- */
+.rel-colunas {
+  display: flex; align-items: end; gap: 16px; max-width: 470px;
+  border-bottom: 1px solid var(--borda);
+}
+.rel-col {
+  flex: 1; display: flex; flex-direction: column; justify-content: end; align-items: center;
+  gap: 6px; border: 0; background: none; padding: 6px 0 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0; transition: background .12s ease;
+}
+.rel-col:hover { background: var(--superficie-2); }
+.rel-col-cap { font-family: var(--fonte-dado); font-size: 11.5px; }
+.rel-col-bar { width: 100%; max-width: 24px; border-radius: 4px 4px 0 0; background: var(--serie-1); }
+.rel-col-rot {
+  font-size: 11px; color: var(--tinta-fraca);
+  position: absolute; margin-top: 0;
+}
+.rel-col { position: relative; padding-bottom: 22px; }
+.rel-col .rel-col-rot { bottom: 2px; }
+
+/* ---- listas clicáveis ---- */
+.rel-lista { display: grid; gap: 1px; }
+.rel-item {
+  display: grid; grid-template-columns: 9px minmax(0, 1fr) 52px; gap: 11px;
+  align-items: center; border: 0; background: none; text-align: left;
+  padding: 7px 6px; margin: 0 -6px; border-radius: var(--r-sm);
+  transition: background .12s ease;
+}
+.rel-item-pessoa { grid-template-columns: 26px minmax(0, 210px) minmax(0, 1fr) 44px; }
+.rel-item:hover { background: var(--superficie-2); }
+.rel-item > span { display: grid; min-width: 0; }
+.rel-nm { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rel-fn { font-size: 11px; color: var(--tinta-fraca); }
+
+.rel-legenda {
+  display: flex; flex-wrap: wrap; gap: 14px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--borda);
+}
+.rel-legenda span { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--tinta-media); }
+
+/* ---- painel de detalhe ---- */
+.rel-fundo { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 19; }
+.rel-painel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 396px; max-width: 92vw;
+  background: var(--superficie); border-left: 1px solid var(--borda);
+  box-shadow: var(--sombra-lg); z-index: 20; overflow: auto; padding: 16px;
+  animation: rel-entra .2s cubic-bezier(.2,.7,.3,1);
+}
+@keyframes rel-entra { from { transform: translateX(24px); opacity: 0; } }
+.rel-p-head {
+  display: flex; justify-content: space-between; align-items: start; gap: 10px;
+  padding-bottom: 12px; border-bottom: 1px solid var(--borda);
+}
+.rel-p-ident { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.rel-p-head h4 { font-family: var(--fonte-display); font-size: 14.5px; margin: 0; line-height: 1.35; }
+.rel-p-head p { font-size: 12px; color: var(--tinta-fraca); margin: 3px 0 0; }
+.rel-fechar {
+  background: none; border: 1px solid var(--borda); border-radius: var(--r-sm);
+  width: 27px; height: 27px; flex: none; color: var(--tinta-media); line-height: 1;
+}
+.rel-fechar:hover { border-color: var(--borda-forte); color: var(--tinta); }
+.rel-faixa-cor { height: 3px; border-radius: 2px; margin-top: 10px; }
+.rel-p-body { display: grid; gap: 16px; padding-top: 14px; }
+.rel-p-sec { display: grid; gap: 7px; }
+.rel-p-sec > h5 {
+  display: flex; align-items: center; gap: 6px; margin: 0;
+  font-family: var(--fonte-display); font-size: 9px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--tinta-fraca);
+}
+.rel-linhas { display: grid; gap: 5px; }
+.rel-linha {
+  display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px;
+  padding-bottom: 5px; border-bottom: 1px solid var(--borda);
+}
+.rel-linha:last-child { border-bottom: 0; padding-bottom: 0; }
+.rel-linha span { color: var(--tinta-fraca); }
+.rel-linha b { font-weight: 500; text-align: right; }
+.rel-pessoa {
+  display: flex; align-items: center; gap: 9px; padding: 6px 8px;
+  border-radius: var(--r-sm); background: var(--superficie-2);
+}
+.rel-pessoa .rel-dr, .rel-pbloco .rel-dr {
+  margin-left: auto; flex: none;
+  font-family: var(--fonte-dado); font-size: 11.5px; color: var(--tinta-media);
+}
+.rel-pbloco {
+  background: var(--superficie-2); border-radius: var(--r-sm); padding: 9px;
+  display: grid; gap: 8px; border: 0; text-align: left; width: 100%;
+}
+.rel-pbloco-btn { transition: background .12s ease; }
+.rel-pbloco-btn:hover { background: var(--borda); }
+.rel-pbloco-topo { display: flex; align-items: center; gap: 9px; }
+.rel-datas { display: flex; flex-wrap: wrap; gap: 4px; }
+.rel-chip {
+  font-family: var(--fonte-dado); font-size: 11px; padding: 2px 6px;
+  background: var(--asfalto); border: 1px solid var(--borda); border-radius: 4px;
+  color: var(--tinta-media);
+}
+
+/* ---- balão de leitura dos gráficos ---- */
+.rel-dica {
+  position: fixed; z-index: 40; pointer-events: none;
+  transform: translateY(-100%);
+  background: var(--asfalto-alto); border: 1px solid var(--borda-forte);
+  border-radius: var(--r-sm); box-shadow: var(--sombra-lg);
+  padding: 9px 11px; min-width: 170px;
+}
+.rel-dica-t { font-family: var(--fonte-display); font-size: 12px; margin-bottom: 5px; }
+.rel-dica-l {
+  display: flex; justify-content: space-between; gap: 14px;
+  font-size: 11.5px; color: var(--tinta-media);
+}
+.rel-dica-l b { color: var(--tinta); font-weight: 500; }
+
+@media (max-width: 720px) {
+  .rel-barra { grid-template-columns: 116px minmax(0, 1fr) 44px; gap: 8px; }
+  .rel-item-pessoa { grid-template-columns: 26px minmax(0, 1fr) 44px; }
+  .rel-item-pessoa .rel-trilho { display: none; }
 }
