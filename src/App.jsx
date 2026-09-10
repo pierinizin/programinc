@@ -946,6 +946,17 @@ function AppInner() {
     gravarCampos(equipe, { membroIds: (equipe.membroIds || []).filter((id) => id !== pessoaId) });
   }
 
+  // Clique duplo no encarregado: mesma remoção direta que os demais membros
+  // já têm. A equipe fica sem encarregado (não sem gente — ele também some
+  // dos membros) e a próxima pessoa arrastada para dentro assume o posto,
+  // graças à regra que já existe em onDefinirEncarregado/validar().
+  function removerEncarregado(equipe, pessoaId) {
+    gravarCampos(equipe, {
+      encarregadoId: null,
+      membroIds: (equipe.membroIds || []).filter((id) => id !== pessoaId),
+    });
+  }
+
   function adicionarVeiculo(equipe, veiculoId) {
     const atuais = Array.isArray(equipe.veiculoIds) ? equipe.veiculoIds : [];
     if (atuais.includes(veiculoId)) return;
@@ -2458,6 +2469,7 @@ function AppInner() {
                   onAdicionarMembro={adicionarMembro}
                   onDefinirEncarregado={definirEncarregado}
                   onRemoverMembro={removerMembro}
+                  onRemoverEncarregado={removerEncarregado}
                   onAdicionarVeiculo={adicionarVeiculo}
                   onRemoverVeiculo={removerVeiculo}
                   onCriarRapida={criarProgramacaoRapida}

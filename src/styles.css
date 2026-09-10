@@ -1608,6 +1608,18 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   padding-right: 10px;
   border-right: 1px dashed var(--borda);
 }
+/* Com encarregado, o rótulo virou <button> (clique duplo tira da equipe) —
+   zera a aparência padrão de botão do navegador pra continuar idêntico. */
+button.eq-lider {
+  background: none;
+  border: 0;
+  border-right: 1px dashed var(--borda);
+  padding: 0 10px 0 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.eq-lider:hover { border-right-color: var(--borda-forte); }
 .eq-lider .rot {
   display: block;
   font-family: var(--fonte-display);

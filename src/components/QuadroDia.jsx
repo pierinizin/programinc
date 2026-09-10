@@ -64,6 +64,7 @@ export function QuadroDia({
   onAdicionarMembro,
   onDefinirEncarregado,
   onRemoverMembro,
+  onRemoverEncarregado,
   onAdicionarVeiculo,
   onRemoverVeiculo,
   onCriarRapida,
@@ -733,35 +734,38 @@ export function QuadroDia({
                 </span>
 
                 <span className="eq-equipe">
-                  <span className={`eq-lider${lider && feriasHoje.has(lider.id) ? ' ferias' : ''}`}>
-                    {lider ? (
-                      <>
-                        <Avatar
-                          nome={lider.nome}
-                          url={lider.fotoUrl}
-                          titulo={feriasHoje.has(lider.id)
-                            ? `${lider.nome} — de férias até ${dataCurta(feriasHoje.get(lider.id).ate)}`
-                            : undefined}
-                        />
-                        <span>
-                          <span className="rot">Encarregado</span>
-                          <span
-                            className="nome-lider"
-                            title={feriasHoje.has(lider.id)
-                              ? `De férias até ${dataCurta(feriasHoje.get(lider.id).ate)}`
-                              : lider.nome}
-                          >
-                            {nomeCurto(lider.nome)}
-                          </span>
+                  {lider ? (
+                    <button
+                      type="button"
+                      className={`eq-lider${feriasHoje.has(lider.id) ? ' ferias' : ''}`}
+                      title={podeEditar ? 'Clique duplo para tirar o encarregado da equipe' : undefined}
+                      onDoubleClick={() => podeEditar && onRemoverEncarregado(eq, lider.id)}
+                    >
+                      <Avatar
+                        nome={lider.nome}
+                        url={lider.fotoUrl}
+                        titulo={feriasHoje.has(lider.id)
+                          ? `${lider.nome} — de férias até ${dataCurta(feriasHoje.get(lider.id).ate)}`
+                          : undefined}
+                      />
+                      <span>
+                        <span className="rot">Encarregado</span>
+                        <span
+                          className="nome-lider"
+                          title={feriasHoje.has(lider.id)
+                            ? `De férias até ${dataCurta(feriasHoje.get(lider.id).ate)}`
+                            : lider.nome}
+                        >
+                          {nomeCurto(lider.nome)}
                         </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="avatar vazio" aria-hidden="true" />
-                        <span className="rot rot-erro">Solte alguém aqui</span>
-                      </>
-                    )}
-                  </span>
+                      </span>
+                    </button>
+                  ) : (
+                    <span className="eq-lider">
+                      <span className="avatar vazio" aria-hidden="true" />
+                      <span className="rot rot-erro">Solte alguém aqui</span>
+                    </span>
+                  )}
 
                   <span className="contagem">
                     <b>{total}</b>/{MAX_EQUIPE}
