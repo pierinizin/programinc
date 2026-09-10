@@ -2099,6 +2099,12 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
   border-radius: var(--r-sm);
   background: transparent;
 }
+/* Com mais de um contrato vigente no contratante escolhido, entra uma sexta
+   coluna para o seletor de contrato — só nesse caso, pra não sobrar espaço
+   vazio quando ele nem aparece (contratante sem ambiguidade nenhuma). */
+.criar-linha.com-contrato {
+  grid-template-columns: auto minmax(130px, 1fr) minmax(90px, .85fr) minmax(90px, .85fr) minmax(90px, .85fr) auto;
+}
 .criar-linha.alvo     { border-color: var(--faixa); background: var(--faixa-fundo); border-style: solid; }
 .criar-linha.alvo-nao { border-color: var(--erro-texto); background: var(--erro-fundo); }
 .criar-rot {

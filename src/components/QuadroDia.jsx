@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
 import { iconeVeiculo } from './IconeVeiculo';
-import { contratoAutomatico } from '../lib/contratos';
+import { contratoAutomatico, contratosVigentes } from '../lib/contratos';
 import { derivarDia, disponivelEm } from '../lib/dia';
 import { notificar } from '../lib/dialogos';
 import { MOTIVOS_FALTA, rotuloMotivo } from '../lib/motivos';
@@ -95,7 +95,7 @@ export function QuadroDia({
   const [dlgAberto, setDlgAberto] = useState(false);
   const [dataDestino, setDataDestino] = useState('');
   const [estrategia, setEstrategia] = useState('fila');
-  const [nova, setNova] = useState({ tipoEquipe: '', cidade: '', concessionariaId: '' });
+  const [nova, setNova] = useState({ tipoEquipe: '', cidade: '', concessionariaId: '', contratoId: '' });
   const [criando, setCriando] = useState(false);
   const [menuStatus, setMenuStatus] = useState(null);
   const mapaContratos = useMemo(
@@ -360,6 +360,10 @@ export function QuadroDia({
 
   /* --------------------------- criação rápida --------------------------- */
   const podeCriar = nova.cidade.trim() && nova.concessionariaId && nova.tipoEquipe;
+  const contratosVigentesNova = useMemo(
+    () => contratosVigentes(db.contratos, nova.concessionariaId),
+    [db.contratos, nova.concessionariaId]
+  );
 
   async function criar(encarregadoId = null) {
     if (!podeCriar) return;
@@ -371,14 +375,14 @@ export function QuadroDia({
       // o texto continua indo junto: é ele que sai na exportação
       contratante: conc ? conc.sigla : '',
       concessionaria_id: nova.concessionariaId,
-      // aqui NÃO há campo para escolher entre vários: a criação rápida é de
-      // três campos por definição. Com mais de um contrato vigente, entra sem
-      // contrato e a pessoa completa no lápis — melhor um vazio visível do
-      // que um contrato chutado.
-      contrato_id: contratoAutomatico(db.contratos, nova.concessionariaId),
+      // Campo opcional: com um contrato vigente só, ele entra sozinho sem
+      // perguntar. Com mais de um, o seletor abaixo aparece — mas continua
+      // sem ser obrigatório, pra não travar quem ainda não escolheu, nem
+      // prejudicar quem cria do jeito de sempre.
+      contrato_id: nova.contratoId || contratoAutomatico(db.contratos, nova.concessionariaId),
       encarregadoId,
     });
-    setNova({ tipoEquipe: '', cidade: '', concessionariaId: '' });
+    setNova({ tipoEquipe: '', cidade: '', concessionariaId: '', contratoId: '' });
     setCriando(false);
   }
 
@@ -907,7 +911,10 @@ export function QuadroDia({
           {/* Criar equipe sem sair do quadro. Também é alvo de drop: soltar uma
               pessoa aqui cria a equipe já com ela como encarregada. */}
           {podeEditar && (
-            <div className="criar-linha" data-nova="1">
+            <div
+              className={`criar-linha${contratosVigentesNova.length > 1 ? ' com-contrato' : ''}`}
+              data-nova="1"
+            >
               <span className="criar-rot">Nova equipe</span>
               <select
                 value={nova.tipoEquipe}
@@ -927,7 +934,12 @@ export function QuadroDia({
               />
               <select
                 value={nova.concessionariaId}
-                onChange={(e) => setNova({ ...nova, concessionariaId: e.target.value })}
+                onChange={(e) => {
+                  // Troca de contratante invalida o contrato escolhido antes
+                  // (era de outro contratante) — some junto pra não sobrar
+                  // um contrato errado grudado na equipe nova.
+                  setNova({ ...nova, concessionariaId: e.target.value, contratoId: '' });
+                }}
                 aria-label="Contratante"
               >
                 <option value="">Contratante…</option>
@@ -935,6 +947,22 @@ export function QuadroDia({
                   <option key={c.id} value={c.id}>{c.sigla}</option>
                 ))}
               </select>
+              {/* Só aparece quando há de fato uma escolha a fazer — com um
+                  contrato vigente só (ou nenhum), ele é resolvido sozinho e
+                  um seletor de uma opção não precisava existir. Continua
+                  opcional: dá pra criar a equipe sem mexer aqui. */}
+              {contratosVigentesNova.length > 1 && (
+                <select
+                  value={nova.contratoId}
+                  onChange={(e) => setNova({ ...nova, contratoId: e.target.value })}
+                  aria-label="Contrato"
+                >
+                  <option value="">Contrato…</option>
+                  {contratosVigentesNova.map((k) => (
+                    <option key={k.id} value={k.id}>{k.numero}</option>
+                  ))}
+                </select>
+              )}
               <button
                 className="primary-btn"
                 disabled={!podeCriar || criando}
