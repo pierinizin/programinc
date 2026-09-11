@@ -17,6 +17,13 @@ import { statusValidade, montarUnidades } from '../lib/integracoes';
    O arraste segue o mesmo padrão da Programação (QuadroDia): pointer events
    + um "fantasma" que segue o cursor, em vez do drag-and-drop nativo do
    navegador — mesma sensação em toda a casa.
+
+   UMA PESSOA PODE ESTAR EM VÁRIOS CONTRATOS AO MESMO TEMPO — é o normal do
+   trabalho dela, não uma exceção. Por isso o banco NUNCA esconde quem já
+   está integrado em algum lugar (só mostra quantos contratos/grupos a pessoa
+   já tem, pra você saber quem ainda falta arrastar). O único bloqueio é
+   repetir a MESMA pessoa no MESMO card — aí sim o arraste é recusado, porque
+   já existe uma linha ali.
    ============================================================================= */
 
 function Legenda() {
@@ -167,20 +174,22 @@ export function Integracoes({
     contratos, concessionarias, gruposIntegracao, gruposIntegracaoContratos, integracoes,
   }), [contratos, concessionarias, gruposIntegracao, gruposIntegracaoContratos, integracoes]);
 
-  const idsIntegradosEmAlgumLugar = useMemo(() => {
-    const s = new Set();
-    unidades.forEach((u) => u.integrados.forEach((i) => s.add(i.colaborador_id)));
-    return s;
+  /* Quantos contratos/grupos cada pessoa já tem — vira o selo no banco. Não
+     serve pra esconder ninguém, só pra avisar quem ainda está com zero. */
+  const contagemPorPessoa = useMemo(() => {
+    const m = {};
+    unidades.forEach((u) => u.integrados.forEach((i) => { m[i.colaborador_id] = (m[i.colaborador_id] || 0) + 1; }));
+    return m;
   }, [unidades]);
 
   const termo = busca.trim().toLowerCase();
-  const colaboradoresLivres = useMemo(() => (
+  const colaboradoresBanco = useMemo(() => (
     (colaboradores || [])
-      .filter((c) => c.status === 'ativo' && !idsIntegradosEmAlgumLugar.has(c.id))
+      .filter((c) => c.status === 'ativo')
       .filter((c) => !termo || String(c.nome || '').toLowerCase().includes(termo)
         || String(c.apelido || '').toLowerCase().includes(termo))
       .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'))
-  ), [colaboradores, idsIntegradosEmAlgumLugar, termo]);
+  ), [colaboradores, termo]);
 
   const resumo = useMemo(() => {
     let valido = 0; let vencendo = 0; let vencido = 0;
@@ -206,8 +215,20 @@ export function Integracoes({
   }
 
   function limparAlvo() {
-    if (arrasteRef.current.alvo) arrasteRef.current.alvo.classList.remove('alvo');
+    if (arrasteRef.current.alvo) arrasteRef.current.alvo.classList.remove('alvo', 'alvo-nao');
     arrasteRef.current.alvo = null;
+  }
+
+  function unidadeDoAlvo(alvo) {
+    if (!alvo) return null;
+    return unidades.find((u) => u.id === alvo.dataset.unidade && u.tipo === alvo.dataset.tipo) || null;
+  }
+
+  /* A única coisa que bloqueia o arraste: a pessoa já estar NESTE card. Em
+     qualquer outro card ela pode entrar — integração em vários contratos ao
+     mesmo tempo é o normal, não a exceção. */
+  function jaIntegrado(colaboradorId, unidade) {
+    return Boolean(unidade?.integrados.some((i) => i.colaborador_id === colaboradorId));
   }
 
   function encerrar() {
@@ -250,7 +271,13 @@ export function Integracoes({
     if (st.alvo && st.alvo !== alvo) limparAlvo();
     if (alvo && alvo !== st.alvo) {
       st.alvo = alvo;
-      alvo.classList.add('alvo');
+      const duplicado = jaIntegrado(st.colaborador.id, unidadeDoAlvo(alvo));
+      alvo.classList.add(duplicado ? 'alvo-nao' : 'alvo');
+      if (fantasmaRef.current) {
+        fantasmaRef.current.dataset.ok = duplicado ? 'nao' : 'sim';
+        fantasmaRef.current.querySelector('.veredito').textContent = duplicado ? '✕' : '✓';
+        fantasmaRef.current.querySelector('.motivo').textContent = duplicado ? 'já integrado aqui' : 'integrar aqui';
+      }
     }
   }
 
@@ -259,8 +286,8 @@ export function Integracoes({
     if (!st.colaborador || !st.ativo) return encerrar();
     const alvo = alvoSob(ev.clientX, ev.clientY);
     if (alvo) {
-      const unidade = unidades.find((u) => u.id === alvo.dataset.unidade && u.tipo === alvo.dataset.tipo);
-      if (unidade) onIntegrar(st.colaborador.id, unidade);
+      const unidade = unidadeDoAlvo(alvo);
+      if (unidade && !jaIntegrado(st.colaborador.id, unidade)) onIntegrar(st.colaborador.id, unidade);
     }
     encerrar();
   }
@@ -299,28 +326,36 @@ export function Integracoes({
           />
         </div>
         <div className="banco-lista">
-          {colaboradoresLivres.length === 0 && (
+          {colaboradoresBanco.length === 0 && (
             <p className="small-muted" style={{ padding: '14px' }}>
-              {termo ? 'Ninguém encontrado.' : 'Todo mundo já está integrado em algum lugar.'}
+              {termo ? 'Ninguém encontrado.' : 'Nenhum colaborador ativo cadastrado.'}
             </p>
           )}
-          {colaboradoresLivres.map((c) => (
-            <div
-              key={c.id}
-              className="pessoa"
-              onPointerDown={(e) => aoPressionar(e, c)}
-              onPointerMove={aoMover}
-              onPointerUp={aoSoltar}
-              onPointerCancel={encerrar}
-              title={podeEditar ? 'Arraste para um contrato ou grupo' : c.nome}
-            >
-              <Avatar nome={c.nome} url={c.fotoUrl} tamanho="small" />
-              <span className="pessoa-nome">
-                <b>{c.apelido || c.nome}</b>
-                <span>{c.funcao}</span>
-              </span>
-            </div>
-          ))}
+          {colaboradoresBanco.map((c) => {
+            const n = contagemPorPessoa[c.id] || 0;
+            return (
+              <div
+                key={c.id}
+                className="pessoa"
+                onPointerDown={(e) => aoPressionar(e, c)}
+                onPointerMove={aoMover}
+                onPointerUp={aoSoltar}
+                onPointerCancel={encerrar}
+                title={podeEditar
+                  ? 'Arraste para um contrato ou grupo — pode integrar em mais de um'
+                  : c.nome}
+              >
+                <Avatar nome={c.nome} url={c.fotoUrl} tamanho="small" />
+                <span className="pessoa-nome">
+                  <b>{c.apelido || c.nome}</b>
+                  <span>{c.funcao}</span>
+                </span>
+                {n > 0 && (
+                  <span className="marca-alocada">{n} contrato{n === 1 ? '' : 's'}</span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </aside>
 
