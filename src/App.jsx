@@ -6,6 +6,8 @@ import { QuadroDia } from './components/QuadroDia';
 import { Documentos } from './components/Documentos';
 import { Contratos } from './components/Contratos';
 import { contratosVigentes, contratoAutomatico } from './lib/contratos';
+import { Integracoes } from './components/Integracoes';
+import { mesclarIntegrados, validadePadrao } from './lib/integracoes';
 import { Apontamentos } from './components/Apontamentos';
 import { Relatorios } from './components/Relatorios';
 import { FichaColaborador } from './components/FichaColaborador';
@@ -132,6 +134,11 @@ function normalizeDb(data) {
      ? [...data.concessionarias].sort((a, b) => String(a.sigla || '').localeCompare(String(b.sigla || ''), 'pt-BR'))
      : [],
    contratos: Array.isArray(data?.contratos) ? data.contratos : [],
+   gruposIntegracao: Array.isArray(data?.gruposIntegracao)
+     ? [...data.gruposIntegracao].sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'))
+     : [],
+   gruposIntegracaoContratos: Array.isArray(data?.gruposIntegracaoContratos) ? data.gruposIntegracaoContratos : [],
+   integracoes: Array.isArray(data?.integracoes) ? data.integracoes : [],
    programacoes: Array.isArray(data?.programacoes)
      ? data.programacoes.map((item) => ({
          ...item,
@@ -273,7 +280,7 @@ function AppInner() {
   const [isRecovering, setIsRecovering] = useState(false);
   const [novaSenha, setNovaSenha] = useState('');
   
-  const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [], ferias: [], historicoStatus: [], patio: [], perfis: [], concessionarias: [], contratos: [] });
+  const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [], ferias: [], historicoStatus: [], patio: [], perfis: [], concessionarias: [], contratos: [], gruposIntegracao: [], gruposIntegracaoContratos: [], integracoes: [] });
   const [page, setPage] = useState('programacao'); 
   const [selectedDate, setSelectedDate] = useState(today());
   const [search, setSearch] = useState('');
@@ -314,7 +321,7 @@ function AppInner() {
 
   const fetchDatabase = async () => {
     const [resCols, resVeics, resProgs, resFaltas, resFerias, resHistorico, resPatio, resPerfis,
-           resConcs, resCtrs] = await Promise.all([
+           resConcs, resCtrs, resGrupos, resGruposCtrs, resIntegracoes] = await Promise.all([
       supabase.from('colaboradores').select('*'),
       supabase.from('veiculos').select('*'),
       supabase.from('programacoes').select('*'),
@@ -324,7 +331,10 @@ function AppInner() {
       supabase.from('patio').select('*'),
       supabase.from('perfis').select('*'),
       supabase.from('concessionarias').select('*'),
-      supabase.from('contratos').select('*')
+      supabase.from('contratos').select('*'),
+      supabase.from('grupos_integracao').select('*'),
+      supabase.from('grupos_integracao_contratos').select('*'),
+      supabase.from('integracoes').select('*')
     ]);
 
     // Com RLS ligada, uma tabela sem permissão volta com error e data null.
@@ -335,7 +345,7 @@ function AppInner() {
     // inteira. Sem histórico, disponivelEm() (lib/dia.js) cai de volta no
     // status simples de agora, então a Programação continua funcionando.
     [resCols, resVeics, resProgs, resFaltas, resFerias, resHistorico, resPatio, resPerfis,
-     resConcs, resCtrs].forEach((res) => {
+     resConcs, resCtrs, resGrupos, resGruposCtrs, resIntegracoes].forEach((res) => {
       if (res?.error) console.error('Erro ao carregar dados:', res.error.message);
     });
 
@@ -363,7 +373,10 @@ function AppInner() {
       patio: resPatio?.data || [],
       perfis: resPerfis?.data || [],
       concessionarias: resConcs?.data || [],
-      contratos: resCtrs?.data || []
+      contratos: resCtrs?.data || [],
+      gruposIntegracao: resGrupos?.data || [],
+      gruposIntegracaoContratos: resGruposCtrs?.data || [],
+      integracoes: resIntegracoes?.data || []
     }));
 
     // segunda etapa, sem bloquear: assina o que ainda não estava em cache
@@ -469,7 +482,7 @@ function AppInner() {
     fetchDatabaseRef.current();
 
     const canal = supabase.channel('mudancas-incovia');
-    ['colaboradores', 'veiculos', 'programacoes', 'faltas', 'ferias', 'colaboradores_status_historico', 'patio', 'perfis'].forEach((table) => {
+    ['colaboradores', 'veiculos', 'programacoes', 'faltas', 'ferias', 'colaboradores_status_historico', 'patio', 'perfis', 'grupos_integracao', 'grupos_integracao_contratos', 'integracoes'].forEach((table) => {
       canal.on('postgres_changes', { event: '*', schema: 'public', table }, () => agendarFetchRef.current());
     });
     canal.subscribe();
@@ -687,6 +700,107 @@ function AppInner() {
     const res = await supabase.from('programacoes')
       .update({ concessionaria_id: conc.id, contratante: conc.sigla }).in('id', ids);
     if (res.error) { console.error('Vincular:', res.error.message); return false; }
+    await fetchDatabase();
+    return true;
+  }
+
+  /* ------------------------------------------------------------------------
+     Integrações
+     ------------------------------------------------------------------------ */
+  /* Arrastou do banco pra dentro de um card: grava uma linha nova ligada ao
+     contrato OU ao grupo (nunca aos dois — é o que o card representa). */
+  async function integrarColaborador(colaboradorId, unidade) {
+    const payload = {
+      colaborador_id: colaboradorId,
+      contrato_id: unidade.tipo === 'contrato' ? unidade.id : null,
+      grupo_id: unidade.tipo === 'grupo' ? unidade.id : null,
+      validade: validadePadrao(),
+    };
+    const res = await supabase.from('integracoes').insert([payload]).select();
+    if (res.error) { reportarErro('Integrações', res.error); return false; }
+    await fetchDatabase();
+    return true;
+  }
+
+  /* Duplo clique no card: tira a pessoa dali. Não pede confirmação de
+     propósito — é o mesmo tipo de ação que tirar alguém de uma equipe do dia,
+     não uma exclusão de cadastro. */
+  async function removerIntegracao(integ) {
+    const res = await supabase.from('integracoes').delete().eq('id', integ.id);
+    if (res.error) { reportarErro('Integrações', res.error); return false; }
+    await fetchDatabase();
+    return true;
+  }
+
+  async function salvarValidadeIntegracao(integ, novaValidadeIso) {
+    const res = await supabase.from('integracoes')
+      .update({ validade: novaValidadeIso }).eq('id', integ.id).select();
+    if (res.error || !res.data?.length) { reportarErro('Integrações', res.error); return false; }
+    await fetchDatabase();
+    return true;
+  }
+
+  /* Junta N contratos soltos num grupo novo. Quem já estava integrado em
+     qualquer um deles entra no grupo com a validade mais longa entre os
+     contratos juntados — ninguém perde tempo de integração por causa de como
+     o cadastro estava organizado antes. As linhas antigas, ligadas aos
+     contratos, saem: a partir daqui a integração é do grupo. */
+  async function criarGrupoIntegracao(nome, contratoIds) {
+    const gRes = await supabase.from('grupos_integracao').insert([{ nome }]).select();
+    if (gRes.error || !gRes.data?.length) { reportarErro('Integrações', gRes.error); return false; }
+    const grupoId = gRes.data[0].id;
+
+    const vinculos = contratoIds.map((contrato_id) => ({ grupo_id: grupoId, contrato_id }));
+    const vRes = await supabase.from('grupos_integracao_contratos').insert(vinculos).select();
+    if (vRes.error) {
+      reportarErro('Integrações', vRes.error);
+      await supabase.from('grupos_integracao').delete().eq('id', grupoId);
+      return false;
+    }
+
+    const integradosAntigos = db.integracoes.filter((i) => contratoIds.includes(i.contrato_id));
+    const mesclados = mesclarIntegrados([integradosAntigos]);
+    if (mesclados.length) {
+      const novasLinhas = mesclados.map((i) => ({
+        colaborador_id: i.colaborador_id, grupo_id: grupoId,
+        data_integracao: i.data_integracao, validade: i.validade, observacao: i.observacao || null,
+      }));
+      const uRes = await supabase.from('integracoes')
+        .upsert(novasLinhas, { onConflict: 'colaborador_id,grupo_id' }).select();
+      if (uRes.error) { reportarErro('Integrações', uRes.error); await fetchDatabase(); return false; }
+
+      const dRes = await supabase.from('integracoes').delete().in('contrato_id', contratoIds);
+      if (dRes.error) { reportarErro('Integrações', dRes.error); await fetchDatabase(); return false; }
+    }
+
+    await fetchDatabase();
+    return true;
+  }
+
+  /* Desfaz um grupo: cada contrato volta a ser solto, e quem estava integrado
+     no grupo continua integrado em TODOS os contratos que saíram dele — copia
+     a mesma validade pra cada um, em vez de escolher um e deixar o resto sem
+     nada. */
+  async function desfazerGrupoIntegracao(unidade) {
+    if (!(await confirmar({
+      titulo: `Desfazer o grupo "${unidade.titulo}"?`,
+      mensagem: 'Os contratos voltam a ser soltos. Quem está integrado continua integrado em cada um deles.',
+      textoConfirmar: 'Desfazer',
+    }))) return false;
+
+    const contratoIds = unidade.contratos.map((k) => k.id);
+    if (unidade.integrados.length && contratoIds.length) {
+      const copias = contratoIds.flatMap((contrato_id) => unidade.integrados.map((i) => ({
+        colaborador_id: i.colaborador_id, contrato_id,
+        data_integracao: i.data_integracao, validade: i.validade, observacao: i.observacao || null,
+      })));
+      const uRes = await supabase.from('integracoes')
+        .upsert(copias, { onConflict: 'colaborador_id,contrato_id' }).select();
+      if (uRes.error) { reportarErro('Integrações', uRes.error); return false; }
+    }
+
+    const dRes = await supabase.from('grupos_integracao').delete().eq('id', unidade.id);
+    if (dRes.error) { reportarErro('Integrações', dRes.error); await fetchDatabase(); return false; }
     await fetchDatabase();
     return true;
   }
@@ -2041,6 +2155,9 @@ function AppInner() {
              <NavButton active={page === 'veiculos'} onClick={() => changePage('veiculos')}>
                Veículos
              </NavButton>
+             <NavButton active={page === 'integracoes'} onClick={() => changePage('integracoes')}>
+               Integrações
+             </NavButton>
              <NavButton active={page === 'apontamentos'} onClick={() => changePage('apontamentos')}>
                Apontamentos
              </NavButton>
@@ -2208,6 +2325,32 @@ function AppInner() {
                   onExcluirConcessionarias={excluirConcessionarias}
                   onJuntarConcessionarias={juntarConcessionarias}
                   onVincularTexto={vincularTexto}
+                />
+              </>
+            )}
+
+            {page === 'integracoes' && (userRole === 'admin' || userRole === 'editor') && (
+              <>
+                <div className="page-head">
+                  <div>
+                    <h2>Integrações</h2>
+                    <p>Quem já passou pela integração de segurança de cada contrato</p>
+                  </div>
+                </div>
+                <Integracoes
+                  colaboradores={db.colaboradores}
+                  contratos={db.contratos}
+                  concessionarias={db.concessionarias}
+                  gruposIntegracao={db.gruposIntegracao}
+                  gruposIntegracaoContratos={db.gruposIntegracaoContratos}
+                  integracoes={db.integracoes}
+                  podeEditar={userRole === 'admin' || userRole === 'editor'}
+                  ehAdmin={userRole === 'admin'}
+                  onIntegrar={integrarColaborador}
+                  onRemoverIntegracao={removerIntegracao}
+                  onSalvarValidade={salvarValidadeIntegracao}
+                  onCriarGrupo={criarGrupoIntegracao}
+                  onDesfazerGrupo={desfazerGrupoIntegracao}
                 />
               </>
             )}

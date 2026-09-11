@@ -3178,3 +3178,112 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
   .rel-item-pessoa { grid-template-columns: 26px minmax(0, 1fr) 44px; }
   .rel-item-pessoa .rel-trilho { display: none; }
 }
+
+
+/* ==========================================================================
+   INTEGRAÇÕES
+   --------------------------------------------------------------------------
+   Mesma dupla banco+quadro da Programação (arraste com pointer events, não
+   drag-and-drop nativo), mas aqui o "quadro" é uma grade de cards em vez de
+   colunas por horário — não existe "dia", só "quem está integrado onde agora".
+   ========================================================================== */
+.it-corpo {
+  display: grid;
+  grid-template-columns: 252px minmax(0, 1fr);
+  height: calc(100vh - 300px);
+  min-height: 420px;
+}
+.it-corpo > .banco { min-height: 0; }
+
+.it-principal { min-height: 0; overflow-y: auto; padding: 4px 4px 20px 18px; }
+
+.it-topo {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 10px; margin-bottom: 14px;
+}
+.pastilha.ok { border-color: var(--ok-texto); background: var(--ok-fundo); }
+.pastilha.ok b { color: var(--ok-texto); }
+
+.it-legenda { display: flex; gap: 14px; flex-wrap: wrap; }
+.it-legenda-item {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  font-size: 11.5px; color: var(--tinta-media);
+}
+.it-legenda-item small { color: var(--tinta-fraca); }
+.it-bola { width: 8px; height: 8px; border-radius: 50%; align-self: center; flex: none; }
+.it-bola.valido   { background: var(--ok); }
+.it-bola.vencendo { background: var(--faixa); }
+.it-bola.vencido  { background: var(--erro); }
+
+.it-check { position: static; flex: none; }
+.it-check[aria-checked="true"] { background: var(--faixa); border-color: var(--faixa); color: #16191C; }
+
+.it-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+.it-card {
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: var(--r-md);
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+/* Azul de "situação", não de risco/resultado — o mesmo raciocínio do --campo
+   na Programação: ser um grupo não é bom nem ruim, é só um jeito de organizar. */
+.it-card-grupo { border-left: 3px solid var(--campo); }
+
+.it-card-cab { display: flex; align-items: flex-start; gap: 8px; }
+.it-card-titulo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.it-card-titulo b { font: 600 13.5px var(--fonte-display); }
+.it-card-contratantes { display: flex; flex-wrap: wrap; gap: 8px; }
+.it-tag-contratante {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--fonte-dado); font-size: 11px; color: var(--tinta-media);
+}
+.it-tag-contratante i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+
+.it-zona {
+  border: 1.5px dashed var(--borda-forte);
+  border-radius: var(--r-sm);
+  padding: 9px;
+  min-height: 54px;
+  display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start;
+  background: var(--asfalto-alto);
+  transition: border-color .12s, background .12s;
+}
+.it-zona.alvo { border-color: var(--ok-texto); background: var(--ok-fundo); border-style: solid; }
+.it-zona-vazia { font-size: 11.5px; color: var(--tinta-fraca); font-style: italic; align-self: center; }
+
+.it-integrado {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 8px 4px 4px;
+  border-radius: 999px;
+  background: var(--superficie-2);
+  box-shadow: inset 0 0 0 1px var(--borda);
+}
+.it-integrado.valido   { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 40%, transparent); }
+.it-integrado.vencendo { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--faixa) 50%, transparent); }
+.it-integrado.vencido  { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--erro) 50%, transparent); }
+.it-integrado-alvo { display: inline-flex; align-items: center; gap: 6px; }
+.it-integrado-nome { font-size: 12px; font-weight: 500; white-space: nowrap; }
+.it-integrado-data {
+  font-family: var(--fonte-dado); font-size: 10.5px; color: var(--tinta-fraca);
+  padding: 0; border: 0; background: transparent; white-space: nowrap;
+}
+.it-integrado-data:not(:disabled) { cursor: pointer; text-decoration: underline dotted; }
+.it-integrado.valido .it-integrado-data   { color: var(--ok-texto); }
+.it-integrado.vencendo .it-integrado-data { color: var(--faixa-texto); }
+.it-integrado.vencido .it-integrado-data  { color: var(--erro-texto); }
+.it-integrado-data-input {
+  font-family: var(--fonte-dado); font-size: 10.5px;
+  border: 1px solid var(--borda-forte); border-radius: 4px;
+  background: var(--superficie); color: var(--tinta); padding: 1px 3px;
+}
+
+@media (max-width: 900px) {
+  .it-corpo { grid-template-columns: 1fr; height: auto; }
+  .it-corpo > .banco { border-right: 0; border-bottom: 1px solid var(--borda); max-height: 260px; }
+  .it-grade { grid-template-columns: 1fr; }
+}
