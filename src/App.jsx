@@ -319,7 +319,28 @@ function AppInner() {
     }
   };
 
+  /* Duas buscas podem estar em voo ao mesmo tempo — um agendarFetch() daqui e
+     outro do realtime, por exemplo — e a REDE não garante que a mais nova
+     volta primeiro. Sem controle, a mais lenta podia chegar por último e
+     apagar por cima uma atualização otimista mais recente: era o "arrasta e
+     volta" que você viu.
+
+     Mas só ordenar busca-contra-busca não bastava: uma busca disparada ANTES
+     de um clique (então carimbada com um número mais baixo) ainda podia voltar
+     DEPOIS da atualização otimista daquele clique e nunca ter sido superada
+     por OUTRA busca ainda — nesse caso ela "vencia" o carimbo e apagava por
+     cima o que a tela já mostrava (era o "sai, volta, dai sai de vez" na
+     remoção). Por isso toda atualização otimista das Integrações também
+     avança este mesmo contador, através de avancarVersaoEstado(): ela conta
+     como "estado mais novo que qualquer busca anterior", mesmo sem ser ela
+     própria uma busca. Só a busca (ou ação) com o número mais alto tem
+     permissão de gravar no estado — as atrasadas são descartadas em
+     silêncio. */
+  const fetchSeqRef = useRef(0);
+  const avancarVersaoEstado = () => { fetchSeqRef.current += 1; };
+
   const fetchDatabase = async () => {
+    const minhaVez = ++fetchSeqRef.current;
     const [resCols, resVeics, resProgs, resFaltas, resFerias, resHistorico, resPatio, resPerfis,
            resConcs, resCtrs, resGrupos, resGruposCtrs, resIntegracoes] = await Promise.all([
       supabase.from('colaboradores').select('*'),
@@ -363,6 +384,11 @@ function AppInner() {
       fotoUrl: c.foto_path ? mapaAgora[c.foto_path] || null : null,
     }));
 
+    // Uma busca mais nova já foi disparada (e pode até já ter chegado) —
+    // esta aqui está desatualizada antes mesmo de terminar. Aplicar agora
+    // seria voltar no tempo.
+    if (minhaVez !== fetchSeqRef.current) return;
+
     setDb(normalizeDb({
       colaboradores: colaboradoresComFoto,
       veiculos: resVeics.data || [],
@@ -386,6 +412,7 @@ function AppInner() {
     if (faltando.length) {
       assinarFotos(faltando).then((novas) => {
         if (!Object.keys(novas).length) return;
+        if (minhaVez !== fetchSeqRef.current) return;
         setDb((atual) => ({
           ...atual,
           colaboradores: atual.colaboradores.map((c) => (
@@ -720,20 +747,37 @@ function AppInner() {
       validade: validadePadrao(),
     };
     const anterior = db.integracoes;
+    const idProvisorio = `tmp-${Date.now()}`;
+    avancarVersaoEstado();
     setDb((atual) => ({
       ...atual,
       integracoes: [
         ...atual.integracoes,
-        { ...payload, id: `tmp-${Date.now()}`, data_integracao: today(), observacao: null },
+        { ...payload, id: idProvisorio, data_integracao: today(), observacao: null },
       ],
     }));
 
     const res = await supabase.from('integracoes').insert([payload]).select();
     if (res.error || !res.data?.length) {
+      avancarVersaoEstado();
       setDb((atual) => ({ ...atual, integracoes: anterior }));
       reportarErro('Integrações', res.error);
       return false;
     }
+    /* Mesmo cuidado do inserirOtimista(): troca a linha provisória pela linha
+       real (com o id que o banco gerou) assim que a resposta chega. Sem isto,
+       um duplo clique pra remover ANTES desse retorno mandava um DELETE
+       filtrando pelo id "tmp-..." — que não existe no banco. O delete não
+       dava erro (só não achava nada pra apagar), então a tela achava que
+       tinha funcionado; a pessoa sumia na hora mas a linha de verdade
+       continuava lá, e reaparecia no fetch seguinte. Era o "sai, volta, dai
+       sai de vez" que você viu. */
+    const real = res.data[0];
+    avancarVersaoEstado();
+    setDb((atual) => ({
+      ...atual,
+      integracoes: atual.integracoes.map((i) => (i.id === idProvisorio ? real : i)),
+    }));
     agendarFetch();
     return true;
   }
@@ -743,12 +787,18 @@ function AppInner() {
      não uma exclusão de cadastro. */
   async function removerIntegracao(integ) {
     const anterior = db.integracoes;
+    avancarVersaoEstado();
     setDb((atual) => ({ ...atual, integracoes: atual.integracoes.filter((i) => i.id !== integ.id) }));
 
-    const res = await supabase.from('integracoes').delete().eq('id', integ.id);
-    if (res.error) {
+    const res = await supabase.from('integracoes').delete().eq('id', integ.id).select();
+    if (res.error || !res.data?.length) {
+      // !res.data?.length sem erro = nenhuma linha com esse id (ex.: RLS
+      // barrou, ou é a mesma corrida de id provisório que integrarColaborador
+      // agora evita) — sem checar isso, a tela achava que tinha apagado e a
+      // pessoa reaparecia sozinha no fetch seguinte.
+      avancarVersaoEstado();
       setDb((atual) => ({ ...atual, integracoes: anterior }));
-      reportarErro('Integrações', res.error);
+      if (res.error) reportarErro('Integrações', res.error); else semPermissao('remover esta integração');
       return false;
     }
     agendarFetch();
@@ -757,6 +807,7 @@ function AppInner() {
 
   async function salvarValidadeIntegracao(integ, novaValidadeIso) {
     const anterior = db.integracoes;
+    avancarVersaoEstado();
     setDb((atual) => ({
       ...atual,
       integracoes: atual.integracoes.map((i) => (
@@ -767,6 +818,7 @@ function AppInner() {
     const res = await supabase.from('integracoes')
       .update({ validade: novaValidadeIso }).eq('id', integ.id).select();
     if (res.error || !res.data?.length) {
+      avancarVersaoEstado();
       setDb((atual) => ({ ...atual, integracoes: anterior }));
       if (res.error) reportarErro('Integrações', res.error); else semPermissao('editar esta validade');
       return false;
@@ -815,6 +867,7 @@ function AppInner() {
       if (dRes.error) { reportarErro('Integrações', dRes.error); await fetchDatabase(); return false; }
     }
 
+    avancarVersaoEstado();
     setDb((atual) => ({
       ...atual,
       gruposIntegracao: [...atual.gruposIntegracao, grupo],
@@ -856,6 +909,7 @@ function AppInner() {
     const dRes = await supabase.from('grupos_integracao').delete().eq('id', unidade.id);
     if (dRes.error) { reportarErro('Integrações', dRes.error); await fetchDatabase(); return false; }
 
+    avancarVersaoEstado();
     setDb((atual) => ({
       ...atual,
       gruposIntegracao: atual.gruposIntegracao.filter((g) => g.id !== unidade.id),

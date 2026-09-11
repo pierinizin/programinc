@@ -3236,7 +3236,12 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
 
 .it-card-cab { display: flex; align-items: flex-start; gap: 8px; }
 .it-card-titulo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.it-card-titulo b { font: 600 13.5px var(--fonte-display); }
+.it-card-titulo b {
+  font: 600 13.5px var(--fonte-display);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .it-card-contratantes { display: flex; flex-wrap: wrap; gap: 8px; }
 .it-tag-contratante {
   display: inline-flex; align-items: center; gap: 5px;
@@ -3263,12 +3268,26 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
   border-radius: 999px;
   background: var(--superficie-2);
   box-shadow: inset 0 0 0 1px var(--borda);
+  /* Sem isso o chip crescia pelo tamanho do nome (nowrap não quebra linha) e
+     furava a borda direita do card num nome comprido — "o nome sai da caixa".
+     100% do .it-zona (o próprio pai) é o teto; min-width:0 é o que deixa um
+     item de flex-wrap encolher abaixo do seu conteúdo em vez de vazar. */
+  max-width: 100%;
+  min-width: 0;
 }
 .it-integrado.valido   { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 40%, transparent); }
 .it-integrado.vencendo { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--faixa) 50%, transparent); }
 .it-integrado.vencido  { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--erro) 50%, transparent); }
-.it-integrado-alvo { display: inline-flex; align-items: center; gap: 6px; }
-.it-integrado-nome { font-size: 12px; font-weight: 500; white-space: nowrap; }
+.it-integrado-alvo { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 190px; }
+.it-integrado-nome {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .it-integrado-data {
   font-family: var(--fonte-dado); font-size: 10.5px; color: var(--tinta-fraca);
   padding: 0; border: 0; background: transparent; white-space: nowrap;
