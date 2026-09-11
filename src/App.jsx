@@ -705,7 +705,10 @@ function AppInner() {
   }
 
   /* ------------------------------------------------------------------------
-     Integrações
+     Integrações — mesmo update otimista do quadro (ver gravarCampos): a tela
+     muda na hora e o servidor confirma depois, em vez de travar esperando um
+     fetchDatabase() inteiro (13 selects) pra cada arraste. Era esse o delay
+     chato — a lógica em si já estava certa, só a espera era desnecessária.
      ------------------------------------------------------------------------ */
   /* Arrastou do banco pra dentro de um card: grava uma linha nova ligada ao
      contrato OU ao grupo (nunca aos dois — é o que o card representa). */
@@ -716,9 +719,22 @@ function AppInner() {
       grupo_id: unidade.tipo === 'grupo' ? unidade.id : null,
       validade: validadePadrao(),
     };
+    const anterior = db.integracoes;
+    setDb((atual) => ({
+      ...atual,
+      integracoes: [
+        ...atual.integracoes,
+        { ...payload, id: `tmp-${Date.now()}`, data_integracao: today(), observacao: null },
+      ],
+    }));
+
     const res = await supabase.from('integracoes').insert([payload]).select();
-    if (res.error) { reportarErro('Integrações', res.error); return false; }
-    await fetchDatabase();
+    if (res.error || !res.data?.length) {
+      setDb((atual) => ({ ...atual, integracoes: anterior }));
+      reportarErro('Integrações', res.error);
+      return false;
+    }
+    agendarFetch();
     return true;
   }
 
@@ -726,17 +742,36 @@ function AppInner() {
      propósito — é o mesmo tipo de ação que tirar alguém de uma equipe do dia,
      não uma exclusão de cadastro. */
   async function removerIntegracao(integ) {
+    const anterior = db.integracoes;
+    setDb((atual) => ({ ...atual, integracoes: atual.integracoes.filter((i) => i.id !== integ.id) }));
+
     const res = await supabase.from('integracoes').delete().eq('id', integ.id);
-    if (res.error) { reportarErro('Integrações', res.error); return false; }
-    await fetchDatabase();
+    if (res.error) {
+      setDb((atual) => ({ ...atual, integracoes: anterior }));
+      reportarErro('Integrações', res.error);
+      return false;
+    }
+    agendarFetch();
     return true;
   }
 
   async function salvarValidadeIntegracao(integ, novaValidadeIso) {
+    const anterior = db.integracoes;
+    setDb((atual) => ({
+      ...atual,
+      integracoes: atual.integracoes.map((i) => (
+        i.id === integ.id ? { ...i, validade: novaValidadeIso } : i
+      )),
+    }));
+
     const res = await supabase.from('integracoes')
       .update({ validade: novaValidadeIso }).eq('id', integ.id).select();
-    if (res.error || !res.data?.length) { reportarErro('Integrações', res.error); return false; }
-    await fetchDatabase();
+    if (res.error || !res.data?.length) {
+      setDb((atual) => ({ ...atual, integracoes: anterior }));
+      if (res.error) reportarErro('Integrações', res.error); else semPermissao('editar esta validade');
+      return false;
+    }
+    agendarFetch();
     return true;
   }
 
@@ -744,43 +779,60 @@ function AppInner() {
      qualquer um deles entra no grupo com a validade mais longa entre os
      contratos juntados — ninguém perde tempo de integração por causa de como
      o cadastro estava organizado antes. As linhas antigas, ligadas aos
-     contratos, saem: a partir daqui a integração é do grupo. */
+     contratos, saem: a partir daqui a integração é do grupo.
+
+     Ação de admin, rara — não precisa de update otimista antes do primeiro
+     insert (o id do grupo só existe depois que o servidor responde), mas
+     aplica o resultado direto ao voltar, em vez de disparar outro
+     fetchDatabase() inteiro por cima do que já teve que esperar. */
   async function criarGrupoIntegracao(nome, contratoIds) {
     const gRes = await supabase.from('grupos_integracao').insert([{ nome }]).select();
     if (gRes.error || !gRes.data?.length) { reportarErro('Integrações', gRes.error); return false; }
-    const grupoId = gRes.data[0].id;
+    const grupo = gRes.data[0];
 
-    const vinculos = contratoIds.map((contrato_id) => ({ grupo_id: grupoId, contrato_id }));
-    const vRes = await supabase.from('grupos_integracao_contratos').insert(vinculos).select();
+    const vinculosPayload = contratoIds.map((contrato_id) => ({ grupo_id: grupo.id, contrato_id }));
+    const vRes = await supabase.from('grupos_integracao_contratos').insert(vinculosPayload).select();
     if (vRes.error) {
       reportarErro('Integrações', vRes.error);
-      await supabase.from('grupos_integracao').delete().eq('id', grupoId);
+      await supabase.from('grupos_integracao').delete().eq('id', grupo.id);
       return false;
     }
 
     const integradosAntigos = db.integracoes.filter((i) => contratoIds.includes(i.contrato_id));
     const mesclados = mesclarIntegrados([integradosAntigos]);
+    let novasLinhas = [];
     if (mesclados.length) {
-      const novasLinhas = mesclados.map((i) => ({
-        colaborador_id: i.colaborador_id, grupo_id: grupoId,
+      const upsertPayload = mesclados.map((i) => ({
+        colaborador_id: i.colaborador_id, grupo_id: grupo.id,
         data_integracao: i.data_integracao, validade: i.validade, observacao: i.observacao || null,
       }));
       const uRes = await supabase.from('integracoes')
-        .upsert(novasLinhas, { onConflict: 'colaborador_id,grupo_id' }).select();
+        .upsert(upsertPayload, { onConflict: 'colaborador_id,grupo_id' }).select();
       if (uRes.error) { reportarErro('Integrações', uRes.error); await fetchDatabase(); return false; }
+      novasLinhas = uRes.data?.length ? uRes.data : upsertPayload;
 
       const dRes = await supabase.from('integracoes').delete().in('contrato_id', contratoIds);
       if (dRes.error) { reportarErro('Integrações', dRes.error); await fetchDatabase(); return false; }
     }
 
-    await fetchDatabase();
+    setDb((atual) => ({
+      ...atual,
+      gruposIntegracao: [...atual.gruposIntegracao, grupo],
+      gruposIntegracaoContratos: [...atual.gruposIntegracaoContratos, ...(vRes.data?.length ? vRes.data : vinculosPayload)],
+      integracoes: [
+        ...atual.integracoes.filter((i) => !contratoIds.includes(i.contrato_id)),
+        ...novasLinhas,
+      ],
+    }));
+    agendarFetch();
     return true;
   }
 
   /* Desfaz um grupo: cada contrato volta a ser solto, e quem estava integrado
      no grupo continua integrado em TODOS os contratos que saíram dele — copia
      a mesma validade pra cada um, em vez de escolher um e deixar o resto sem
-     nada. */
+     nada. Mesmo raciocínio de criarGrupoIntegracao: aplica o resultado ao
+     voltar, sem outro fetchDatabase() inteiro por cima. */
   async function desfazerGrupoIntegracao(unidade) {
     if (!(await confirmar({
       titulo: `Desfazer o grupo "${unidade.titulo}"?`,
@@ -789,19 +841,31 @@ function AppInner() {
     }))) return false;
 
     const contratoIds = unidade.contratos.map((k) => k.id);
+    let copias = [];
     if (unidade.integrados.length && contratoIds.length) {
-      const copias = contratoIds.flatMap((contrato_id) => unidade.integrados.map((i) => ({
+      const copiasPayload = contratoIds.flatMap((contrato_id) => unidade.integrados.map((i) => ({
         colaborador_id: i.colaborador_id, contrato_id,
         data_integracao: i.data_integracao, validade: i.validade, observacao: i.observacao || null,
       })));
       const uRes = await supabase.from('integracoes')
-        .upsert(copias, { onConflict: 'colaborador_id,contrato_id' }).select();
+        .upsert(copiasPayload, { onConflict: 'colaborador_id,contrato_id' }).select();
       if (uRes.error) { reportarErro('Integrações', uRes.error); return false; }
+      copias = uRes.data?.length ? uRes.data : copiasPayload;
     }
 
     const dRes = await supabase.from('grupos_integracao').delete().eq('id', unidade.id);
     if (dRes.error) { reportarErro('Integrações', dRes.error); await fetchDatabase(); return false; }
-    await fetchDatabase();
+
+    setDb((atual) => ({
+      ...atual,
+      gruposIntegracao: atual.gruposIntegracao.filter((g) => g.id !== unidade.id),
+      gruposIntegracaoContratos: atual.gruposIntegracaoContratos.filter((v) => v.grupo_id !== unidade.id),
+      integracoes: [
+        ...atual.integracoes.filter((i) => i.grupo_id !== unidade.id),
+        ...copias,
+      ],
+    }));
+    agendarFetch();
     return true;
   }
 
