@@ -114,6 +114,94 @@ export function periodosDoEncarregado(programacoes, encarregadoId, de, ate) {
   });
 }
 
+/* ---------------------------------------------------------------------------
+   Contratos — mesma lógica de "período contínuo" acima, mas para TODAS as
+   equipes de uma vez, e quebrando também por CONTRATO (não só cidade e
+   contratante). É a pergunta "quem trabalhou onde, pra qual contrato, em
+   quais dias" — diferente da aba Equipes, que olha uma equipe por vez e não
+   distingue contratos dentro do mesmo contratante (dois contratos do mesmo
+   contratante na mesma cidade, como MOTIVA com dois números em Vias do Café,
+   viravam um período só lá; aqui viram dois, porque o contrato importa).
+
+   Programações antigas, gravadas só com o texto livre de `contratante` e sem
+   `contrato_id` vinculado (ver textosSoltos() em lib/contratos.js), continuam
+   aparecendo — ficam com contratoNumero null, e a tela mostra "—". */
+function chaveObraContrato(p) {
+  const norm = (s) => String(s || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/\s+/g, ' ').trim();
+  return `${norm(p.cidade)}|${norm(p.contratante)}|${p.contrato_id || ''}`;
+}
+
+export function periodosPorContrato(programacoes, colaboradores, contratos, de, ate) {
+  const porEncarregado = new Map();
+  for (const p of programacoes) {
+    if (!p.encarregadoId) continue;
+    if (de && p.data < de) continue;
+    if (ate && p.data > ate) continue;
+    if (!porEncarregado.has(p.encarregadoId)) porEncarregado.set(p.encarregadoId, []);
+    porEncarregado.get(p.encarregadoId).push(p);
+  }
+
+  const contratoDe = new Map((contratos || []).map((k) => [k.id, k]));
+  const nomeDe = new Map((colaboradores || []).map((c) => [c.id, c.nome]));
+
+  const linhas = [];
+  for (const [encarregadoId, progs] of porEncarregado) {
+    const ordenadas = progs.slice().sort((a, b) => a.data.localeCompare(b.data));
+    const periodos = [];
+    const abertos = new Map();
+
+    for (const p of ordenadas) {
+      const chave = chaveObraContrato(p);
+      const acumulador = abertos.get(chave);
+      if (acumulador && diasEntre(acumulador.fim, p.data) <= FOLGA_DIAS) {
+        acumulador.fim = p.data;
+        acumulador.linhas.push(p);
+        continue;
+      }
+      if (acumulador) periodos.push(acumulador);
+      abertos.set(chave, {
+        chave,
+        cidade: p.cidade || 'Sem cidade',
+        contratante: p.contratante || 'Sem contratante',
+        contratoId: p.contrato_id || null,
+        ini: p.data,
+        fim: p.data,
+        linhas: [p],
+      });
+    }
+    for (const acumulador of abertos.values()) periodos.push(acumulador);
+
+    for (const per of periodos) {
+      const contrato = per.contratoId ? contratoDe.get(per.contratoId) : null;
+      const presenca = new Map();   // colaboradorId -> nº de dias, pro painel de detalhe
+      for (const l of per.linhas) {
+        for (const id of l.membroIds || []) presenca.set(id, (presenca.get(id) || 0) + 1);
+      }
+      linhas.push({
+        id: `${encarregadoId}|${per.ini}|${per.chave}`,
+        encarregadoId,
+        encarregadoNome: nomeDe.get(encarregadoId) || 'Encarregado removido',
+        cidade: per.cidade,
+        contratante: per.contratante,
+        contratoId: per.contratoId,
+        contratoNumero: contrato?.numero || null,
+        ini: per.ini,
+        fim: per.fim,
+        dias: per.linhas.length,
+        presenca,
+        programacaoIds: per.linhas.map((l) => l.id),
+      });
+    }
+  }
+
+  linhas.sort((a, b) => (
+    a.encarregadoNome.localeCompare(b.encarregadoNome, 'pt-BR') || a.ini.localeCompare(b.ini)
+  ));
+  return linhas;
+}
+
 /* Lista de encarregados que realmente aparecem em programação, com o total de
    dias — serve pro seletor e pra ordenar quem mais trabalhou primeiro. */
 export function encarregadosComProgramacao(programacoes, colaboradores, de, ate) {

@@ -3099,6 +3099,17 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
 }
 .rel-legenda span { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--tinta-media); }
 
+/* ---- aba Contratos: linha do tempo com uma raia por EQUIPE (não por
+   contratante, como na aba Equipes) — por isso cada linha ganha um rótulo à
+   esquerda com o nome de quem lidera. */
+.rel-tl-linha-equipe {
+  display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 10px; align-items: start;
+}
+.rel-tl-rotulo {
+  font-size: 12px; font-weight: 500; color: var(--tinta-media);
+  padding-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* ---- painel de detalhe ---- */
 .rel-fundo { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 19; }
 .rel-painel {
@@ -3177,6 +3188,8 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
   .rel-barra { grid-template-columns: 116px minmax(0, 1fr) 44px; gap: 8px; }
   .rel-item-pessoa { grid-template-columns: 26px minmax(0, 1fr) 44px; }
   .rel-item-pessoa .rel-trilho { display: none; }
+  .rel-tl-linha-equipe { grid-template-columns: 84px minmax(0, 1fr); gap: 6px; }
+  .rel-tl-rotulo { font-size: 11px; }
 }
 
 

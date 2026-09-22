@@ -2420,6 +2420,7 @@ function AppInner() {
                   programacoes={db.programacoes}
                   faltas={db.faltas}
                   concessionarias={db.concessionarias}
+                  contratos={db.contratos}
                 />
               </>
             )}

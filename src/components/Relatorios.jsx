@@ -8,6 +8,7 @@ import {
   filtrarFaltas,
   intervaloTotal,
   periodosDoEncarregado,
+  periodosPorContrato,
 } from '../lib/relatorios';
 
 const ALTURA_FAIXA = 26;   // px — mesma altura usada hoje para uma raia só
@@ -21,9 +22,11 @@ const COR_CONTRATANTE_PADRAO = '#FFC72C';
 /* =============================================================================
    Relatórios
    -----------------------------------------------------------------------------
-   Duas abas que NÃO se misturam, de propósito: "Equipes" só olha programações,
-   "Faltas" só olha registros de ausência. São duas perguntas diferentes, e
-   somar os dois números na mesma conta já confundiu gente em planilha.
+   Três abas que NÃO se misturam, de propósito: "Equipes" olha uma equipe por
+   vez (linha do tempo), "Contratos" olha todas de uma vez (tabela, por
+   contratante e contrato), "Faltas" só olha registros de ausência. São
+   perguntas diferentes, e somar os números de abas diferentes na mesma conta
+   já confundiu gente em planilha.
 
    Todo gráfico é uma porta: clicar abre o painel da direita com os nomes e as
    datas exatas por trás daquele número. Um gráfico que não deixa chegar em
@@ -143,7 +146,9 @@ function BlocoPessoa({ pessoa, datas, formato = curta }) {
   );
 }
 
-export function Relatorios({ colaboradores = [], programacoes = [], faltas = [], concessionarias = [] }) {
+export function Relatorios({
+  colaboradores = [], programacoes = [], faltas = [], concessionarias = [], contratos = [],
+}) {
   const [aba, setAba] = useState('equipes');
   const [faixa, setFaixa] = useState(null);        // null = todo o histórico
   const [encId, setEncId] = useState('');
@@ -224,6 +229,77 @@ export function Relatorios({ colaboradores = [], programacoes = [], faltas = [],
     [programacoes, encAtual, de, ate],
   );
 
+  const periodosContrato = useMemo(
+    () => periodosPorContrato(programacoes, colaboradores, contratos, de, ate),
+    [programacoes, colaboradores, contratos, de, ate],
+  );
+
+  const resumoContratos = useMemo(() => {
+    const equipes = new Set();
+    const contratantesSet = new Set();
+    const contratosSet = new Set();
+    let dias = 0;
+    for (const per of periodosContrato) {
+      equipes.add(per.encarregadoId);
+      contratantesSet.add(per.contratante);
+      if (per.contratoId) contratosSet.add(per.contratoId);
+      dias += per.dias;
+    }
+    return {
+      dias, equipes: equipes.size, contratantes: contratantesSet.size, contratos: contratosSet.size,
+    };
+  }, [periodosContrato]);
+
+  /* Mesma ordem estável de `conhecidos` (ver corContratante acima) — assim a
+     cor de um contratante não muda se o filtro de datas mudar quem aparece. */
+  const contratantesContrato = useMemo(() => {
+    const s = [];
+    for (const p of periodosContrato) if (!s.includes(p.contratante)) s.push(p.contratante);
+    return s.sort((a, b) => conhecidos.indexOf(a) - conhecidos.indexOf(b));
+  }, [periodosContrato, conhecidos]);
+
+  /* Uma linha por equipe na linha do tempo — a mais atarefada no período primeiro. */
+  const equipesContrato = useMemo(() => {
+    const m = new Map();
+    for (const p of periodosContrato) {
+      if (!m.has(p.encarregadoId)) m.set(p.encarregadoId, { id: p.encarregadoId, nome: p.encarregadoNome, dias: 0 });
+      m.get(p.encarregadoId).dias += p.dias;
+    }
+    return [...m.values()].sort((a, b) => b.dias - a.dias || a.nome.localeCompare(b.nome, 'pt-BR'));
+  }, [periodosContrato]);
+
+  const diasPorContratanteGeral = useMemo(() => {
+    const m = new Map();
+    for (const p of periodosContrato) m.set(p.contratante, (m.get(p.contratante) || 0) + p.dias);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [periodosContrato]);
+
+  /* Um contrato é a chave real (contratoId); sem vínculo, agrupa por
+     contratante mesmo assim — "MOTIVA sem contrato" é uma barra só, não uma
+     por período solto. */
+  const diasPorContratoGeral = useMemo(() => {
+    const m = new Map();
+    for (const p of periodosContrato) {
+      const chave = p.contratoId || `${p.contratante}__solto`;
+      if (!m.has(chave)) {
+        // Sem contrato_id, a cor sozinha não diferencia duas barras "sem
+        // vínculo" de contratantes diferentes — o nome do contratante entra
+        // no próprio rótulo pra não depender só do hover pra saber de quem é.
+        m.set(chave, {
+          chave,
+          contratante: p.contratante,
+          label: p.contratoNumero || `${p.contratante} — sem contrato`,
+          dias: 0,
+          obras: 0,
+        });
+      }
+      const item = m.get(chave);
+      item.dias += p.dias;
+      item.obras += 1;
+    }
+    return [...m.values()].sort((a, b) => b.dias - a.dias);
+  }, [periodosContrato]);
+
   function fechar() { setDetalhe(null); }
 
   /* ---------------- detalhes ---------------- */
@@ -301,6 +377,101 @@ export function Relatorios({ colaboradores = [], programacoes = [], faltas = [],
           ))}
         </section>
       ),
+    });
+  }
+
+  /* ---- aba Contratos: mesmos painéis de abrirPeriodo/abrirContratante,
+     mas sem um `encAtual` fixo — cada período já carrega sua própria equipe
+     (per.encarregadoNome), porque aqui várias equipes aparecem juntas. ---- */
+  function abrirPeriodoContrato(per) {
+    const equipe = [{ id: per.encarregadoId, dias: per.dias, lider: true }]
+      .concat([...per.presenca.entries()]
+        .filter(([id]) => id !== per.encarregadoId)
+        .sort((a, b) => b[1] - a[1])
+        .map(([id, dias]) => ({ id, dias, lider: false })));
+
+    setDetalhe({
+      titulo: `${per.cidade} · ${per.contratante}`,
+      sub: `Equipe de ${per.encarregadoNome}${per.contratoNumero ? ` · Contrato ${per.contratoNumero}` : ''}`,
+      cor: corContratante(per.contratante),
+      corpo: (
+        <>
+          <section className="rel-p-sec">
+            <div className="rel-linhas">
+              <div className="rel-linha"><span>Período</span><b>{longa(per.ini)} a {longa(per.fim)}</b></div>
+              <div className="rel-linha"><span>Dias de programação</span><b>{per.dias}</b></div>
+              <div className="rel-linha"><span>Contrato</span><b>{per.contratoNumero || 'Não vinculado'}</b></div>
+              <div className="rel-linha"><span>Cidade</span><b>{per.cidade}</b></div>
+            </div>
+          </section>
+
+          <section className="rel-p-sec">
+            <h5>Equipe no período ({equipe.length})</h5>
+            {equipe.map((m) => {
+              const p = pessoaDe.get(m.id);
+              return (
+                <div className="rel-pessoa" key={m.id}>
+                  <Avatar nome={p?.nome} url={p?.fotoUrl} tamanho="small" />
+                  <div>
+                    <div className="rel-nm">{p?.nome || 'Colaborador removido'}</div>
+                    <div className="rel-fn">{m.lider ? 'Encarregado' : (p?.funcao || '')}</div>
+                  </div>
+                  <span className="rel-dr">{m.dias}/{per.dias} dias</span>
+                </div>
+              );
+            })}
+          </section>
+        </>
+      ),
+    });
+  }
+
+  /* Lista de períodos num painel — usado tanto por barra de contratante
+     quanto por barra de contrato, já que as duas só diferem no filtro. */
+  function abrirGrupoPeriodos({ titulo, sub, cor, periodos: lista }) {
+    setDetalhe({
+      titulo, sub, cor,
+      corpo: (
+        <section className="rel-p-sec">
+          <h5>Obras ({lista.length})</h5>
+          {lista.slice().reverse().map((p) => (
+            <button className="rel-pbloco rel-pbloco-btn" key={p.id} onClick={() => abrirPeriodoContrato(p)}>
+              <div className="rel-pbloco-topo">
+                <div>
+                  <div className="rel-nm">{p.cidade} · {p.encarregadoNome}</div>
+                  <div className="rel-fn">
+                    {longa(p.ini)} a {longa(p.fim)}{p.contratoNumero ? ` · ${p.contratoNumero}` : ''}
+                  </div>
+                </div>
+                <span className="rel-dr">{p.dias} dias</span>
+              </div>
+            </button>
+          ))}
+        </section>
+      ),
+    });
+  }
+
+  function abrirContratanteGeral(nome) {
+    const doCt = periodosContrato.filter((p) => p.contratante === nome);
+    const dias = doCt.reduce((s, p) => s + p.dias, 0);
+    abrirGrupoPeriodos({
+      titulo: nome,
+      sub: `${dias} dias em ${doCt.length} ${doCt.length === 1 ? 'obra' : 'obras'}`,
+      cor: corContratante(nome),
+      periodos: doCt,
+    });
+  }
+
+  function abrirContratoGeral(item) {
+    const doContrato = periodosContrato.filter((p) => (
+      item.chave === (p.contratoId || `${p.contratante}__solto`)
+    ));
+    abrirGrupoPeriodos({
+      titulo: item.label,
+      sub: `${item.contratante} · ${item.dias} dias em ${doContrato.length} ${doContrato.length === 1 ? 'obra' : 'obras'}`,
+      cor: corContratante(item.contratante),
+      periodos: doContrato,
     });
   }
 
@@ -494,6 +665,8 @@ export function Relatorios({ colaboradores = [], programacoes = [], faltas = [],
       <div className="rel-abas" role="tablist">
         <button role="tab" aria-selected={aba === 'equipes'} className={`rel-aba${aba === 'equipes' ? ' on' : ''}`}
           onClick={() => { setAba('equipes'); fechar(); }}>Equipes</button>
+        <button role="tab" aria-selected={aba === 'contratos'} className={`rel-aba${aba === 'contratos' ? ' on' : ''}`}
+          onClick={() => { setAba('contratos'); fechar(); }}>Contratos</button>
         <button role="tab" aria-selected={aba === 'faltas'} className={`rel-aba${aba === 'faltas' ? ' on' : ''}`}
           onClick={() => { setAba('faltas'); fechar(); }}>Faltas</button>
       </div>
@@ -639,6 +812,174 @@ export function Relatorios({ colaboradores = [], programacoes = [], faltas = [],
                   <span>
                     <span className="rel-nm">{p.cidade} · {p.contratante}</span>
                     <span className="rel-fn">{curta(p.ini)} a {curta(p.fim)}</span>
+                  </span>
+                  <span className="rel-val">{p.dias} d</span>
+                </button>
+              ))}
+            </div>
+            <p className="rel-dicaclique">Clique numa obra para abrir o detalhe da equipe.</p>
+          </section>
+        </>
+      )}
+
+      {/* ================= CONTRATOS ================= */}
+      {aba === 'contratos' && !periodosContrato.length && (
+        <p className="rel-vazio">Nenhuma programação com encarregado neste período.</p>
+      )}
+
+      {aba === 'contratos' && !!periodosContrato.length && (
+        <>
+          <div className="rel-kpis">
+            <div className="rel-kpi"><b>{resumoContratos.dias}</b><span>dias em campo</span></div>
+            <div className="rel-kpi"><b>{resumoContratos.equipes}</b><span>equipes</span></div>
+            <div className="rel-kpi"><b>{resumoContratos.contratantes}</b><span>contratantes</span></div>
+            <div className="rel-kpi"><b>{resumoContratos.contratos}</b><span>contratos vinculados</span></div>
+          </div>
+
+          <section className="rel-bloco">
+            <h3>Quando e onde cada equipe esteve</h3>
+            <p className="rel-sub">
+              Uma linha por equipe. Cada bloco é um período contínuo na mesma obra e no mesmo contrato —
+              a cor indica o contratante.
+            </p>
+
+            <div className="rel-tl-eixo">
+              {eixo.marcos.map((m) => (
+                <span key={m} style={{ left: `${eixo.pos(m)}%` }}>{rotuloMes(m)}</span>
+              ))}
+            </div>
+
+            {equipesContrato.map((eq, indiceEq) => {
+              const largMinPct = (LARG_MIN_PX / larguraTrilho) * 100;
+              const gapMinPct = (GAP_MIN_PX / larguraTrilho) * 100;
+              const comPos = periodosContrato
+                .filter((p) => p.encarregadoId === eq.id)
+                .map((p) => {
+                  const larg = Math.max(eixo.pos(p.fim) - eixo.pos(p.ini), largMinPct);
+                  const esq = Math.min(eixo.pos(p.ini), 100 - larg);
+                  return { ...p, larg, esq };
+                });
+              const comFaixa = atribuirFaixas(comPos, (p) => p.esq, (p) => p.esq + p.larg + gapMinPct);
+              const nFaixas = comFaixa.reduce((m, p) => Math.max(m, p.faixa + 1), 1);
+              return (
+                <div className="rel-tl-linha rel-tl-linha-equipe" key={eq.id}>
+                  <div className="rel-tl-rotulo" title={eq.nome}>{eq.nome}</div>
+                  <div
+                    className="rel-tl-trilho"
+                    ref={indiceEq === 0 ? trilhoRef : undefined}
+                    style={{ height: `${nFaixas * ALTURA_FAIXA}px` }}>
+                    {comFaixa.map((p) => (
+                      <button
+                        key={p.id}
+                        className="rel-tl-bloco"
+                        aria-label={`${eq.nome} · ${p.cidade} · ${p.contratante} · ${curta(p.ini)} a ${curta(p.fim)}`}
+                        style={{
+                          left: `${Math.max(p.esq, 0)}%`,
+                          width: `${p.larg}%`,
+                          top: `${2 + p.faixa * ALTURA_FAIXA}px`,
+                          background: corContratante(p.contratante),
+                        }}
+                        onClick={() => abrirPeriodoContrato(p)}
+                        {...liga(
+                          <>
+                            <div className="rel-dica-t">{p.cidade} · {p.contratante}</div>
+                            <LinhaDica k="Equipe" v={eq.nome} />
+                            <LinhaDica k="Contrato" v={p.contratoNumero || 'Não vinculado'} />
+                            <LinhaDica k="Período" v={`${curta(p.ini)} a ${curta(p.fim)}`} />
+                            <LinhaDica k="Dias" v={p.dias} />
+                          </>,
+                        )}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            <div className="rel-legenda">
+              {contratantesContrato.map((ct) => (
+                <span key={ct}><i className="rel-pt" style={{ background: corContratante(ct) }} />{ct}</span>
+              ))}
+            </div>
+            <p className="rel-dicaclique">Clique num bloco para ver a equipe, o contrato e as datas exatas.</p>
+          </section>
+
+          <section className="rel-bloco">
+            <h3>Dias por contratante</h3>
+            <p className="rel-sub">Soma de todas as equipes no período.</p>
+            <div className="rel-barras">
+              {diasPorContratanteGeral.map(([ct, v]) => (
+                <button
+                  key={ct}
+                  className="rel-barra"
+                  onClick={() => abrirContratanteGeral(ct)}
+                  {...liga(
+                    <>
+                      <div className="rel-dica-t">{ct}</div>
+                      <LinhaDica k="Dias em campo" v={v} />
+                      <LinhaDica k="Obras" v={periodosContrato.filter((p) => p.contratante === ct).length} />
+                      <LinhaDica k="Participação" v={`${Math.round((v / resumoContratos.dias) * 100)}%`} />
+                    </>,
+                  )}
+                >
+                  <span className="rel-barra-rot"><i className="rel-pt" style={{ background: corContratante(ct) }} />{ct}</span>
+                  <span className="rel-trilho">
+                    <span className="rel-fill" style={{
+                      width: `${(v / diasPorContratanteGeral[0][1]) * 100}%`, background: corContratante(ct),
+                    }} />
+                  </span>
+                  <span className="rel-val">{v} d</span>
+                </button>
+              ))}
+            </div>
+            <p className="rel-dicaclique">Clique numa barra para ver as obras daquele contratante, com a equipe de cada uma.</p>
+          </section>
+
+          <section className="rel-bloco">
+            <h3>Dias por contrato</h3>
+            <p className="rel-sub">
+              Contratos com mais dias primeiro. Sem vínculo no cadastro entra como uma barra só por contratante.
+            </p>
+            <div className="rel-barras">
+              {diasPorContratoGeral.map((item) => (
+                <button
+                  key={item.chave}
+                  className="rel-barra"
+                  onClick={() => abrirContratoGeral(item)}
+                  {...liga(
+                    <>
+                      <div className="rel-dica-t">{item.label}</div>
+                      <LinhaDica k="Contratante" v={item.contratante} />
+                      <LinhaDica k="Dias em campo" v={item.dias} />
+                      <LinhaDica k="Obras" v={item.obras} />
+                    </>,
+                  )}
+                >
+                  <span className="rel-barra-rot">
+                    <i className="rel-pt" style={{ background: corContratante(item.contratante) }} />{item.label}
+                  </span>
+                  <span className="rel-trilho">
+                    <span className="rel-fill" style={{
+                      width: `${(item.dias / diasPorContratoGeral[0].dias) * 100}%`, background: corContratante(item.contratante),
+                    }} />
+                  </span>
+                  <span className="rel-val">{item.dias} d</span>
+                </button>
+              ))}
+            </div>
+            <p className="rel-dicaclique">Clique numa barra para ver as obras daquele contrato, com a equipe de cada uma.</p>
+          </section>
+
+          <section className="rel-bloco">
+            <h3>Obras no período</h3>
+            <p className="rel-sub">Da mais recente para a mais antiga.</p>
+            <div className="rel-lista">
+              {periodosContrato.slice().reverse().map((p) => (
+                <button key={p.id} className="rel-item" onClick={() => abrirPeriodoContrato(p)}>
+                  <i className="rel-pt" style={{ background: corContratante(p.contratante) }} />
+                  <span>
+                    <span className="rel-nm">{p.cidade} · {p.contratante}{p.contratoNumero ? ` · ${p.contratoNumero}` : ''}</span>
+                    <span className="rel-fn">{p.encarregadoNome} · {curta(p.ini)} a {curta(p.fim)}</span>
                   </span>
                   <span className="rel-val">{p.dias} d</span>
                 </button>
