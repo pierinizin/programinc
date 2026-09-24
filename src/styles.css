@@ -3293,6 +3293,8 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 12px;
+  /* Card recolhido não estica até a altura do vizinho aberto na mesma linha. */
+  align-items: start;
 }
 .it-card {
   background: var(--superficie);
@@ -3305,20 +3307,44 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
    na Programação: ser um grupo não é bom nem ruim, é só um jeito de organizar. */
 .it-card-grupo { border-left: 3px solid var(--campo); }
 
-.it-card-cab { display: flex; align-items: flex-start; gap: 8px; }
-.it-card-titulo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+/* Cabeçalho em grade de duas linhas, igual em TODO card:
+     linha 1 — nome do contrato, largura inteira (nunca divide espaço com as fotos)
+     linha 2 — contratante à esquerda · Desfazer · resumo (fotos + total) e seta à direita
+   Nada quebra linha: o que não couber vira "…" (com o texto inteiro no hover).
+   Com isso todo card recolhido tem a mesma altura e a grade fica alinhada. */
+.it-card-cab {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto 30px;
+  grid-template-areas:
+    "check nome nome nome"
+    "check sub  acao seta";
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: center;
+}
+.it-card-cab > .it-check { grid-area: check; }
+.it-card-titulo { display: contents; }
+.it-card-cab .chip-btn { grid-area: acao; }
+.it-card-cab .it-seta { grid-area: seta; }
 .it-card-titulo b {
+  grid-area: nome;
   font: 600 13.5px var(--fonte-display);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.it-card-contratantes { display: flex; flex-wrap: wrap; gap: 8px; }
+.it-card-contratantes {
+  grid-area: sub; min-width: 0;
+  display: flex; gap: 8px; overflow: hidden; white-space: nowrap;
+}
 .it-tag-contratante {
   display: inline-flex; align-items: center; gap: 5px;
   font-family: var(--fonte-dado); font-size: 11px; color: var(--tinta-media);
 }
 .it-tag-contratante i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.it-tag-contratante { min-width: 0; }
+.it-tag-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .it-zona {
   border: 1.5px dashed var(--borda-forte);
@@ -3372,6 +3398,43 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
   border: 1px solid var(--borda-forte); border-radius: 4px;
   background: var(--superficie); color: var(--tinta); padding: 1px 3px;
 }
+
+/* ---- card recolhido: fotos empilhadas + total no canto ---- */
+.it-topo-dir { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.it-card.fechado { gap: 0; }
+.it-card.fechado.alvo     { border-color: var(--ok-texto); background: var(--ok-fundo); }
+.it-card.fechado.alvo-nao { border-color: var(--erro-texto); background: var(--erro-fundo); }
+
+.it-seta {
+  flex: none;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 2px 4px 2px 6px; margin-right: -4px;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: none; color: var(--tinta-media); cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.it-seta:hover { background: var(--superficie-2); border-color: var(--borda); color: var(--tinta); }
+.it-seta-icone { transition: transform .15s ease; transform: rotate(180deg); }
+.it-seta[aria-expanded="false"] .it-seta-icone { transform: rotate(0deg); }
+
+.it-resumo { display: inline-flex; align-items: center; gap: 6px; }
+.it-resumo .pilha-item .avatar { box-shadow: 0 0 0 2px var(--superficie); }
+.it-resumo .mais { width: 26px; height: 26px; }
+.it-resumo-n, .it-resumo-n-aberto {
+  font-family: var(--fonte-dado); font-size: 13px; font-weight: 600; color: var(--tinta);
+  font-variant-numeric: tabular-nums;
+}
+.it-resumo-n { margin-left: 2px; }
+.it-resumo-n-aberto { font-size: 11.5px; color: var(--tinta-fraca); font-weight: 500; }
+.it-resumo-rot { font-size: 11.5px; color: var(--tinta-fraca); }
+.it-resumo-vazio { font-size: 11.5px; color: var(--tinta-fraca); font-style: italic; }
+.it-resumo-alerta {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  display: inline-grid; place-items: center;
+  font-family: var(--fonte-dado); font-size: 10.5px; font-weight: 600; color: #16190C;
+}
+.it-resumo-alerta.vencido  { background: var(--erro); }
+.it-resumo-alerta.vencendo { background: var(--faixa); }
 
 @media (max-width: 900px) {
   .it-corpo { grid-template-columns: 1fr; height: auto; }

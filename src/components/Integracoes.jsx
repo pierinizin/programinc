@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
 import { dataBR } from '../lib/contratos';
 import { statusValidade, montarUnidades } from '../lib/integracoes';
@@ -83,15 +83,49 @@ function Integrado({ integ, colaborador, podeEditar, editando, onIniciarEdicao, 
   );
 }
 
+/* Quantas fotos cabem no resumo do card fechado antes de virar "+N". */
+const FOTOS_NO_RESUMO = 3;
+
+/* Resumo do card fechado: fotos de alguns integrados empilhadas + o total.
+   Vencido/vencendo aparecem como bolinha com número — fechar o card não pode
+   esconder quem precisa ser reintegrado. */
+function ResumoIntegrados({ integrados, colaboradorPorId }) {
+  const pessoas = integrados
+    .map((i) => ({ integ: i, c: colaboradorPorId[i.colaborador_id] }))
+    .filter((x) => x.c);
+  const vencidos = integrados.filter((i) => statusValidade(i.validade) === 'vencido').length;
+  const vencendo = integrados.filter((i) => statusValidade(i.validade) === 'vencendo').length;
+  const n = pessoas.length;
+  if (!n) return <span className="it-resumo-vazio">ninguém</span>;
+  return (
+    <span className="it-resumo" title={pessoas.map((x) => x.c.nome).join(', ')}>
+      <span className="pilha">
+        {pessoas.slice(0, FOTOS_NO_RESUMO).map(({ integ, c }) => (
+          <span key={integ.id} className="pilha-item"><Avatar nome={c.nome} url={c.fotoUrl} tamanho="small" /></span>
+        ))}
+        {n > FOTOS_NO_RESUMO && <span className="mais">+{n - FOTOS_NO_RESUMO}</span>}
+      </span>
+      <b className="it-resumo-n">{n}</b>
+      <span className="it-resumo-rot">{n === 1 ? 'pessoa' : 'pessoas'}</span>
+      {vencidos > 0 && <span className="it-resumo-alerta vencido" title={`${vencidos} vencido(s)`}>{vencidos}</span>}
+      {vencendo > 0 && <span className="it-resumo-alerta vencendo" title={`${vencendo} vencendo`}>{vencendo}</span>}
+    </span>
+  );
+}
+
 function CardUnidade({
   unidade, colaboradorPorId, podeEditar, ehAdmin,
   selecionado, onSelecionar, editandoValidadeId, onIniciarEdicao,
   onSalvarValidade, onRemoverIntegracao, onDesfazerGrupo, arrastavel,
+  aberto, onAlternar,
 }) {
   const ehGrupo = unidade.tipo === 'grupo';
+  /* Fechado, o card INTEIRO vira a área de soltar — dá pra continuar
+     arrastando gente pra dentro sem precisar abrir. */
+  const alvoProps = aberto ? {} : { 'data-unidade': unidade.id, 'data-tipo': unidade.tipo };
 
   return (
-    <div className={`it-card${ehGrupo ? ' it-card-grupo' : ''}`}>
+    <div className={`it-card${ehGrupo ? ' it-card-grupo' : ''}${aberto ? '' : ' fechado'}`} {...alvoProps}>
       <div className="it-card-cab">
         {!ehGrupo && ehAdmin && (
           <button
@@ -104,24 +138,46 @@ function CardUnidade({
         )}
 
         <div className="it-card-titulo">
-          {ehGrupo ? <b>CONTRATO: {unidade.titulo}</b> : <b>{unidade.titulo}</b>}
-          <span className="it-card-contratantes">
+          <b title={ehGrupo ? `CONTRATO: ${unidade.titulo}` : unidade.titulo}>
+            {ehGrupo ? `CONTRATO: ${unidade.titulo}` : unidade.titulo}
+          </b>
+          <span
+            className="it-card-contratantes"
+            title={unidade.contratos.map((k) => `${k.sigla}${ehGrupo ? ` · ${k.numero}` : ''}`).join('  |  ')}
+          >
             {unidade.contratos.map((k) => (
               <span key={k.id} className="it-tag-contratante">
                 <i style={{ background: k.cor }} />
-                {k.sigla}{ehGrupo ? ` · ${k.numero}` : ''}
+                <span className="it-tag-txt">{k.sigla}{ehGrupo ? ` · ${k.numero}` : ''}</span>
               </span>
             ))}
           </span>
         </div>
 
-        {ehGrupo && ehAdmin && (
+        {ehGrupo && ehAdmin && aberto && (
           <button type="button" className="chip-btn" onClick={() => onDesfazerGrupo(unidade)}>
             Desfazer
           </button>
         )}
+
+        <button
+          type="button"
+          className="it-seta"
+          aria-expanded={aberto}
+          aria-label={aberto ? `Recolher ${unidade.titulo}` : `Abrir ${unidade.titulo}`}
+          title={aberto ? 'Recolher' : 'Abrir'}
+          onClick={onAlternar}
+        >
+          {aberto
+            ? <span className="it-resumo-n-aberto">{unidade.integrados.length}</span>
+            : <ResumoIntegrados integrados={unidade.integrados} colaboradorPorId={colaboradorPorId} />}
+          <svg className="it-seta-icone" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
       </div>
 
+      {aberto && (
       <div
         className={`it-zona${unidade.integrados.length ? '' : ' vazia'}`}
         data-unidade={unidade.id}
@@ -148,6 +204,7 @@ function CardUnidade({
             />
           ))}
       </div>
+      )}
     </div>
   );
 }
@@ -164,6 +221,25 @@ export function Integracoes({
   const [nomeGrupo, setNomeGrupo] = useState('');
   const [erro, setErro] = useState('');
   const [editandoValidadeId, setEditandoValidadeId] = useState(null);
+
+  /* Cards abertos (os demais ficam recolhidos, mostrando só fotos + total).
+     Começa tudo recolhido — com muita gente integrada os cards abertos
+     tomavam a tela. Fica lembrado neste navegador. */
+  const CHAVE_ABERTOS = 'incovia.integracoes.abertos';
+  const [abertos, setAbertos] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(CHAVE_ABERTOS) || '[]')); } catch { return new Set(); }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(CHAVE_ABERTOS, JSON.stringify([...abertos])); } catch { /* sem storage: tudo bem */ }
+  }, [abertos]);
+  const chaveDe = (u) => `${u.tipo}-${u.id}`;
+  function alternar(u) {
+    setAbertos((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(chaveDe(u))) novo.delete(chaveDe(u)); else novo.add(chaveDe(u));
+      return novo;
+    });
+  }
 
   const colaboradorPorId = useMemo(
     () => Object.fromEntries((colaboradores || []).map((c) => [c.id, c])),
@@ -366,7 +442,23 @@ export function Integracoes({
             <span className="pastilha destaque"><b>{resumo.vencendo}</b> vencendo</span>
             <span className="pastilha alerta"><b>{resumo.vencido}</b> vencidos</span>
           </div>
-          <Legenda />
+          <div className="it-topo-dir">
+            <Legenda />
+            {unidades.length > 0 && (
+              <span className="chips-row tight">
+                <button type="button" className="chip-btn"
+                  disabled={abertos.size >= unidades.length}
+                  onClick={() => setAbertos(new Set(unidades.map(chaveDe)))}>
+                  Abrir todos
+                </button>
+                <button type="button" className="chip-btn"
+                  disabled={!abertos.size}
+                  onClick={() => setAbertos(new Set())}>
+                  Recolher todos
+                </button>
+              </span>
+            )}
+          </div>
         </div>
 
         {ehAdmin && (
@@ -422,6 +514,8 @@ export function Integracoes({
                 onRemoverIntegracao={confirmarRemocao}
                 onDesfazerGrupo={onDesfazerGrupo}
                 arrastavel={podeEditar}
+                aberto={abertos.has(chaveDe(u))}
+                onAlternar={() => alternar(u)}
               />
             ))}
           </div>
