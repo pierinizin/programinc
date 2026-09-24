@@ -5,6 +5,9 @@ import { contratoAutomatico, contratosVigentes } from '../lib/contratos';
 import { derivarDia, disponivelEm } from '../lib/dia';
 import { notificar } from '../lib/dialogos';
 import { MOTIVOS_FALTA, rotuloMotivo } from '../lib/motivos';
+import {
+  duracaoTexto, horaCurta, intervalosFaltados, jornadaDe, paraHora, resumoParcial, somaMinutos,
+} from '../lib/faltaParcial';
 
 const MAX_EQUIPE = 10;
 
@@ -28,6 +31,7 @@ const OPCOES_STATUS = [
   ['NÃO FOI POSSÍVEL REALIZAR', 'CHUVA', 'Não realizado · chuva', 'selo-parado'],
   ['NÃO FOI POSSÍVEL REALIZAR', 'MANUTENÇÃO', 'Não realizado · manutenção', 'selo-parado'],
   ['NÃO FOI POSSÍVEL REALIZAR', 'VIAGEM', 'Não realizado · viagem', 'selo-parado'],
+  ['NÃO FOI POSSÍVEL REALIZAR', 'INTEGRAÇÃO', 'Não realizado · integração', 'selo-parado'],
   ['NÃO FOI POSSÍVEL REALIZAR', 'OUTROS', 'Não realizado · outros', 'selo-parado'],
 ];
 
@@ -77,6 +81,8 @@ export function QuadroDia({
   onTirarDoPatio,
   onRegistrarFalta,
   onRemoverFalta,
+  onSalvarFaltaParcial,
+  onRemoverFaltaParcial,
   onMudarStatus,
   podeMudarStatus,
   podeExcluir,
@@ -103,6 +109,24 @@ export function QuadroDia({
     [db.contratos]
   );
   const [pedindoFalta, setPedindoFalta] = useState(null);
+  // Falta parcial: { pessoa, eq } da pessoa clicada dentro de uma equipe.
+  const [parcialAberta, setParcialAberta] = useState(null);
+  // Cartão de hover da falta parcial — mesmo esquema de posição fixa do de férias.
+  const [dicaParcial, setDicaParcial] = useState(null);
+  /* Clique simples abre a falta parcial; clique duplo continua tirando da
+     equipe. O navegador dispara "click" nos DOIS cliques de um duplo — então
+     o simples espera um instante e só abre se não vier o segundo. */
+  const cliqueRef = useRef(null);
+  function cliqueSimples(ev, abrir) {
+    if (ev.detail > 1) return;
+    clearTimeout(cliqueRef.current);
+    cliqueRef.current = setTimeout(abrir, 240);
+  }
+  function cliqueDuplo(acao) {
+    clearTimeout(cliqueRef.current);
+    acao();
+  }
+  useEffect(() => () => clearTimeout(cliqueRef.current), []);
 
   /* Um menu aberto que não fecha ao clicar fora vira armadilha no toque. */
   useEffect(() => {
@@ -122,9 +146,32 @@ export function QuadroDia({
 
   /* Uma conta só, compartilhada com a fita do cabeçalho (src/lib/dia.js). */
   const {
-    equipes, faltosos, noPatio, atestados, feriasHoje, equipesDaPessoa, equipesDoVeiculo,
+    equipes, faltosos, parciais, noPatio, atestados, feriasHoje, equipesDaPessoa, equipesDoVeiculo,
     pessoasLivres, veiculosLivres,
   } = useMemo(() => derivarDia(db, selectedDate), [db, selectedDate]);
+
+  /* A falta parcial desta pessoa NESTA equipe (se estiver em duas equipes no
+     dia, o anel vermelho só vai na equipe em que a meia falta foi lançada). */
+  function parcialNaEquipe(pessoaId, eq) {
+    const f = parciais.get(pessoaId);
+    return f && f.programacao_id === eq.id ? f : null;
+  }
+
+  /* Props de hover/anel/clique que o chip do membro e o do encarregado
+     compartilham — a regra é a mesma pros dois. */
+  function propsPresenca(p, eq, aoTirar) {
+    const parcial = parcialNaEquipe(p.id, eq);
+    return {
+      classe: parcial ? ' parcial' : ' dia-completo',
+      onClick: podeEditar ? (ev) => cliqueSimples(ev, () => setParcialAberta({ pessoa: p, eq })) : undefined,
+      onDoubleClick: () => podeEditar && cliqueDuplo(aoTirar),
+      onMouseEnter: parcial
+        ? (e) => setDicaParcial({ falta: parcial, eq, nome: p.nome, rect: e.currentTarget.getBoundingClientRect() })
+        : undefined,
+      onMouseLeave: parcial ? () => setDicaParcial(null) : undefined,
+      parcial,
+    };
+  }
 
   const itensVisiveis = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -738,12 +785,18 @@ export function QuadroDia({
                 </span>
 
                 <span className="eq-equipe">
-                  {lider ? (
+                  {lider ? (() => {
+                    const pr = propsPresenca(lider, eq, () => onRemoverEncarregado(eq, lider.id));
+                    return (
                     <button
                       type="button"
-                      className={`eq-lider${feriasHoje.has(lider.id) ? ' ferias' : ''}`}
-                      title={podeEditar ? 'Clique duplo para tirar o encarregado da equipe' : undefined}
-                      onDoubleClick={() => podeEditar && onRemoverEncarregado(eq, lider.id)}
+                      className={`eq-lider${feriasHoje.has(lider.id) ? ' ferias' : ''}${pr.classe}`}
+                      title={pr.parcial ? undefined
+                        : podeEditar ? 'Clique para lançar falta de meio período · clique duplo para tirar da equipe' : undefined}
+                      onClick={pr.onClick}
+                      onDoubleClick={pr.onDoubleClick}
+                      onMouseEnter={pr.onMouseEnter}
+                      onMouseLeave={pr.onMouseLeave}
                     >
                       <Avatar
                         nome={lider.nome}
@@ -764,7 +817,8 @@ export function QuadroDia({
                         </span>
                       </span>
                     </button>
-                  ) : (
+                    );
+                  })() : (
                     <span className="eq-lider">
                       <span className="avatar vazio" aria-hidden="true" />
                       <span className="rot rot-erro">Solte alguém aqui</span>
@@ -788,13 +842,20 @@ export function QuadroDia({
                     membros.map((p) => {
                       const ferias = feriasHoje.get(p.id);
                       const sufixo = ferias ? ` — de férias até ${dataCurta(ferias.ate)}` : '';
+                      const pr = propsPresenca(p, eq, () => onRemoverMembro(eq, p.id));
                       return (
                         <button
                           type="button"
                           key={p.id}
-                          className={`membro-chip${ferias ? ' ferias' : ''}`}
-                          title={podeEditar ? `${p.nome}${sufixo} — clique duplo para tirar` : `${p.nome}${sufixo}`}
-                          onDoubleClick={() => podeEditar && onRemoverMembro(eq, p.id)}
+                          className={`membro-chip${ferias ? ' ferias' : ''}${pr.classe}`}
+                          title={pr.parcial ? undefined
+                            : podeEditar
+                              ? `${p.nome}${sufixo} — clique para falta de meio período · clique duplo para tirar`
+                              : `${p.nome}${sufixo}`}
+                          onClick={pr.onClick}
+                          onDoubleClick={pr.onDoubleClick}
+                          onMouseEnter={pr.onMouseEnter}
+                          onMouseLeave={pr.onMouseLeave}
                         >
                           <Avatar
                             nome={p.nome}
@@ -1025,14 +1086,27 @@ export function QuadroDia({
               const reg = (db.faltas || []).find(
                 (f) => f.data === selectedDate && f.colaboradorId === p.id
               );
+              /* Meio período aparece aqui também, mas TRAVADO: não sai com
+                 clique duplo. Ele se desfaz pela equipe (clique na pessoa →
+                 "Trabalhou o dia todo") ou tirando a pessoa da equipe. */
+              const parcial = parciais.get(p.id);
+              const eqParcial = parcial ? equipes.find((e) => e.id === parcial.programacao_id) : null;
               return (
                 <button
                   type="button"
                   key={p.id}
-                  className="membro-chip"
-                  title={`${p.nome}${reg?.motivo ? ` — ${rotuloMotivo(reg.motivo)}` : ''}`
-                    + (podeEditar ? ' — clique duplo para tirar' : '')}
-                  onDoubleClick={() => podeEditar && onRemoverFalta(p.id)}
+                  className={`membro-chip${parcial ? ' parcial travado' : ''}`}
+                  title={parcial ? undefined
+                    : `${p.nome}${reg?.motivo ? ` — ${rotuloMotivo(reg.motivo)}` : ''}`
+                      + (podeEditar ? ' — clique duplo para tirar' : '')}
+                  onDoubleClick={() => podeEditar && !parcial && onRemoverFalta(p.id)}
+                  onMouseEnter={parcial && eqParcial
+                    ? (e) => setDicaParcial({
+                      falta: parcial, eq: eqParcial, nome: p.nome, naZona: true,
+                      rect: e.currentTarget.getBoundingClientRect(),
+                    })
+                    : undefined}
+                  onMouseLeave={parcial ? () => setDicaParcial(null) : undefined}
                 >
                   <Avatar nome={p.nome} url={p.fotoUrl} tamanho="small" />
                   <span className="membro-nome">{nomeCurto(p.nome)}</span>
@@ -1043,6 +1117,62 @@ export function QuadroDia({
           </div>
         </div>
       </div>
+
+      {dicaParcial ? (() => {
+        const r = resumoParcial(dicaParcial.eq, dicaParcial.falta);
+        return (
+          <div
+            className="tooltip-ferias tooltip-parcial"
+            role="tooltip"
+            style={{
+              position: 'fixed',
+              left: dicaParcial.rect.left,
+              top: dicaParcial.rect.top - 8,
+              transform: 'translateY(-100%)',
+            }}
+          >
+            <div className="tt-topo">
+              <span className="tt-icone tt-icone-parcial" aria-hidden="true">◐</span>
+              <span className="tt-titulo">Falta de meio período</span>
+            </div>
+            <p className="tt-linha">Faltou <b>{r.faltouTexto || '—'}</b> ({r.duracao})</p>
+            <p className="tt-linha">Motivo: <b>{rotuloMotivo(dicaParcial.falta.motivo)}</b></p>
+            <p className="tt-linha tt-fraca">
+              Trabalhou {r.trabalhou} · {dicaParcial.eq.cidade}
+            </p>
+            {dicaParcial.naZona && podeEditar && (
+              <p className="tt-linha tt-fraca">Pra desfazer, clique na pessoa dentro da equipe.</p>
+            )}
+          </div>
+        );
+      })() : null}
+
+      {parcialAberta && (
+        <ModalFaltaParcial
+          pessoa={parcialAberta.pessoa}
+          eq={parcialAberta.eq}
+          data={selectedDate}
+          existente={parcialNaEquipe(parcialAberta.pessoa.id, parcialAberta.eq)}
+          faltaDiaInteiro={faltosos.has(parcialAberta.pessoa.id) && !parciais.has(parcialAberta.pessoa.id)}
+          outraEquipe={(() => {
+            const f = parciais.get(parcialAberta.pessoa.id);
+            return f && f.programacao_id !== parcialAberta.eq.id
+              ? equipes.find((e) => e.id === f.programacao_id) || null
+              : null;
+          })()}
+          aoFechar={() => setParcialAberta(null)}
+          aoSalvar={(dados) => {
+            const { pessoa, eq } = parcialAberta;
+            setParcialAberta(null);
+            onSalvarFaltaParcial(pessoa.id, eq, dados);
+          }}
+          aoRemover={() => {
+            const { pessoa } = parcialAberta;
+            setParcialAberta(null);
+            onRemoverFaltaParcial(pessoa.id);
+          }}
+        />
+      )}
 
       {/* O motivo é obrigatório no banco, então perguntamos em vez de inventar. */}
       {pedindoFalta && (
@@ -1152,6 +1282,149 @@ export function QuadroDia({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* =============================================================================
+   Falta de meio período
+   -----------------------------------------------------------------------------
+   Aberta com UM clique na pessoa dentro da equipe. Pergunta o que ela
+   TRABALHOU (atalhos "Só manhã" / "Só tarde" puxam os horários da própria
+   programação; os dois campos ajustam casos como "chegou atrasado") e mostra
+   na hora o que ficou de fora e quantas horas isso dá. A conta é sempre contra
+   Início obra → Fim obra, com o almoço descontado (lib/faltaParcial.js).
+   ============================================================================= */
+const MOTIVOS_PARCIAL = MOTIVOS_FALTA.filter(([v]) => v !== 'ferias');
+
+function ModalFaltaParcial({
+  pessoa, eq, data, existente, faltaDiaInteiro, outraEquipe, aoFechar, aoSalvar, aoRemover,
+}) {
+  const [de, setDe] = useState(horaCurta(existente?.trabalhou_de) || horaCurta(eq.horarioInicioObra));
+  const [ate, setAte] = useState(horaCurta(existente?.trabalhou_ate) || horaCurta(eq.horarioFimObra));
+  const [motivo, setMotivo] = useState(existente?.motivo || '');
+
+  useEffect(() => {
+    const tecla = (ev) => { if (ev.key === 'Escape') aoFechar(); };
+    document.addEventListener('keydown', tecla);
+    return () => document.removeEventListener('keydown', tecla);
+  }, [aoFechar]);
+
+  const jornada = jornadaDe(eq);
+  const jornadaTexto = jornada.map(([a, b]) => `${paraHora(a)}–${paraHora(b)}`).join(' · ');
+  const faltou = intervalosFaltados(eq, de, ate);
+  const minutos = somaMinutos(faltou);
+  const invalido = !de || !ate || de >= ate;
+  const semFalta = !invalido && minutos === 0;
+  const podeSalvar = !invalido && !semFalta && motivo && !faltaDiaInteiro && !outraEquipe && jornada.length;
+
+  const manha = jornada[0];
+  const tarde = jornada.length > 1 ? jornada[1] : null;
+
+  return (
+    <div className="modal-backdrop" onClick={aoFechar}>
+      <div className="modal modal-parcial" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={`Falta de meio período — ${pessoa.nome}`}>
+        <div className="card-header between">
+          <div>
+            <strong>{pessoa.nome}</strong>
+            <p className="small-muted" style={{ margin: 0 }}>
+              {data.split('-').reverse().join('/')} · {eq.cidade} · falta de meio período
+            </p>
+          </div>
+          <button className="icon-btn" onClick={aoFechar} aria-label="Fechar">×</button>
+        </div>
+
+        {faltaDiaInteiro ? (
+          <p className="fp-aviso">
+            Já tem falta de <b>dia inteiro</b> lançada hoje. Tire da zona de Faltas antes de lançar meio período.
+          </p>
+        ) : outraEquipe ? (
+          <p className="fp-aviso">
+            Já tem falta de meio período lançada na equipe de <b>{outraEquipe.cidade}</b>. Ajuste por lá.
+          </p>
+        ) : !jornada.length ? (
+          <p className="fp-aviso">
+            Esta equipe está sem horário de obra preenchido — abra a programação e informe
+            Início obra e Fim obra pra dar pra calcular.
+          </p>
+        ) : (
+          <>
+            <div className="fp-jornada">
+              Jornada da equipe: <b>{jornadaTexto}</b> ({duracaoTexto(somaMinutos(jornada))})
+            </div>
+
+            <div className="fp-rot">Trabalhou</div>
+            <div className="fp-atalhos">
+              {manha && (
+                <button type="button" className="chip-btn"
+                  onClick={() => { setDe(paraHora(manha[0])); setAte(paraHora(manha[1])); }}>
+                  Só manhã ({paraHora(manha[0])}–{paraHora(manha[1])})
+                </button>
+              )}
+              {tarde && (
+                <button type="button" className="chip-btn"
+                  onClick={() => { setDe(paraHora(tarde[0])); setAte(paraHora(tarde[1])); }}>
+                  Só tarde ({paraHora(tarde[0])}–{paraHora(tarde[1])})
+                </button>
+              )}
+            </div>
+            <div className="fp-horas">
+              <label>
+                <span>Entrou às</span>
+                <input type="time" value={de} onChange={(e) => setDe(e.target.value)} />
+              </label>
+              <label>
+                <span>Saiu às</span>
+                <input type="time" value={ate} onChange={(e) => setAte(e.target.value)} />
+              </label>
+            </div>
+
+            <div className={`fp-resultado${invalido || semFalta ? ' neutro' : ''}`}>
+              {invalido ? 'A saída precisa ser depois da entrada.'
+                : semFalta ? 'Nesse horário ele cumpriu a jornada inteira — não há falta.'
+                  : (
+                    <>
+                      Não trabalhou <b>{faltou.map(([a, b]) => `${paraHora(a)}–${paraHora(b)}`).join(' e ')}</b>
+                      {' '}· <b>{duracaoTexto(minutos)}</b> de falta
+                    </>
+                  )}
+            </div>
+
+            <div className="fp-rot">Motivo</div>
+            <div className="fp-motivos">
+              {MOTIVOS_PARCIAL.map(([valor, rotulo]) => (
+                <button
+                  key={valor}
+                  type="button"
+                  className={`chip-btn${motivo === valor ? ' ativo' : ''}`}
+                  aria-pressed={motivo === valor}
+                  onClick={() => setMotivo(valor)}
+                >
+                  {rotulo}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div className="fp-acoes">
+          {existente && (
+            <button type="button" className="ghost-btn fp-desfazer" onClick={aoRemover}>
+              Trabalhou o dia todo
+            </button>
+          )}
+          <span style={{ flex: 1 }} />
+          <button type="button" className="ghost-btn" onClick={aoFechar}>Cancelar</button>
+          <button
+            type="button"
+            className="primary-btn"
+            disabled={!podeSalvar}
+            onClick={() => aoSalvar({ motivo, trabalhou_de: de, trabalhou_ate: ate })}
+          >
+            {existente ? 'Salvar' : 'Lançar falta'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

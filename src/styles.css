@@ -1698,6 +1698,28 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
   border-color: var(--faixa-texto);
   box-shadow: 0 0 0 1px var(--faixa-texto);
 }
+/* ---- presença na equipe: dia completo x meio período ----
+   Verde = cumpriu a jornada inteira (é o padrão de quem está na equipe).
+   Vermelho = falta de meio período lançada (clique simples na pessoa).
+   Férias (amarelo, acima) continua ganhando do verde — é um aviso mais útil
+   que "tudo certo" — mas o vermelho ganha de tudo: é o único dos três que
+   mexe em hora trabalhada. */
+.membro-chip.dia-completo:not(.ferias) { border-color: color-mix(in srgb, var(--ok) 70%, transparent); }
+.membro-chip.parcial {
+  border-color: var(--erro);
+  box-shadow: 0 0 0 1px var(--erro);
+}
+/* Na zona de Faltas a meia falta não sai com clique duplo — o cursor avisa. */
+.membro-chip.travado { cursor: help; }
+
+.eq-lider.dia-completo:not(.ferias) .avatar {
+  box-shadow: 0 0 0 2px var(--superficie), 0 0 0 3.5px color-mix(in srgb, var(--ok) 80%, transparent);
+}
+.eq-lider.parcial .avatar {
+  box-shadow: 0 0 0 2px var(--superficie), 0 0 0 4px var(--erro);
+  animation: none;
+}
+
 .membro-nome {
   font-size: 11.5px;
   font-weight: 500;
@@ -1958,6 +1980,42 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
 
 .modal-copia { width: min(500px, 100%); }
 .modal-motivo { width: min(380px, 100%); }
+/* ---- modal da falta de meio período ---- */
+.modal-parcial { width: min(440px, 100%); }
+.fp-jornada {
+  margin-top: 12px; padding: 8px 10px; border-radius: var(--r-sm);
+  background: var(--superficie-2); font-size: 12.5px; color: var(--tinta-media);
+}
+.fp-jornada b { color: var(--tinta); font-family: var(--fonte-dado); font-weight: 500; }
+.fp-rot {
+  margin: 16px 0 7px;
+  font-family: var(--fonte-display); font-size: 8.5px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--tinta-fraca);
+}
+.fp-atalhos, .fp-motivos { display: flex; flex-wrap: wrap; gap: 6px; }
+.fp-horas { display: flex; gap: 12px; margin-top: 10px; }
+.fp-horas label { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--tinta-media); }
+.fp-horas input { font-family: var(--fonte-dado); }
+.fp-resultado {
+  margin-top: 12px; padding: 9px 11px; border-radius: var(--r-sm);
+  border: 1px solid var(--erro-texto); background: var(--erro-fundo);
+  color: var(--erro-texto); font-size: 12.5px;
+}
+.fp-resultado b { font-family: var(--fonte-dado); font-weight: 600; }
+.fp-resultado.neutro { border-color: var(--borda); background: var(--superficie-2); color: var(--tinta-media); }
+.chip-btn.ativo { border-color: var(--faixa); background: var(--faixa); color: #16190C; }
+.fp-aviso {
+  margin: 14px 0 0; padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--superficie-2); font-size: 13px; color: var(--tinta-media);
+}
+.fp-acoes { display: flex; align-items: center; gap: 8px; margin-top: 18px; }
+.fp-desfazer { color: var(--ok-texto); border-color: var(--ok-texto); }
+
+/* Cartão de hover da meia falta — o mesmo de férias, com o ícone em vermelho. */
+.tt-icone.tt-icone-parcial { background: var(--erro-fundo); color: var(--erro-texto); }
+.tooltip-parcial .tt-linha + .tt-linha { margin-top: 2px; }
+.tt-fraca { color: var(--tinta-fraca); font-size: 11px; }
+
 .lista-motivos { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; }
 .lista-motivos .selo-opc { font-size: 13.5px; padding: 9px 11px; }
 
@@ -3320,3 +3378,4 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
   .it-corpo > .banco { border-right: 0; border-bottom: 1px solid var(--borda); max-height: 260px; }
   .it-grade { grid-template-columns: 1fr; }
 }
+.tooltip-parcial .tt-titulo { color: var(--erro-texto); }

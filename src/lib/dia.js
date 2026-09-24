@@ -33,9 +33,18 @@ export function disponivelEm(historicoStatus, colaborador, data) {
 export function derivarDia(db, data) {
   const equipes = (db.programacoes || []).filter((p) => p.data === data);
 
+  // `faltosos` continua valendo pra QUALQUER falta do dia, parcial ou não —
+  // é o que impede arrastar alguém pra zona de Faltas duas vezes. `parciais`
+  // separa as de meio período (ligadas a uma equipe, ver lib/faltaParcial.js):
+  // colaboradorId -> a linha da falta. Quem está aí trabalhou parte do dia
+  // numa equipe, então aparece nos DOIS lugares — na equipe com anel vermelho
+  // e na zona de Faltas, travado.
   const faltosos = new Set();
+  const parciais = new Map();
   (db.faltas || []).forEach((f) => {
-    if (f.data === data) faltosos.add(f.colaboradorId);
+    if (f.data !== data) return;
+    faltosos.add(f.colaboradorId);
+    if (f.programacao_id) parciais.set(f.colaboradorId, f);
   });
 
   const noPatio = new Set();
@@ -104,6 +113,7 @@ export function derivarDia(db, data) {
   return {
     equipes,
     faltosos,
+    parciais,
     noPatio,
     atestados,
     feriasHoje,

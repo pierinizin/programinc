@@ -19,8 +19,14 @@ export const MOTIVOS_FALTA = [
   ['licenca', 'Licença'],
   ['acidente_trabalho', 'Acidente de trabalho'],
   ['ferias', 'Férias'],
+  ['folga', 'Folga'],
   ['outro', 'Outro'],
 ];
+
+/* Motivos que NÃO são ausência de verdade — combinados com antecedência.
+   Ficam fora da conta de absenteísmo no relatório por padrão (o interruptor
+   "Incluir férias e folgas" traz de volta). */
+export const MOTIVOS_FORA_DA_CONTA = ['ferias', 'folga'];
 
 /* Rótulo legível de um motivo. Motivo fora da lista (base antiga, ou digitado
    direto no banco) ainda mostra alguma coisa legível, só sem a tradução. */

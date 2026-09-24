@@ -68,7 +68,10 @@ export function FichaColaborador({
 
       <div className="ficha-rodape">
         <div><b>{item.escalas}</b><span>Escalas</span></div>
-        <div><b>{item.faltas}</b><span>Faltas</span></div>
+        <div title={item.horasParciais ? `Mais ${item.horasParciais} em faltas de meio período` : undefined}>
+          <b>{item.faltas}</b>
+          <span>Faltas{item.horasParciais ? ` + ${item.horasParciais}` : ''}</span>
+        </div>
         <div><b>{item.cidades}</b><span>Cidades</span></div>
       </div>
 

@@ -14,6 +14,8 @@ import { FichaColaborador } from './components/FichaColaborador';
 import { FichaVeiculo } from './components/FichaVeiculo';
 import { iconeVeiculo } from './components/IconeVeiculo';
 import { derivarDia, disponivelEm } from './lib/dia';
+import { duracaoTexto, resumoParcial } from './lib/faltaParcial';
+import { MOTIVOS_FALTA, rotuloMotivo } from './lib/motivos';
 import { prepararFoto, enviarFoto, assinarFotos, assinarFotosEmCache } from './lib/fotos';
 import { salvarAtestado, abrirArquivo as abrirArquivoDoc } from './lib/arquivosDoc';
 import { salvarFerias, excluirFerias as apagarFerias, abrirArquivoFerias } from './lib/ferias';
@@ -36,7 +38,7 @@ const TEAM_TYPE_OPTIONS = [
 ];
 
 const STATUS_OPTIONS = ['EXECUTANDO', 'CONCLUÍDO', 'NÃO FOI POSSÍVEL REALIZAR'];
-const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'VIAGEM', 'OUTROS'];
+const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'VIAGEM', 'INTEGRAÇÃO', 'OUTROS'];
 const ROLE_OPTIONS = ['Encarregado', 'Motorista de Veículos Médios', 'Ajudante de produção', 'Operador de máquina de pintura'];
 const VEHICLE_TYPES = ['Caminhão', 'Caminhonete', 'Carro', 'Outro'];
 const VEHICLE_STATUS = ['Disponível', 'Em uso', 'Manutenção', 'Inativo'];
@@ -1023,13 +1025,20 @@ function AppInner() {
   const dateLabel = formatDateLabel(selectedDate);
 
   const colaboradoresComStats = useMemo(() => {
+    const progPorId = new Map(db.programacoes.map((p) => [p.id, p]));
     return db.colaboradores.map((c) => {
       const escalas = db.programacoes.filter((p) => p.membroIds.includes(c.id));
       const faltas = db.faltas.filter((f) => f.colaboradorId === c.id);
+      // Meio período não conta como "uma falta" — vira horas, à parte.
+      const inteiras = faltas.filter((f) => !f.programacao_id);
+      const minutosParciais = faltas
+        .filter((f) => f.programacao_id && progPorId.has(f.programacao_id))
+        .reduce((s, f) => s + resumoParcial(progPorId.get(f.programacao_id), f).minutosFaltados, 0);
       return {
         ...c,
         escalas: escalas.length,
-        faltas: faltas.length,
+        faltas: inteiras.length,
+        horasParciais: minutosParciais ? duracaoTexto(minutosParciais) : '',
         cidades: new Set(escalas.map((x) => x.cidade)).size,
         ultimaEscala: [...escalas].sort((a, b) => b.data.localeCompare(a.data))[0] || null,
       };
@@ -1176,6 +1185,17 @@ function AppInner() {
       return;
     }
     gravarCampos(equipe, { membroIds: (equipe.membroIds || []).filter((id) => id !== pessoaId) });
+    apagarParcialDaEquipe(equipe, pessoaId);
+  }
+
+  /* Falta parcial só existe DENTRO de uma equipe: tirou a pessoa da equipe,
+     a meia falta vai junto — senão ela ficaria presa na zona de Faltas, travada,
+     sem equipe onde clicar pra desfazer. */
+  function apagarParcialDaEquipe(equipe, pessoaId) {
+    const reg = db.faltas.find(
+      (f) => f.programacao_id === equipe.id && f.colaboradorId === pessoaId
+    );
+    if (reg) removerOtimista('faltas', reg.id, 'remover a falta parcial');
   }
 
   // Clique duplo no encarregado: mesma remoção direta que os demais membros
@@ -1187,6 +1207,7 @@ function AppInner() {
       encarregadoId: null,
       membroIds: (equipe.membroIds || []).filter((id) => id !== pessoaId),
     });
+    apagarParcialDaEquipe(equipe, pessoaId);
   }
 
   function adicionarVeiculo(equipe, veiculoId) {
@@ -1856,6 +1877,7 @@ function AppInner() {
   /* Update otimista por id, para qualquer tabela. */
   async function atualizarOtimista(tabela, id, patch, oQue) {
     const anterior = db[tabela];
+    avancarVersaoEstado();
     setDb((atual) => ({
       ...atual,
       [tabela]: atual[tabela].map((r) => (r.id === id ? { ...r, ...patch } : r)),
@@ -1872,6 +1894,7 @@ function AppInner() {
 
   async function inserirOtimista(tabela, linha, oQue) {
     const provisorio = { ...linha, id: `tmp-${tabela}-${contadorTmpRef.current += 1}` };
+    avancarVersaoEstado();
     setDb((atual) => ({ ...atual, [tabela]: [...atual[tabela], provisorio] }));
 
     const res = await supabase.from(tabela).insert([linha]).select();
@@ -1888,6 +1911,7 @@ function AppInner() {
 
     // troca a provisória pela linha real, com o id que veio do banco
     const real = res.data[0];
+    avancarVersaoEstado();
     setDb((atual) => ({
       ...atual, [tabela]: atual[tabela].map((r) => (r.id === provisorio.id ? real : r)),
     }));
@@ -1896,6 +1920,7 @@ function AppInner() {
 
   async function removerOtimista(tabela, id, oQue) {
     const anterior = db[tabela];
+    avancarVersaoEstado();
     setDb((atual) => ({ ...atual, [tabela]: atual[tabela].filter((r) => r.id !== id) }));
 
     const res = await supabase.from(tabela).delete().eq('id', id).select();
@@ -1936,9 +1961,46 @@ function AppInner() {
       (f) => f.data === selectedDate && f.colaboradorId === colaboradorId
     );
     if (!reg) return;
+    // Falta parcial é travada na zona de Faltas de propósito: ela se desfaz
+    // pela própria equipe (clique na pessoa → "Trabalhou o dia todo").
+    if (reg.programacao_id) return;
     // Apagar falta é só de admin no security.sql — se voltar vazio, o aviso
     // explica em vez de o botão parecer quebrado.
     return removerOtimista('faltas', reg.id, 'remover faltas');
+  }
+
+  /* ------------------------------------------------------------------
+     Falta parcial (meio período). Uma falta por pessoa por dia continua
+     valendo: se já existe uma PARCIAL, é atualizada (mudou o horário ou o
+     motivo); se existe uma de DIA INTEIRO, não mexe — a pessoa está na zona
+     de Faltas e aquilo precisa ser resolvido lá primeiro.
+     ------------------------------------------------------------------ */
+  async function salvarFaltaParcial(colaboradorId, equipe, { motivo, trabalhou_de, trabalhou_ate }) {
+    const reg = db.faltas.find(
+      (f) => f.data === selectedDate && f.colaboradorId === colaboradorId
+    );
+    if (reg && !reg.programacao_id) {
+      notificar({
+        mensagem: 'Essa pessoa já tem falta de dia inteiro hoje. Tire da zona de Faltas antes de lançar meio período.',
+        variante: 'atencao',
+      });
+      return false;
+    }
+    const campos = { motivo, programacao_id: equipe.id, trabalhou_de, trabalhou_ate };
+    if (reg) return atualizarOtimista('faltas', reg.id, campos, 'alterar a falta parcial');
+    return inserirOtimista(
+      'faltas',
+      { colaboradorId, data: selectedDate, observacao: '', ...campos },
+      'registrar a falta parcial'
+    );
+  }
+
+  async function removerFaltaParcial(colaboradorId) {
+    const reg = db.faltas.find(
+      (f) => f.data === selectedDate && f.colaboradorId === colaboradorId && f.programacao_id
+    );
+    if (!reg) return;
+    return removerOtimista('faltas', reg.id, 'remover a falta parcial');
   }
 
   /* ------------------------------------------------------------------
@@ -2701,8 +2763,11 @@ function AppInner() {
                     <Pastilha n={resumoDia.pessoasEscaladas} rotulo="escalados" />
                     <Pastilha n={resumoDia.pessoasLivres.length} rotulo="livres" tom="destaque" />
                     <Pastilha n={resumoDia.veiculosLivres.length} rotulo="veíc. parados" />
-                    {resumoDia.faltosos.size > 0 && (
-                      <Pastilha n={resumoDia.faltosos.size} rotulo="faltas" tom="alerta" />
+                    {resumoDia.faltosos.size - resumoDia.parciais.size > 0 && (
+                      <Pastilha n={resumoDia.faltosos.size - resumoDia.parciais.size} rotulo="faltas" tom="alerta" />
+                    )}
+                    {resumoDia.parciais.size > 0 && (
+                      <Pastilha n={resumoDia.parciais.size} rotulo="meio período" tom="alerta" />
                     )}
                     {resumoDia.noPatio.size > 0 && (
                       <Pastilha n={resumoDia.noPatio.size} rotulo="no pátio" />
@@ -2746,6 +2811,8 @@ function AppInner() {
                   onTirarDoPatio={removerDoPatio}
                   onRegistrarFalta={registrarFalta}
                   onRemoverFalta={removerFalta}
+                  onSalvarFaltaParcial={salvarFaltaParcial}
+                  onRemoverFaltaParcial={removerFaltaParcial}
                   onMudarStatus={mudarStatusEquipe}
                   podeMudarStatus={userRole === 'admin'}
                   podeExcluir={userRole === 'admin'}
@@ -3549,14 +3616,12 @@ function AppInner() {
                   label="Motivo"
                   value={faltaForm.motivo}
                   onChange={(v) => setFaltaForm({ ...faltaForm, motivo: v })}
-                  options={[
-                    { value: 'atestado_medico', label: 'atestado_medico' },
-                    { value: 'falta_justificada', label: 'falta_justificada' },
-                    { value: 'falta_injustificada', label: 'falta_injustificada' },
-                    { value: 'licenca', label: 'licenca' },
-                    { value: 'acidente_trabalho', label: 'acidente_trabalho' },
-                    { value: 'outro', label: 'outro' },
-                  ]}
+                  /* Mesma lista do quadro (lib/motivos.js) — antes era uma cópia à
+                     parte, e motivo novo aparecia num lugar e não no outro.
+                     Férias fica de fora: tem cadastro próprio ("Registrar férias"). */
+                  options={MOTIVOS_FALTA
+                    .filter(([v]) => v !== 'ferias')
+                    .map(([value, label]) => ({ value, label }))}
                 />
                 <TextArea
                   label="Observação"
@@ -3846,6 +3911,15 @@ function MultiSelect({ label, items, selectedIds, labelKey, subtitleKey, subtitl
   );
 }
 
+/* " · meio período, faltou 13:00–17:00 (4h)" — ou nada, se for dia inteiro. */
+function textoParcial(f, db) {
+  if (!f.programacao_id) return '';
+  const eq = db.programacoes.find((p) => p.id === f.programacao_id);
+  if (!eq) return ' · meio período';
+  const r = resumoParcial(eq, f);
+  return ` · meio período, faltou ${r.faltouTexto} (${r.duracao})`;
+}
+
 function ResumoDiaDrawer({ date, db, maps, onGoToDate, onAbrirEquipe }) {
   const programacoes = db.programacoes.filter(p => p.data === date);
   const faltas = db.faltas.filter(f => f.data === date);
@@ -3875,7 +3949,7 @@ function ResumoDiaDrawer({ date, db, maps, onGoToDate, onAbrirEquipe }) {
             return (
               <div key={f.id} className="mini-card" style={{ borderLeft: '3px solid var(--erro)' }}>
                 <strong>{pessoa ? pessoa.nome : 'Colaborador excluído'}</strong>
-                <div className="meta-row">{f.motivo}</div>
+                <div className="meta-row">{rotuloMotivo(f.motivo)}{textoParcial(f, db)}</div>
               </div>
             );
           })
@@ -4021,7 +4095,7 @@ function ColaboradorDrawer({
           faltas.map((f) => (
             <div key={f.id} className="mini-card">
               <div className="between">
-                <strong>{f.motivo}</strong>
+                <strong>{rotuloMotivo(f.motivo)}{textoParcial(f, db)}</strong>
                 {userRole === 'admin' && (
                   <button className="mini-danger" onClick={() => deleteFalta(f.id)}>Excluir</button>
                 )}

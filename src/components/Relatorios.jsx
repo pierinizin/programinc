@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
-import { rotuloMotivo } from '../lib/motivos';
+import { MOTIVOS_FORA_DA_CONTA, rotuloMotivo } from '../lib/motivos';
+import { duracaoTexto, resumoParcial } from '../lib/faltaParcial';
 import {
   atribuirFaixas,
   contratantesConhecidos,
@@ -52,6 +53,7 @@ const COR_MOTIVO = {
   licenca: 'var(--serie-4)',
   acidente_trabalho: 'var(--serie-5)',
   ferias: 'var(--serie-6)',
+  folga: 'var(--serie-7)',
 };
 const corMotivo = (m) => COR_MOTIVO[m] || 'var(--serie-outros)';
 
@@ -495,6 +497,28 @@ export function Relatorios({
     });
   }
 
+  function abrirPessoaParcial(id, registros, minutos) {
+    const p = pessoaDe.get(id);
+    setDetalhe({
+      titulo: p?.nome || 'Colaborador removido',
+      sub: `${duracaoTexto(minutos)} em ${registros.length} ${registros.length === 1 ? 'falta' : 'faltas'} de meio período`,
+      avatar: <Avatar nome={p?.nome} url={p?.fotoUrl} tamanho="big" />,
+      corpo: (
+        <section className="rel-p-sec">
+          <h5>Dia a dia</h5>
+          <div className="rel-linhas">
+            {registros.slice().sort((a, b) => b.data.localeCompare(a.data)).map((f) => (
+              <div className="rel-linha" key={f.id}>
+                <span>{longa(f.data)} · {rotuloMotivo(f.motivo)}</span>
+                <b>faltou {f.resumo.faltouTexto} ({f.resumo.duracao})</b>
+              </div>
+            ))}
+          </div>
+        </section>
+      ),
+    });
+  }
+
   function abrirPessoaFaltas(id, registros) {
     const p = pessoaDe.get(id);
     const porMotivo = new Map();
@@ -524,10 +548,35 @@ export function Relatorios({
 
   /* ---------------- faltas: números ---------------- */
 
-  const faltasFiltradas = useMemo(
+  /* Meio período (falta ligada a uma equipe, ver lib/faltaParcial.js) NÃO
+     entra na conta de "ausências" — somar meia hora de médico como um dia
+     inteiro de falta distorce tudo. Ela vai pra uma seção própria, em horas. */
+  const faltasNoPeriodo = useMemo(
     () => filtrarFaltas(faltas, { de, ate, incluirFerias }),
     [faltas, de, ate, incluirFerias],
   );
+  const faltasFiltradas = useMemo(
+    () => faltasNoPeriodo.filter((f) => !f.programacao_id),
+    [faltasNoPeriodo],
+  );
+  const progPorId = useMemo(() => new Map(programacoes.map((p) => [p.id, p])), [programacoes]);
+  const parciaisFiltradas = useMemo(
+    () => faltasNoPeriodo
+      .filter((f) => f.programacao_id && progPorId.has(f.programacao_id))
+      .map((f) => ({ ...f, resumo: resumoParcial(progPorId.get(f.programacao_id), f) })),
+    [faltasNoPeriodo, progPorId],
+  );
+  const parciaisPorPessoa = useMemo(() => {
+    const m = new Map();
+    for (const f of parciaisFiltradas) {
+      if (!m.has(f.colaboradorId)) m.set(f.colaboradorId, { regs: [], minutos: 0 });
+      const item = m.get(f.colaboradorId);
+      item.regs.push(f);
+      item.minutos += f.resumo.minutosFaltados;
+    }
+    return [...m.entries()].sort((a, b) => b[1].minutos - a[1].minutos);
+  }, [parciaisFiltradas]);
+  const minutosParciais = parciaisFiltradas.reduce((s, f) => s + f.resumo.minutosFaltados, 0);
 
   const porMotivo = useMemo(() => {
     const m = new Map();
@@ -588,8 +637,8 @@ export function Relatorios({
 
   const diasEmCampo = periodos.reduce((s, p) => s + p.dias, 0);
   const faltasDoEnc = encAtual
-    ? faltas.filter((f) => f.colaboradorId === encAtual.id && f.motivo !== 'ferias'
-        && f.data >= de && f.data <= ate).length
+    ? faltas.filter((f) => f.colaboradorId === encAtual.id && !MOTIVOS_FORA_DA_CONTA.includes(f.motivo)
+        && !f.programacao_id && f.data >= de && f.data <= ate).length
     : 0;
 
   const porContratante = useMemo(() => {
@@ -648,9 +697,9 @@ export function Relatorios({
           role="switch"
           aria-checked={incluirFerias}
           onClick={() => { setIncluirFerias((v) => !v); fechar(); }}
-          title="Férias entram no banco como falta. Contadas junto, viram o motivo mais comum e inflam o absenteísmo."
+          title="Férias e folgas entram no banco como falta. Contadas junto, viram o motivo mais comum e inflam o absenteísmo."
         >
-          <span className="rel-tr" /> Incluir férias na contagem
+          <span className="rel-tr" /> Incluir férias e folgas na contagem
         </button>
       )}
     </div>
@@ -991,7 +1040,7 @@ export function Relatorios({
       )}
 
       {/* ================= FALTAS ================= */}
-      {aba === 'faltas' && !faltasFiltradas.length && (
+      {aba === 'faltas' && !faltasFiltradas.length && !parciaisFiltradas.length && (
         <p className="rel-vazio">Nenhuma ausência registrada neste período.</p>
       )}
 
@@ -1008,7 +1057,7 @@ export function Relatorios({
             <h3>Faltas por motivo</h3>
             <p className="rel-sub">
               Cada ocorrência é um dia de ausência.
-              {!incluirFerias && ' Férias estão fora desta conta.'}
+              {!incluirFerias && ' Férias e folgas estão fora desta conta.'}
             </p>
             <div className="rel-barras">
               {porMotivo.map(([motivo, regs]) => (
@@ -1101,6 +1150,38 @@ export function Relatorios({
             <p className="rel-dicaclique">Clique num nome para ver os dias exatos, motivo por motivo.</p>
           </section>
         </>
+      )}
+
+      {aba === 'faltas' && !!parciaisFiltradas.length && (
+        <section className="rel-bloco">
+          <h3>Faltas de meio período</h3>
+          <p className="rel-sub">
+            Foi pra obra e trabalhou só parte do dia. Contadas em horas, fora das ausências acima —
+            {' '}<b>{duracaoTexto(minutosParciais)}</b> no total, em {parciaisFiltradas.length}{' '}
+            {parciaisFiltradas.length === 1 ? 'ocorrência' : 'ocorrências'}.
+          </p>
+          <div className="rel-lista">
+            {parciaisPorPessoa.map(([id, { regs, minutos }]) => {
+              const p = pessoaDe.get(id);
+              return (
+                <button key={id} className="rel-item rel-item-pessoa" onClick={() => abrirPessoaParcial(id, regs, minutos)}>
+                  <Avatar nome={p?.nome} url={p?.fotoUrl} tamanho="small" />
+                  <span>
+                    <span className="rel-nm">{p?.nome || 'Colaborador removido'}</span>
+                    <span className="rel-fn">{regs.length} {regs.length === 1 ? 'vez' : 'vezes'}</span>
+                  </span>
+                  <span className="rel-trilho">
+                    <span className="rel-fill" style={{
+                      width: `${(minutos / parciaisPorPessoa[0][1].minutos) * 100}%`, background: 'var(--erro)',
+                    }} />
+                  </span>
+                  <span className="rel-val">{duracaoTexto(minutos)}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="rel-dicaclique">Clique num nome para ver os dias, os horários e o motivo.</p>
+        </section>
       )}
 
       <Painel dados={detalhe} aoFechar={fechar} />
