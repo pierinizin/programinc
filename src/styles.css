@@ -2019,49 +2019,101 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
 .lista-motivos { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; }
 .lista-motivos .selo-opc { font-size: 13.5px; padding: 9px 11px; }
 
-/* ---- Pátio e faltas: destinos de arraste no pé do quadro ---- */
+/* ---- Pátio, em viagem e faltas: destinos de arraste no pé do quadro ----
+   Visual "B" (escolhido pelo Gabriel): cada zona com fundo suave na própria
+   cor, selo com ícone, uma linha dizendo quem vai ali e o total grande à
+   direita. As cores saem das mesmas variáveis do resto do app, então o modo
+   escuro acompanha sozinho. */
 .zonas {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  padding: 10px;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  padding: 8px;
+  /* abrir uma zona não estica as outras duas */
+  align-items: start;
   border-top: 1px solid var(--borda);
   background: var(--asfalto-alto);
 }
 .zona {
-  border: 1.5px dashed var(--borda-forte);
-  border-radius: var(--r-sm);
-  padding: 9px 11px;
-  background: var(--superficie);
-  min-height: 76px;
-  transition: border-color .12s, background .12s;
+  --zc: var(--tinta-media);
+  --zt: var(--tinta);
+  --zf: var(--superficie-2);
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  padding: 5px 10px 5px 6px;
+  background: var(--zf);
+  transition: border-color .12s, box-shadow .12s;
 }
-.zona.alvo { border-color: var(--ok-texto); background: var(--ok-fundo); border-style: solid; }
-.zona.alvo-nao { border-color: var(--erro-texto); background: var(--erro-fundo); border-style: solid; }
+/* Pátio é neutro: a pessoa está bem, só não saiu. Um cinza um pouco mais
+   fechado que o fundo do quadro, pra não sumir ao lado dos outros dois. */
+.zona-patio  { --zc: var(--tinta-media); --zt: var(--tinta);
+               --zf: color-mix(in srgb, var(--tinta-media) 13%, var(--superficie)); }
+/* Viagem: azul de "situação" (o mesmo de "Em campo") — não é problema. */
+.zona-viagem { --zc: var(--campo); --zt: var(--campo-texto); --zf: var(--campo-fundo); }
+/* Falta é ausência: vermelho, mesma semântica dos selos de status. */
+.zona-falta  { --zc: var(--erro);  --zt: var(--erro-texto);  --zf: var(--erro-fundo); }
 
-.zona-topo {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 7px;
+/* Arrastando por cima: contorno tracejado na cor da própria zona. */
+.zona.alvo { border-color: var(--zc); border-style: dashed; box-shadow: 0 0 0 3px color-mix(in srgb, var(--zc) 18%, transparent); }
+.zona.alvo-nao { border-color: var(--erro-texto); border-style: dashed; }
+
+/* Uma linha só por zona — o rodapé fica fino. */
+.zona-linha { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+.zona-linha.aberta { flex-wrap: wrap; }
+/* Aberta: a gente desce pra baixo do cabeçalho e usa a largura inteira. */
+.zona-linha.aberta > .zona-gente { order: 10; flex-basis: 100%; padding: 2px 0 2px; }
+.zona-linha.aberta > .zona-mais { margin-left: auto; }
+.zona-selo {
+  width: 24px; height: 24px; flex: none;
+  border-radius: 7px;
+  display: grid; place-items: center;
+  background: var(--superficie);
+  color: var(--zt);
+  box-shadow: 0 1px 2px rgba(16, 24, 32, .08);
 }
 .zona-rot {
+  flex: none;
   font-family: var(--fonte-display);
-  font-size: 10.5px;
+  font-size: 12.5px;
   font-weight: 700;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: var(--tinta);
+  color: var(--zt);
 }
-/* falta é ausência, não pendência: vermelho, seguindo a mesma semântica de
-   cor usada nos selos de status */
-.zona-falta .zona-rot { color: var(--erro-texto); }
+.zona-num {
+  flex: none;
+  min-width: 22px;
+  text-align: right;
+  font: 800 19px/1 var(--fonte-display);
+  color: var(--zt);
+  font-variant-numeric: tabular-nums;
+}
+.zona-num.zero { opacity: .35; }
 
-.zona-gente { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+/* Fechada: só a linha de chips que cabe (a altura de um chip); o resto
+   aparece no "ver todos" (ZonaGente, no QuadroDia). */
+.zona-gente {
+  flex: 1; min-width: 0;
+  display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
+  max-height: 32px; overflow: hidden;
+}
+.zona-gente.aberta { max-height: none; }
 .zona-vazia { font-size: 11.5px; color: var(--tinta-fraca); font-style: italic; }
+.zona-mais {
+  flex: none;
+  padding: 3px 9px; border: 0; border-radius: 999px;
+  background: var(--superficie); box-shadow: 0 1px 2px rgba(16, 24, 32, .08);
+  font-size: 11px; font-weight: 600; color: var(--zt); cursor: pointer;
+}
+.zona-mais:hover { text-decoration: underline; }
+/* Chips brancos por cima do fundo tingido. Os de meio período mantêm o anel
+   vermelho deles — por isso o :not(.parcial). */
+.zona .membro-chip:not(.parcial) {
+  background: var(--superficie);
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(16, 24, 32, .08);
+}
+.zona .membro-chip.parcial { background: var(--superficie); }
 
-@media (max-width: 720px) {
+@media (max-width: 900px) {
   .zonas { grid-template-columns: 1fr; }
 }
 .opcoes { display: flex; flex-direction: column; gap: 6px; margin-top: 7px; }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
 import { iconeVeiculo } from './IconeVeiculo';
 import { contratoAutomatico, contratosVigentes } from '../lib/contratos';
@@ -59,6 +59,63 @@ function seloDe(item) {
   return ['selo-neutro', '—'];
 }
 
+/* Zonas do rodapé (Pátio / Em viagem / Faltas): uma faixa fina por zona,
+   com selo, nome, a gente e o total à direita. A cor vem da classe da zona
+   (zona-patio / zona-viagem / zona-falta), no CSS. */
+const ICONES_ZONA = {
+  patio: <path d="M2 7.5 8 3l6 4.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1Z M6 14V10h4v4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />,
+  viagem: (
+    <>
+      <path d="M1.5 4.5h8v6h-8z M9.5 6.5h2.7l2.3 2.3v1.7h-5z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <circle cx="4.5" cy="11.5" r="1.4" fill="currentColor" />
+      <circle cx="11.5" cy="11.5" r="1.4" fill="currentColor" />
+    </>
+  ),
+  falta: (
+    <>
+      <circle cx="6.5" cy="5" r="2.6" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M1.8 14c.4-2.6 2.4-4.2 4.7-4.2 1 0 1.9.3 2.6.8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="m11 10 3.5 3.5m0-3.5L11 13.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </>
+  ),
+};
+
+/* Lista de gente dentro da zona: no máximo duas linhas de chips. Se tiver
+   mais gente do que cabe, aparece "ver todos" — a zona só cresce quando você
+   pede, em vez de esticar o rodapé inteiro num dia de muitas faltas. */
+function ZonaGente({ children, icone, rotulo, sub, n }) {
+  const ref = useRef(null);
+  const [aberta, setAberta] = useState(false);
+  const [sobra, setSobra] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const medir = () => setSobra(el.scrollHeight > el.clientHeight + 2);
+    medir();
+    const obs = new ResizeObserver(medir);
+    obs.observe(el);
+    return () => obs.disconnect();
+  });
+  /* Tudo numa linha só: selo · nome · gente · "ver todos" · total. Fechada,
+     a lista mostra só quem cabe nessa linha; aberta, quebra em quantas
+     linhas precisar. */
+  return (
+    <div className={`zona-linha${aberta ? ' aberta' : ''}`}>
+      <span className="zona-selo" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 16 16">{ICONES_ZONA[icone]}</svg>
+      </span>
+      <span className="zona-rot" title={sub}>{rotulo}</span>
+      <div ref={ref} className={`zona-gente${aberta ? ' aberta' : ''}`}>{children}</div>
+      {(sobra || aberta) && (
+        <button type="button" className="zona-mais" onClick={() => setAberta((v) => !v)}>
+          {aberta ? 'recolher' : 'ver todos'}
+        </button>
+      )}
+      <span className={`zona-num${n ? '' : ' zero'}`} aria-label={`${n} ${rotulo.toLowerCase()}`}>{n}</span>
+    </div>
+  );
+}
+
 export function QuadroDia({
   db,
   maps,
@@ -79,6 +136,8 @@ export function QuadroDia({
   onAlternarApontamento,
   onAoPatio,
   onTirarDoPatio,
+  onAViagem,
+  onTirarDaViagem,
   onRegistrarFalta,
   onRemoverFalta,
   onSalvarFaltaParcial,
@@ -146,7 +205,7 @@ export function QuadroDia({
 
   /* Uma conta só, compartilhada com a fita do cabeçalho (src/lib/dia.js). */
   const {
-    equipes, faltosos, parciais, noPatio, atestados, feriasHoje, equipesDaPessoa, equipesDoVeiculo,
+    equipes, faltosos, parciais, noPatio, emViagem, atestados, feriasHoje, equipesDaPessoa, equipesDoVeiculo,
     pessoasLivres, veiculosLivres,
   } = useMemo(() => derivarDia(db, selectedDate), [db, selectedDate]);
 
@@ -221,12 +280,19 @@ export function QuadroDia({
     // Pátio e faltas são só de gente. Veículo não falta nem fica de sobreaviso.
     if (zona) {
       if (tipo !== 'pessoa') return { ok: 'nao', msg: 'só pessoas' };
+      // Pátio, viagem e falta se excluem: a pessoa está em UM desses lugares.
       if (zona === 'patio') {
         if (noPatio.has(item.id)) return { ok: 'nao', msg: 'já está no pátio' };
+        if (emViagem.has(item.id)) return { ok: 'nao', msg: 'está em viagem' };
+        if (faltosos.has(item.id)) return { ok: 'nao', msg: 'tem falta hoje' };
+      } else if (zona === 'viagem') {
+        if (emViagem.has(item.id)) return { ok: 'nao', msg: 'já está em viagem' };
+        if (noPatio.has(item.id)) return { ok: 'nao', msg: 'está no pátio' };
         if (faltosos.has(item.id)) return { ok: 'nao', msg: 'tem falta hoje' };
       } else {
         if (faltosos.has(item.id)) return { ok: 'nao', msg: 'já tem falta hoje' };
         if (noPatio.has(item.id)) return { ok: 'nao', msg: 'está no pátio' };
+        if (emViagem.has(item.id)) return { ok: 'nao', msg: 'está em viagem' };
       }
       // Estar numa equipe e ir para o pátio/falta é contraditório, mas pode ser
       // exatamente a correção que a pessoa quer fazer. Avisa, não bloqueia.
@@ -234,7 +300,10 @@ export function QuadroDia({
       if (emEquipe && emEquipe.length) {
         return { ok: 'aviso', msg: `está em ${emEquipe[0].cidade}` };
       }
-      return { ok: 'sim', msg: zona === 'patio' ? 'fica no pátio' : 'registrar falta' };
+      return {
+        ok: 'sim',
+        msg: zona === 'patio' ? 'fica no pátio' : zona === 'viagem' ? 'em viagem' : 'registrar falta',
+      };
     }
 
     if (tipo === 'veiculo') {
@@ -381,6 +450,7 @@ export function QuadroDia({
       if (v.ok !== 'nao' && zona) {
         encerrar();
         if (zona === 'patio') onAoPatio(arrasto.item.id);
+        else if (zona === 'viagem') onAViagem(arrasto.item.id);
         // Quem já está de férias não precisa que perguntem o motivo — só tem
         // um motivo possível, e é o mesmo aviso que o anel do card já dava.
         // Perguntar aqui seria repetir uma informação que a pessoa já
@@ -1047,17 +1117,11 @@ export function QuadroDia({
         </div>
       </div>
 
-      {/* Pátio e faltas: os dois destinos de quem não vai para obra. Ficam
+      {/* Pátio, em viagem e faltas: os destinos de quem não vai para obra. Ficam
           embaixo do quadro e recebem arraste igual às equipes. */}
       <div className="zonas">
-        <div className="zona" data-zona="patio">
-          <div className="zona-topo">
-            <span className="zona-rot">Pátio</span>
-            <span className="small-muted">
-              {noPatio.size === 0 ? 'arraste quem ficou' : `${noPatio.size} no pátio`}
-            </span>
-          </div>
-          <div className="zona-gente">
+        <div className="zona zona-patio" data-zona="patio">
+          <ZonaGente icone="patio" rotulo="Pátio" sub="veio e ficou na base" n={noPatio.size}>
             {[...noPatio].map((id) => maps.colaboradores[id]).filter(Boolean).map((p) => (
               <button
                 type="button"
@@ -1070,18 +1134,30 @@ export function QuadroDia({
                 <span className="membro-nome">{nomeCurto(p.nome)}</span>
               </button>
             ))}
-            {noPatio.size === 0 && <span className="zona-vazia">solte alguém aqui</span>}
-          </div>
+            {noPatio.size === 0 && <span className="zona-vazia">arraste alguém aqui</span>}
+          </ZonaGente>
+        </div>
+
+        <div className="zona zona-viagem" data-zona="viagem">
+          <ZonaGente icone="viagem" rotulo="Em viagem" sub="deslocando" n={emViagem.size}>
+            {[...emViagem].map((id) => maps.colaboradores[id]).filter(Boolean).map((p) => (
+              <button
+                type="button"
+                key={p.id}
+                className="membro-chip"
+                title={podeEditar ? `${p.nome} — clique duplo para tirar` : p.nome}
+                onDoubleClick={() => podeEditar && onTirarDaViagem(p.id)}
+              >
+                <Avatar nome={p.nome} url={p.fotoUrl} tamanho="small" />
+                <span className="membro-nome">{nomeCurto(p.nome)}</span>
+              </button>
+            ))}
+            {emViagem.size === 0 && <span className="zona-vazia">arraste alguém aqui</span>}
+          </ZonaGente>
         </div>
 
         <div className="zona zona-falta" data-zona="falta">
-          <div className="zona-topo">
-            <span className="zona-rot">Faltas</span>
-            <span className="small-muted">
-              {faltosos.size === 0 ? 'arraste quem não veio' : `${faltosos.size} com falta`}
-            </span>
-          </div>
-          <div className="zona-gente">
+          <ZonaGente icone="falta" rotulo="Faltas" sub="não veio" n={faltosos.size}>
             {[...faltosos].map((id) => maps.colaboradores[id]).filter(Boolean).map((p) => {
               const reg = (db.faltas || []).find(
                 (f) => f.data === selectedDate && f.colaboradorId === p.id
@@ -1113,8 +1189,8 @@ export function QuadroDia({
                 </button>
               );
             })}
-            {faltosos.size === 0 && <span className="zona-vazia">solte alguém aqui</span>}
-          </div>
+            {faltosos.size === 0 && <span className="zona-vazia">arraste alguém aqui</span>}
+          </ZonaGente>
         </div>
       </div>
 

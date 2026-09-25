@@ -131,6 +131,7 @@ function normalizeDb(data) {
    ferias: Array.isArray(data?.ferias) ? data.ferias : [],
    historicoStatus: Array.isArray(data?.historicoStatus) ? data.historicoStatus : [],
    patio: Array.isArray(data?.patio) ? data.patio : [],
+   viagem: Array.isArray(data?.viagem) ? data.viagem : [],
    perfis: Array.isArray(data?.perfis) ? data.perfis : [],
    concessionarias: Array.isArray(data?.concessionarias)
      ? [...data.concessionarias].sort((a, b) => String(a.sigla || '').localeCompare(String(b.sigla || ''), 'pt-BR'))
@@ -282,7 +283,7 @@ function AppInner() {
   const [isRecovering, setIsRecovering] = useState(false);
   const [novaSenha, setNovaSenha] = useState('');
   
-  const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [], ferias: [], historicoStatus: [], patio: [], perfis: [], concessionarias: [], contratos: [], gruposIntegracao: [], gruposIntegracaoContratos: [], integracoes: [] });
+  const [db, setDb] = useState({ colaboradores: [], veiculos: [], programacoes: [], faltas: [], ferias: [], historicoStatus: [], patio: [], viagem: [], perfis: [], concessionarias: [], contratos: [], gruposIntegracao: [], gruposIntegracaoContratos: [], integracoes: [] });
   const [page, setPage] = useState('programacao'); 
   const [selectedDate, setSelectedDate] = useState(today());
   const [search, setSearch] = useState('');
@@ -344,7 +345,7 @@ function AppInner() {
   const fetchDatabase = async () => {
     const minhaVez = ++fetchSeqRef.current;
     const [resCols, resVeics, resProgs, resFaltas, resFerias, resHistorico, resPatio, resPerfis,
-           resConcs, resCtrs, resGrupos, resGruposCtrs, resIntegracoes] = await Promise.all([
+           resConcs, resCtrs, resGrupos, resGruposCtrs, resIntegracoes, resViagem] = await Promise.all([
       supabase.from('colaboradores').select('*'),
       supabase.from('veiculos').select('*'),
       supabase.from('programacoes').select('*'),
@@ -357,7 +358,10 @@ function AppInner() {
       supabase.from('contratos').select('*'),
       supabase.from('grupos_integracao').select('*'),
       supabase.from('grupos_integracao_contratos').select('*'),
-      supabase.from('integracoes').select('*')
+      supabase.from('integracoes').select('*'),
+      // Se o 18-viagem.sql ainda não rodou, vem erro e a zona fica vazia —
+      // o resto da tela continua funcionando.
+      supabase.from('viagem').select('*')
     ]);
 
     // Com RLS ligada, uma tabela sem permissão volta com error e data null.
@@ -368,7 +372,7 @@ function AppInner() {
     // inteira. Sem histórico, disponivelEm() (lib/dia.js) cai de volta no
     // status simples de agora, então a Programação continua funcionando.
     [resCols, resVeics, resProgs, resFaltas, resFerias, resHistorico, resPatio, resPerfis,
-     resConcs, resCtrs, resGrupos, resGruposCtrs, resIntegracoes].forEach((res) => {
+     resConcs, resCtrs, resGrupos, resGruposCtrs, resIntegracoes, resViagem].forEach((res) => {
       if (res?.error) console.error('Erro ao carregar dados:', res.error.message);
     });
 
@@ -399,6 +403,7 @@ function AppInner() {
       ferias: resFerias?.data || [],
       historicoStatus: resHistorico?.data || [],
       patio: resPatio?.data || [],
+      viagem: resViagem?.data || [],
       perfis: resPerfis?.data || [],
       concessionarias: resConcs?.data || [],
       contratos: resCtrs?.data || [],
@@ -511,7 +516,7 @@ function AppInner() {
     fetchDatabaseRef.current();
 
     const canal = supabase.channel('mudancas-incovia');
-    ['colaboradores', 'veiculos', 'programacoes', 'faltas', 'ferias', 'colaboradores_status_historico', 'patio', 'perfis', 'grupos_integracao', 'grupos_integracao_contratos', 'integracoes'].forEach((table) => {
+    ['colaboradores', 'veiculos', 'programacoes', 'faltas', 'ferias', 'colaboradores_status_historico', 'patio', 'viagem', 'perfis', 'grupos_integracao', 'grupos_integracao_contratos', 'integracoes'].forEach((table) => {
       canal.on('postgres_changes', { event: '*', schema: 'public', table }, () => agendarFetchRef.current());
     });
     canal.subscribe();
@@ -1937,6 +1942,20 @@ function AppInner() {
     return inserirOtimista('patio', { colaboradorId, data: selectedDate }, 'registrar pátio');
   }
 
+  /* Em viagem: mesmo comportamento do pátio, tabela própria (18-viagem.sql). */
+  async function adicionarAViagem(colaboradorId) {
+    if (db.viagem.some((v) => v.data === selectedDate && v.colaboradorId === colaboradorId)) return;
+    return inserirOtimista('viagem', { colaboradorId, data: selectedDate }, 'registrar viagem');
+  }
+
+  async function removerDaViagem(colaboradorId) {
+    const reg = db.viagem.find(
+      (v) => v.data === selectedDate && v.colaboradorId === colaboradorId
+    );
+    if (!reg) return;
+    return removerOtimista('viagem', reg.id, 'tirar da viagem');
+  }
+
   async function removerDoPatio(colaboradorId) {
     const reg = db.patio.find(
       (p) => p.data === selectedDate && p.colaboradorId === colaboradorId
@@ -2772,6 +2791,9 @@ function AppInner() {
                     {resumoDia.noPatio.size > 0 && (
                       <Pastilha n={resumoDia.noPatio.size} rotulo="no pátio" />
                     )}
+                    {resumoDia.emViagem.size > 0 && (
+                      <Pastilha n={resumoDia.emViagem.size} rotulo="em viagem" />
+                    )}
                   </span>
 
                   {selectedDate !== today() && (
@@ -2809,6 +2831,8 @@ function AppInner() {
                   onAlternarApontamento={alternarApontamento}
                   onAoPatio={adicionarAoPatio}
                   onTirarDoPatio={removerDoPatio}
+                  onAViagem={adicionarAViagem}
+                  onTirarDaViagem={removerDaViagem}
                   onRegistrarFalta={registrarFalta}
                   onRemoverFalta={removerFalta}
                   onSalvarFaltaParcial={salvarFaltaParcial}

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zonas do quadro — opções de visual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Tokens idênticos aos do Incovia (tema claro) — o que está aqui é o que vai pro app. */
+  :root {
+    --asfalto:#EEF0F2; --asfalto-alto:#F6F7F8; --superficie:#FFFFFF; --superficie-2:#F3F5F6;
+    --borda:#DCE1E5; --borda-forte:#B6BEC6;
+    --tinta:#14181B; --tinta-media:#56616A; --tinta-fraca:#838E97;
+    --faixa:#FFC72C; --faixa-fundo:#FFF3D0; --faixa-texto:#7A5600;
+    --campo:#2F81F7; --campo-fundo:#DDEAFC; --campo-texto:#14508F;
+    --ok:#35C07B; --ok-fundo:#DDF3E7; --ok-texto:#10693F;
+    --erro:#F0575C; --erro-fundo:#FDE3E4; --erro-texto:#B0181D;
+    --neutro-fundo:#ECEFF2; --neutro-texto:#3E4851;
+    --sombra:0 1px 2px rgba(16,24,32,.06), 0 8px 24px rgba(16,24,32,.08);
+    --r-sm:6px; --r-md:10px;
+    --fonte-display:'Archivo','Arial Narrow',system-ui,sans-serif;
+    --fonte-corpo:'IBM Plex Sans',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
+    --fonte-dado:'IBM Plex Mono','Courier New',monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:28px 20px 60px; background:var(--asfalto); color:var(--tinta); font:14px/1.45 var(--fonte-corpo); }
+  .pagina { max-width:1240px; margin:0 auto; }
+  h1 { font:800 24px var(--fonte-display); margin:0 0 4px; }
+  .intro { color:var(--tinta-media); margin:0 0 26px; max-width:760px; }
+
+  .opcao { background:var(--superficie); border:1px solid var(--borda); border-radius:14px; box-shadow:var(--sombra); margin-bottom:26px; overflow:hidden; }
+  .opcao-topo { display:flex; align-items:baseline; gap:12px; padding:16px 20px 12px; border-bottom:1px solid var(--borda); flex-wrap:wrap; }
+  .letra { font:800 13px var(--fonte-display); background:var(--faixa); color:#16190C; border-radius:6px; padding:3px 9px; }
+  .opcao-topo h2 { font:700 16px var(--fonte-display); margin:0; }
+  .opcao-topo p { margin:0; color:var(--tinta-media); font-size:13px; flex-basis:100%; }
+  .palco { background:var(--asfalto-alto); padding:14px; }
+  .estado { font:600 10px var(--fonte-display); letter-spacing:.12em; text-transform:uppercase; color:var(--tinta-fraca); margin:4px 2px 8px; }
+  .estado + .zonas { margin-bottom:16px; }
+
+  /* chips iguais aos do app */
+  .chip { display:inline-flex; align-items:center; gap:6px; padding:2px 9px 2px 2px; border:1px solid var(--borda); border-radius:999px; background:var(--superficie-2); font-size:11.5px; font-weight:500; }
+  .av { width:26px; height:26px; border-radius:50%; display:grid; place-items:center; font:700 10px var(--fonte-display); color:#1a1a1a; }
+  .gente { display:flex; flex-wrap:wrap; gap:5px; }
+  .vazio { font-size:11.5px; color:var(--tinta-fraca); font-style:italic; }
+  svg.ic { width:15px; height:15px; flex:none; }
+
+  .zonas { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; }
+  @media (max-width:820px) { .zonas { grid-template-columns:1fr; } }
+
+  /* ===================== A — faixa colorida na lateral ===================== */
+  .A .zona { background:var(--superficie); border:1px solid var(--borda); border-left:4px solid var(--c); border-radius:var(--r-md); padding:11px 13px 12px; min-height:92px; box-shadow:0 1px 2px rgba(16,24,32,.05); transition:.12s; }
+  .A .topo { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  .A .rot { font:700 11px var(--fonte-display); letter-spacing:.1em; text-transform:uppercase; color:var(--ct); }
+  .A .ic { color:var(--ct); }
+  .A .cont { margin-left:auto; font:600 11px var(--fonte-dado); color:var(--ct); background:var(--cf); border-radius:999px; padding:1px 8px; }
+  .A .soltar { border:1.5px dashed var(--borda-forte); border-radius:var(--r-sm); padding:10px; text-align:center; }
+  .A .zona.alvo { border-color:var(--c); background:var(--cf); }
+
+  /* ===================== B — fundo tingido + número grande ===================== */
+  .B .zona { background:var(--cf); border:1.5px solid transparent; border-radius:12px; padding:12px 14px; min-height:92px; transition:.12s; }
+  .B .topo { display:flex; align-items:center; gap:9px; margin-bottom:10px; }
+  .B .selo { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; background:var(--superficie); color:var(--ct); box-shadow:0 1px 2px rgba(16,24,32,.08); }
+  .B .rot { font:700 13px var(--fonte-display); color:var(--ct); }
+  .B .sub { font-size:11px; color:var(--tinta-media); }
+  .B .num { margin-left:auto; font:800 26px/1 var(--fonte-display); color:var(--ct); }
+  .B .num.zero { opacity:.35; }
+  .B .chip { background:var(--superficie); border-color:transparent; box-shadow:0 1px 2px rgba(16,24,32,.06); }
+  .B .zona.alvo { border-color:var(--c); border-style:dashed; }
+
+  /* ===================== C — uma barra só, dividida ===================== */
+  .C .barra { display:grid; grid-template-columns:repeat(3,1fr); background:var(--superficie); border:1px solid var(--borda); border-radius:12px; overflow:hidden; box-shadow:0 1px 2px rgba(16,24,32,.05); }
+  @media (max-width:820px) { .C .barra { grid-template-columns:1fr; } }
+  .C .zona { padding:12px 14px 14px; min-height:96px; border-right:1px solid var(--borda); position:relative; transition:.12s; }
+  .C .zona:last-child { border-right:0; }
+  .C .zona::before { content:''; position:absolute; left:0; right:0; top:0; height:3px; background:var(--c); }
+  .C .topo { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  .C .rot { font:700 12.5px var(--fonte-display); color:var(--tinta); }
+  .C .ic { color:var(--ct); }
+  .C .cont { margin-left:auto; min-width:22px; height:22px; padding:0 7px; border-radius:999px; display:grid; place-items:center; font:700 11px var(--fonte-dado); background:var(--c); color:#fff; }
+  .C .cont.zero { background:var(--superficie-2); color:var(--tinta-fraca); }
+  .C .zona.alvo { background:var(--cf); }
+
+  /* cores por zona */
+  .patio  { --c:#7C8791; --ct:var(--neutro-texto); --cf:var(--neutro-fundo); }
+  .viagem { --c:var(--campo); --ct:var(--campo-texto); --cf:var(--campo-fundo); }
+  .falta  { --c:var(--erro); --ct:var(--erro-texto); --cf:var(--erro-fundo); }
+
+  .rodape { font-size:12.5px; color:var(--tinta-media); margin:18px 2px 0; }
+</style>
+</head>
+<body>
+<div class="pagina">
+  <h1>Pátio · Em viagem · Faltas — 3 opções de visual</h1>
+  <p class="intro">Todas usam as mesmas cores, fontes e chips que o sistema já tem — só muda o acabamento das três caixas do rodapé do quadro. Em cada opção aparecem dois momentos: <b>com gente</b> e <b>vazia enquanto você arrasta alguém por cima</b> (a caixa do meio está "acesa" como alvo).</p>
+
+  <!-- ÍCONES -->
+  <svg style="display:none">
+    <symbol id="i-patio" viewBox="0 0 16 16"><path d="M2 7.5 8 3l6 4.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1Z M6 14V10h4v4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-viagem" viewBox="0 0 16 16"><path d="M1.5 4.5h8v6h-8z M9.5 6.5h2.7l2.3 2.3v1.7h-5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="4.5" cy="11.5" r="1.4" fill="currentColor"/><circle cx="11.5" cy="11.5" r="1.4" fill="currentColor"/></symbol>
+    <symbol id="i-falta" viewBox="0 0 16 16"><circle cx="6.5" cy="5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M1.8 14c.4-2.6 2.4-4.2 4.7-4.2 1 0 1.9.3 2.6.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="m11 10 3.5 3.5m0-3.5L11 13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  </svg>
+
+  <!-- ================= A ================= -->
+  <section class="opcao A">
+    <div class="opcao-topo">
+      <span class="letra">A</span><h2>Faixa colorida na lateral</h2>
+      <p>O mais discreto: caixa branca com borda cheia, uma faixa de cor à esquerda, ícone e o número numa pílula. A área tracejada só aparece quando a caixa está vazia, convidando a soltar alguém.</p>
+    </div>
+    <div class="palco">
+      <div class="estado">Com gente</div>
+      <div class="zonas">
+        <div class="zona patio"><div class="topo"><svg class="ic"><use href="#i-patio"/></svg><span class="rot">Pátio</span><span class="cont">1</span></div>
+          <div class="gente"><span class="chip"><span class="av" style="background:#9CC7F0">CA</span>Carlos Antonio</span></div></div>
+        <div class="zona viagem"><div class="topo"><svg class="ic"><use href="#i-viagem"/></svg><span class="rot">Em viagem</span><span class="cont">2</span></div>
+          <div class="gente"><span class="chip"><span class="av" style="background:#8FD3A8">AM</span>Aguinaldo Miranda</span><span class="chip"><span class="av" style="background:#F0C48A">DC</span>Diego Cezario</span></div></div>
+        <div class="zona falta"><div class="topo"><svg class="ic"><use href="#i-falta"/></svg><span class="rot">Faltas</span><span class="cont">1</span></div>
+          <div class="gente"><span class="chip"><span class="av" style="background:#E8A0A3">EF</span>Eduardo Farkas</span></div></div>
+      </div>
+      <div class="estado">Vazia · arrastando alguém pra "Em viagem"</div>
+      <div class="zonas">
+        <div class="zona patio"><div class="topo"><svg class="ic"><use href="#i-patio"/></svg><span class="rot">Pátio</span><span class="cont">0</span></div><div class="soltar vazio">solte quem ficou na base</div></div>
+        <div class="zona viagem alvo"><div class="topo"><svg class="ic"><use href="#i-viagem"/></svg><span class="rot">Em viagem</span><span class="cont">0</span></div><div class="soltar vazio" style="border-color:var(--campo)">solte quem está viajando</div></div>
+        <div class="zona falta"><div class="topo"><svg class="ic"><use href="#i-falta"/></svg><span class="rot">Faltas</span><span class="cont">0</span></div><div class="soltar vazio">solte quem não veio</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= B ================= -->
+  <section class="opcao B">
+    <div class="opcao-topo">
+      <span class="letra">B</span><h2>Fundo tingido com número grande</h2>
+      <p>Cada caixa ganha um fundo suave na sua cor, um selo com ícone e o total em destaque à direita — dá pra ler de longe quantos estão em cada lugar. Os chips ficam brancos por cima do fundo.</p>
+    </div>
+    <div class="palco">
+      <div class="estado">Com gente</div>
+      <div class="zonas">
+        <div class="zona patio"><div class="topo"><span class="selo"><svg class="ic"><use href="#i-patio"/></svg></span><span><div class="rot">Pátio</div><div class="sub">veio e ficou na base</div></span><span class="num">1</span></div>
+          <div class="gente"><span class="chip"><span class="av" style="background:#9CC7F0">CA</span>Carlos Antonio</span></div></div>
+        <div class="zona viagem"><div class="topo"><span class="selo"><svg class="ic"><use href="#i-viagem"/></svg></span><span><div class="rot">Em viagem</div><div class="sub">deslocando</div></span><span class="num">2</span></div>
+          <div class="gente"><span class="chip"><span class="av" style="background:#8FD3A8">AM</span>Aguinaldo Miranda</span><span class="chip"><span class="av" style="background:#F0C48A">DC</span>Diego Cezario</span></div></div>
+        <div class="zona falta"><div class="topo"><span class="selo"><svg class="ic"><use href="#i-falta"/></svg></span><span><div class="rot">Faltas</div><div class="sub">não veio</div></span><span class="num">1</span></div>
+          <div class="gente"><span class="chip"><span class="av" style="background:#E8A0A3">EF</span>Eduardo Farkas</span></div></div>
+      </div>
+      <div class="estado">Vazia · arrastando alguém pra "Em viagem"</div>
+      <div class="zonas">
+        <div class="zona patio"><div class="topo"><span class="selo"><svg class="ic"><use href="#i-patio"/></svg></span><span><div class="rot">Pátio</div><div class="sub">veio e ficou na base</div></span><span class="num zero">0</span></div><span class="vazio">arraste alguém aqui</span></div>
+        <div class="zona viagem alvo"><div class="topo"><span class="selo"><svg class="ic"><use href="#i-viagem"/></svg></span><span><div class="rot">Em viagem</div><div class="sub">deslocando</div></span><span class="num zero">0</span></div><span class="vazio">solte aqui</span></div>
+        <div class="zona falta"><div class="topo"><span class="selo"><svg class="ic"><use href="#i-falta"/></svg></span><span><div class="rot">Faltas</div><div class="sub">não veio</div></span><span class="num zero">0</span></div><span class="vazio">arraste alguém aqui</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= C ================= -->
+  <section class="opcao C">
+    <div class="opcao-topo">
+      <span class="letra">C</span><h2>Uma barra só, dividida em três</h2>
+      <p>As três viram um bloco único, com uma linha fina de cor no topo de cada parte e o contador numa bolinha cheia. Ocupa menos espaço e parece parte do quadro, não três caixas soltas.</p>
+    </div>
+    <div class="palco">
+      <div class="estado">Com gente</div>
+      <div class="barra">
+        <div class="zona patio"><div class="topo"><svg class="ic"><use href="#i-patio"/></svg><span class="rot">Pátio</span><span class="cont">1</span></div>
+          <div class="gente"><span class="chip"><span class="av" style="background:#9CC7F0">CA</span>Carlos Antonio</span></div></div>
+        <div class="zona viagem"><div class="topo"><svg class="ic"><use href="#i-viagem"/></svg><span class="rot">Em viagem</span><span class="cont">2</span></div>
+          <div class="gente"><span class="chip"><span class="av" style="background:#8FD3A8">AM</span>Aguinaldo Miranda</span><span class="chip"><span class="av" style="background:#F0C48A">DC</span>Diego Cezario</span></div></div>
+        <div class="zona falta"><div class="topo"><svg class="ic"><use href="#i-falta"/></svg><span class="rot">Faltas</span><span class="cont">1</span></div>
+          <div class="gente"><span class="chip"><span class="av" style="background:#E8A0A3">EF</span>Eduardo Farkas</span></div></div>
+      </div>
+      <div class="estado" style="margin-top:16px">Vazia · arrastando alguém pra "Em viagem"</div>
+      <div class="barra">
+        <div class="zona patio"><div class="topo"><svg class="ic"><use href="#i-patio"/></svg><span class="rot">Pátio</span><span class="cont zero">0</span></div><span class="vazio">arraste quem ficou na base</span></div>
+        <div class="zona viagem alvo"><div class="topo"><svg class="ic"><use href="#i-viagem"/></svg><span class="rot">Em viagem</span><span class="cont zero">0</span></div><span class="vazio">solte aqui</span></div>
+        <div class="zona falta"><div class="topo"><svg class="ic"><use href="#i-falta"/></svg><span class="rot">Faltas</span><span class="cont zero">0</span></div><span class="vazio">arraste quem não veio</span></div>
+      </div>
+    </div>
+  </section>
+
+  <p class="rodape">Qualquer uma também funciona no modo escuro — as cores vêm das mesmas variáveis que o resto do sistema usa. Dá pra misturar (ex.: "B, mas sem o texto pequeno embaixo do título").</p>
+</div>
+</body>
+</html>
