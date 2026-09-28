@@ -59,18 +59,11 @@ function seloDe(item) {
   return ['selo-neutro', '—'];
 }
 
-/* Zonas do rodapé (Pátio / Em viagem / Faltas): uma faixa fina por zona,
+/* Zonas do rodapé (Pátio / Faltas): uma faixa fina por zona,
    com selo, nome, a gente e o total à direita. A cor vem da classe da zona
-   (zona-patio / zona-viagem / zona-falta), no CSS. */
+   (zona-patio / zona-falta), no CSS. */
 const ICONES_ZONA = {
   patio: <path d="M2 7.5 8 3l6 4.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1Z M6 14V10h4v4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />,
-  viagem: (
-    <>
-      <path d="M1.5 4.5h8v6h-8z M9.5 6.5h2.7l2.3 2.3v1.7h-5z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-      <circle cx="4.5" cy="11.5" r="1.4" fill="currentColor" />
-      <circle cx="11.5" cy="11.5" r="1.4" fill="currentColor" />
-    </>
-  ),
   falta: (
     <>
       <circle cx="6.5" cy="5" r="2.6" fill="none" stroke="currentColor" strokeWidth="1.5" />
@@ -136,8 +129,6 @@ export function QuadroDia({
   onAlternarApontamento,
   onAoPatio,
   onTirarDoPatio,
-  onAViagem,
-  onTirarDaViagem,
   onRegistrarFalta,
   onRemoverFalta,
   onSalvarFaltaParcial,
@@ -205,7 +196,7 @@ export function QuadroDia({
 
   /* Uma conta só, compartilhada com a fita do cabeçalho (src/lib/dia.js). */
   const {
-    equipes, faltosos, parciais, noPatio, emViagem, atestados, feriasHoje, equipesDaPessoa, equipesDoVeiculo,
+    equipes, faltosos, parciais, noPatio, atestados, feriasHoje, equipesDaPessoa, equipesDoVeiculo,
     pessoasLivres, veiculosLivres,
   } = useMemo(() => derivarDia(db, selectedDate), [db, selectedDate]);
 
@@ -280,19 +271,12 @@ export function QuadroDia({
     // Pátio e faltas são só de gente. Veículo não falta nem fica de sobreaviso.
     if (zona) {
       if (tipo !== 'pessoa') return { ok: 'nao', msg: 'só pessoas' };
-      // Pátio, viagem e falta se excluem: a pessoa está em UM desses lugares.
       if (zona === 'patio') {
         if (noPatio.has(item.id)) return { ok: 'nao', msg: 'já está no pátio' };
-        if (emViagem.has(item.id)) return { ok: 'nao', msg: 'está em viagem' };
-        if (faltosos.has(item.id)) return { ok: 'nao', msg: 'tem falta hoje' };
-      } else if (zona === 'viagem') {
-        if (emViagem.has(item.id)) return { ok: 'nao', msg: 'já está em viagem' };
-        if (noPatio.has(item.id)) return { ok: 'nao', msg: 'está no pátio' };
         if (faltosos.has(item.id)) return { ok: 'nao', msg: 'tem falta hoje' };
       } else {
         if (faltosos.has(item.id)) return { ok: 'nao', msg: 'já tem falta hoje' };
         if (noPatio.has(item.id)) return { ok: 'nao', msg: 'está no pátio' };
-        if (emViagem.has(item.id)) return { ok: 'nao', msg: 'está em viagem' };
       }
       // Estar numa equipe e ir para o pátio/falta é contraditório, mas pode ser
       // exatamente a correção que a pessoa quer fazer. Avisa, não bloqueia.
@@ -300,10 +284,7 @@ export function QuadroDia({
       if (emEquipe && emEquipe.length) {
         return { ok: 'aviso', msg: `está em ${emEquipe[0].cidade}` };
       }
-      return {
-        ok: 'sim',
-        msg: zona === 'patio' ? 'fica no pátio' : zona === 'viagem' ? 'em viagem' : 'registrar falta',
-      };
+      return { ok: 'sim', msg: zona === 'patio' ? 'fica no pátio' : 'registrar falta' };
     }
 
     if (tipo === 'veiculo') {
@@ -450,7 +431,6 @@ export function QuadroDia({
       if (v.ok !== 'nao' && zona) {
         encerrar();
         if (zona === 'patio') onAoPatio(arrasto.item.id);
-        else if (zona === 'viagem') onAViagem(arrasto.item.id);
         // Quem já está de férias não precisa que perguntem o motivo — só tem
         // um motivo possível, e é o mesmo aviso que o anel do card já dava.
         // Perguntar aqui seria repetir uma informação que a pessoa já
@@ -1117,7 +1097,7 @@ export function QuadroDia({
         </div>
       </div>
 
-      {/* Pátio, em viagem e faltas: os destinos de quem não vai para obra. Ficam
+      {/* Pátio e faltas: os dois destinos de quem não vai para obra. Ficam
           embaixo do quadro e recebem arraste igual às equipes. */}
       <div className="zonas">
         <div className="zona zona-patio" data-zona="patio">
@@ -1135,24 +1115,6 @@ export function QuadroDia({
               </button>
             ))}
             {noPatio.size === 0 && <span className="zona-vazia">arraste alguém aqui</span>}
-          </ZonaGente>
-        </div>
-
-        <div className="zona zona-viagem" data-zona="viagem">
-          <ZonaGente icone="viagem" rotulo="Em viagem" sub="deslocando" n={emViagem.size}>
-            {[...emViagem].map((id) => maps.colaboradores[id]).filter(Boolean).map((p) => (
-              <button
-                type="button"
-                key={p.id}
-                className="membro-chip"
-                title={podeEditar ? `${p.nome} — clique duplo para tirar` : p.nome}
-                onDoubleClick={() => podeEditar && onTirarDaViagem(p.id)}
-              >
-                <Avatar nome={p.nome} url={p.fotoUrl} tamanho="small" />
-                <span className="membro-nome">{nomeCurto(p.nome)}</span>
-              </button>
-            ))}
-            {emViagem.size === 0 && <span className="zona-vazia">arraste alguém aqui</span>}
           </ZonaGente>
         </div>
 

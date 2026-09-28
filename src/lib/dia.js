@@ -52,13 +52,6 @@ export function derivarDia(db, data) {
     if (p.data === data) noPatio.add(p.colaboradorId);
   });
 
-  // Em viagem: mesma ideia do pátio (não foi pra obra, mas não faltou) —
-  // tabela própria, ver supabase/18-viagem.sql.
-  const emViagem = new Set();
-  (db.viagem || []).forEach((v) => {
-    if (v.data === data) emViagem.add(v.colaboradorId);
-  });
-
   // Atestado: colaboradorId -> { ate }. Só entra quem tem, NESTE dia, uma
   // falta que nasceu de atestado (origem_documento_id preenchido) — uma
   // falta comum, lançada à mão, não bloqueia, só avisa. O "até" é o último
@@ -108,7 +101,6 @@ export function derivarDia(db, data) {
     (c) => disponivelEm(db.historicoStatus, c, data)
       && !equipesDaPessoa[c.id]
       && !noPatio.has(c.id)
-      && !emViagem.has(c.id)
       && !faltosos.has(c.id)
   );
 
@@ -123,7 +115,6 @@ export function derivarDia(db, data) {
     faltosos,
     parciais,
     noPatio,
-    emViagem,
     atestados,
     feriasHoje,
     equipesDaPessoa,

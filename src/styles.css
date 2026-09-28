@@ -2019,14 +2019,14 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
 .lista-motivos { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; }
 .lista-motivos .selo-opc { font-size: 13.5px; padding: 9px 11px; }
 
-/* ---- Pátio, em viagem e faltas: destinos de arraste no pé do quadro ----
+/* ---- Pátio e faltas: destinos de arraste no pé do quadro ----
    Visual "B" (escolhido pelo Gabriel): cada zona com fundo suave na própria
    cor, selo com ícone, uma linha dizendo quem vai ali e o total grande à
    direita. As cores saem das mesmas variáveis do resto do app, então o modo
    escuro acompanha sozinho. */
 .zonas {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   padding: 8px;
   /* abrir uma zona não estica as outras duas */
@@ -2048,8 +2048,6 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
    fechado que o fundo do quadro, pra não sumir ao lado dos outros dois. */
 .zona-patio  { --zc: var(--tinta-media); --zt: var(--tinta);
                --zf: color-mix(in srgb, var(--tinta-media) 13%, var(--superficie)); }
-/* Viagem: azul de "situação" (o mesmo de "Em campo") — não é problema. */
-.zona-viagem { --zc: var(--campo); --zt: var(--campo-texto); --zf: var(--campo-fundo); }
 /* Falta é ausência: vermelho, mesma semântica dos selos de status. */
 .zona-falta  { --zc: var(--erro);  --zt: var(--erro-texto);  --zf: var(--erro-fundo); }
 
