@@ -3248,6 +3248,82 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
 .rel-voltar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rel-voltar b { color: var(--tinta); font-weight: 600; }
 .rel-voltar:hover { background: var(--superficie-2); color: var(--tinta); }
+
+/* ---- aba Contratos: exportar o controle mensal em Excel ---- */
+.rel-exportar {
+  display: grid; gap: 12px;
+  margin: 0 0 18px; padding: 14px;
+  border: 1px solid var(--borda); border-radius: var(--r-md); background: var(--superficie);
+}
+.rel-exportar-topo { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; justify-content: space-between; }
+.rel-exportar-txt { display: flex; flex-direction: column; gap: 2px; min-width: 200px; }
+.rel-exportar-txt b { font-family: var(--fonte-display); font-size: 13px; }
+.rel-exportar-txt span { font-size: 11.5px; color: var(--tinta-fraca); }
+.rel-exportar-busca {
+  width: 240px; max-width: 100%; padding: 7px 10px;
+  border: 1px solid var(--borda); border-radius: var(--r-sm);
+  background: var(--superficie-2); color: var(--tinta); font: inherit; font-size: 12.5px;
+}
+.rel-exportar-busca:focus { outline: none; border-color: var(--faixa); }
+.rel-exportar-lista {
+  display: block; max-height: 320px; overflow-y: auto; overscroll-behavior: contain;
+  border: 1px solid var(--borda); border-radius: var(--r-sm); background: var(--superficie);
+}
+.rel-exp-grupo { display: block; }
+.rel-exp-grupo + .rel-exp-grupo { border-top: 1px solid var(--borda); }
+.rel-exp-cab, .rel-exp-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px;
+  border: 0; background: none; color: var(--tinta); text-align: left; cursor: pointer;
+  font: inherit; font-size: 13px;
+}
+.rel-exp-cab {
+  position: sticky; top: 0; z-index: 1;
+  padding: 0 12px; background: var(--superficie-2);
+  font-family: var(--fonte-display); font-size: 12.5px; font-weight: 700; letter-spacing: .03em;
+}
+.rel-exp-cab .rel-exp-qtd { margin-left: auto; font-family: var(--fonte-corpo); font-weight: 400; letter-spacing: 0; font-size: 11.5px; color: var(--tinta-fraca); }
+.rel-exp-item { padding: 0 12px 0 38px; }
+.rel-exp-item + .rel-exp-item { border-top: 1px solid var(--borda); }
+.rel-exp-unico { padding-left: 12px; }
+.rel-exp-nome { flex: none; font-family: var(--fonte-display); font-weight: 700; font-size: 12.5px; letter-spacing: .03em; }
+.rel-exp-unico .rel-exp-nome { width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rel-exp-unico:disabled .rel-exp-nome { font-weight: 600; }
+.rel-exportar-lista { scrollbar-width: thin; scrollbar-color: var(--borda-forte) transparent; scrollbar-gutter: stable; }
+.rel-exportar-lista::-webkit-scrollbar { width: 10px; }
+.rel-exportar-lista::-webkit-scrollbar-track { background: var(--superficie-2); }
+.rel-exportar-lista::-webkit-scrollbar-thumb { background: var(--borda-forte); border-radius: 6px; border: 2px solid var(--superficie-2); }
+.rel-exportar-lista::-webkit-scrollbar-thumb:hover { background: var(--tinta-fraca); }
+.rel-exp-cab:hover:not(:disabled) { background: var(--borda); }
+.rel-exp-item:hover:not(:disabled) { background: var(--superficie-2); }
+.rel-exp-item.on { background: var(--faixa-fundo); }
+.rel-exp-cab:disabled, .rel-exp-item:disabled { cursor: default; color: var(--tinta-fraca); }
+.rel-exp-caixa {
+  flex: none; width: 16px; height: 16px; border-radius: 4px;
+  border: 1.5px solid var(--borda-forte); background: var(--superficie);
+  display: grid; place-items: center;
+}
+.rel-exp-cab:disabled .rel-exp-caixa, .rel-exp-item:disabled .rel-exp-caixa { opacity: .35; }
+.on > .rel-exp-caixa { border-color: var(--faixa); background: var(--faixa); }
+.on > .rel-exp-caixa::after {
+  content: ''; width: 4px; height: 8px; margin-top: -2px;
+  border: solid #16190C; border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.meio > .rel-exp-caixa { border-color: var(--faixa); }
+.meio > .rel-exp-caixa::after { content: ''; width: 8px; height: 2px; border-radius: 1px; background: var(--faixa); }
+.rel-exp-rot { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rel-exp-rot.sem { font-style: italic; color: var(--tinta-media); }
+.rel-exp-dias { flex: none; font-size: 11.5px; color: var(--tinta-fraca); font-variant-numeric: tabular-nums; }
+.rel-exp-item.on .rel-exp-dias { color: var(--faixa-texto); }
+.rel-exp-vazio { display: block; font-size: 12px; color: var(--tinta-fraca); padding: 12px; }
+.rel-exportar-pe { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.rel-exp-conta { font-size: 12px; color: var(--tinta-media); }
+.rel-exp-limpar {
+  border: 0; background: none; padding: 2px 4px; font: inherit; font-size: 12px;
+  color: var(--tinta-fraca); text-decoration: underline; cursor: pointer;
+}
+.rel-exp-limpar:hover { color: var(--tinta); }
+.rel-exportar-pe .primary-btn { margin-left: auto; }
+.rel-exportar-aviso { font-size: 12px; color: var(--erro-texto); }
 .rel-faixa-cor { height: 3px; border-radius: 2px; margin-top: 10px; }
 .rel-p-body { display: grid; gap: 16px; padding-top: 14px; }
 .rel-p-sec { display: grid; gap: 7px; }

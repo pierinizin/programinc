@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
 import { MOTIVOS_FORA_DA_CONTA, rotuloMotivo } from '../lib/motivos';
 import { duracaoTexto, resumoParcial } from '../lib/faltaParcial';
+import { baixarControle, montarLinhasControle, opcoesControle } from '../lib/controleContratante';
 import {
   atribuirFaixas,
   contratantesConhecidos,
@@ -141,6 +142,161 @@ function Painel({ dados, aoFechar, aoVoltar, anterior }) {
         <div className="rel-p-body">{dados.corpo}</div>
       </aside>
     </>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+   Exportar o "controle" em Excel (modelo CONTROLE GARCIA SETEMBRO 26):
+   lista de TODOS os contratos, agrupada por contratante — marca os que quer
+   (clicar no nome do contratante marca/desmarca todos dele) e baixa usando o
+   período De/Até lá de cima. A conta mora em lib/controleContratante.js.
+   --------------------------------------------------------------------------- */
+function ExportarControle({ programacoes, colaboradores, concessionarias, contratos, faltas, de, ate }) {
+  const grupos = useMemo(
+    () => opcoesControle({ programacoes, concessionarias, contratos, de, ate }),
+    [programacoes, concessionarias, contratos, de, ate],
+  );
+  const [marcados, setMarcados] = useState([]);
+  const [busca, setBusca] = useState('');
+  const [gerando, setGerando] = useState(false);
+  const [aviso, setAviso] = useState('');
+
+  // Só vale o que existe na lista atual E teve equipe no período.
+  const comDias = useMemo(() => new Set(
+    grupos.flatMap((g) => g.itens.filter((i) => i.dias > 0).map((i) => i.chave)),
+  ), [grupos]);
+  const validos = marcados.filter((k) => comDias.has(k));
+
+  const termo = busca.trim().toLowerCase();
+  const visiveis = grupos
+    .map((g) => (!termo || g.contratante.toLowerCase().includes(termo)
+      ? g
+      : { ...g, itens: g.itens.filter((i) => i.rotulo.toLowerCase().includes(termo)) }))
+    .filter((g) => g.itens.length)
+    // Quem trabalhou no período vem primeiro; contrato parado fica no fim.
+    .map((g) => ({ ...g, itens: [...g.itens].sort((x, y) => (y.dias > 0) - (x.dias > 0)) }))
+    .sort((x, y) => (y.itens.some((i) => i.dias) - x.itens.some((i) => i.dias)));
+
+  const alternar = (chaves, ligar) => setMarcados((m) => (
+    ligar ? [...new Set([...m, ...chaves])] : m.filter((k) => !chaves.includes(k))
+  ));
+
+  async function exportar() {
+    setAviso('');
+    const dados = montarLinhasControle({
+      programacoes, colaboradores, concessionarias, contratos, faltas, chaves: validos, de, ate,
+    });
+    if (!dados.blocos.length) { setAviso('Nada pra exportar nesse período.'); return; }
+    setGerando(true);
+    try {
+      await baixarControle({ dados, de, ate });
+    } catch (e) {
+      console.error('Exportar controle:', e);
+      setAviso('Não consegui gerar o arquivo. Tente de novo.');
+    } finally {
+      setGerando(false);
+    }
+  }
+
+  if (!grupos.length) return null;
+  return (
+    <section className="rel-exportar">
+      <header className="rel-exportar-topo">
+        <div className="rel-exportar-txt">
+          <b>Controle em Excel</b>
+          <span>Marque os contratos — uma linha por pessoa e período, usando o De/Até acima.</span>
+        </div>
+        <input
+          className="rel-exportar-busca"
+          type="search"
+          placeholder="Buscar contrato ou contratante"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+        />
+      </header>
+
+      <div className="rel-exportar-lista" role="group" aria-label="Contratos do controle">
+        {visiveis.map((g) => {
+          const ativos = g.itens.filter((i) => i.dias > 0).map((i) => i.chave);
+          const todos = ativos.length > 0 && ativos.every((k) => validos.includes(k));
+          const algum = ativos.some((k) => validos.includes(k));
+          const dias = (n) => (n ? `${n} dia${n > 1 ? 's' : ''}` : 'sem programação');
+          const rotulo = (i) => (
+            <span className={`rel-exp-rot${i.chave.startsWith('s:') ? ' sem' : ''}`}>{i.rotulo}</span>
+          );
+
+          // Contratante com um contrato só: uma linha, sem cabeçalho à parte.
+          if (g.itens.length === 1) {
+            const [i] = g.itens;
+            const on = validos.includes(i.chave);
+            return (
+              <div key={g.contratante} className="rel-exp-grupo">
+                <button
+                  type="button"
+                  className={`rel-exp-item rel-exp-unico${on ? ' on' : ''}`}
+                  disabled={!i.dias}
+                  aria-pressed={on}
+                  onClick={() => alternar([i.chave], !on)}
+                >
+                  <span className="rel-exp-caixa" aria-hidden="true" />
+                  <span className="rel-exp-nome">{g.contratante}</span>
+                  {rotulo(i)}
+                  <span className="rel-exp-dias">{dias(i.dias)}</span>
+                </button>
+              </div>
+            );
+          }
+
+          return (
+            <div key={g.contratante} className="rel-exp-grupo">
+              <button
+                type="button"
+                className={`rel-exp-cab${todos ? ' on' : algum ? ' meio' : ''}`}
+                disabled={!ativos.length}
+                aria-pressed={todos}
+                onClick={() => alternar(ativos, !todos)}
+                title={todos ? 'Desmarcar todos' : 'Marcar todos com programação'}
+              >
+                <span className="rel-exp-caixa" aria-hidden="true" />
+                <span className="rel-exp-nome">{g.contratante}</span>
+                <span className="rel-exp-qtd">{g.itens.length} contratos</span>
+              </button>
+              {g.itens.map((i) => {
+                const on = validos.includes(i.chave);
+                return (
+                  <button
+                    key={i.chave}
+                    type="button"
+                    className={`rel-exp-item${on ? ' on' : ''}`}
+                    disabled={!i.dias}
+                    aria-pressed={on}
+                    onClick={() => alternar([i.chave], !on)}
+                  >
+                    <span className="rel-exp-caixa" aria-hidden="true" />
+                    {rotulo(i)}
+                    <span className="rel-exp-dias">{dias(i.dias)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })}
+        {!visiveis.length && <span className="rel-exp-vazio">Nenhum contrato com “{busca}”.</span>}
+      </div>
+
+      <footer className="rel-exportar-pe">
+        <span className="rel-exp-conta">
+          {validos.length ? `${validos.length} contrato${validos.length > 1 ? 's' : ''} marcado${validos.length > 1 ? 's' : ''}` : 'Nenhum contrato marcado'}
+        </span>
+        {validos.length > 0 && (
+          <button type="button" className="rel-exp-limpar" onClick={() => setMarcados([])}>Limpar</button>
+        )}
+        {aviso && <span className="rel-exportar-aviso">{aviso}</span>}
+        <button type="button" className="primary-btn" disabled={!validos.length || gerando} onClick={exportar}>
+          {gerando ? 'Gerando…' : 'Exportar controle'}
+        </button>
+      </footer>
+    </section>
   );
 }
 
@@ -949,6 +1105,12 @@ export function Relatorios({
       )}
 
       {/* ================= CONTRATOS ================= */}
+      {aba === 'contratos' && (
+        <ExportarControle
+          programacoes={programacoes} colaboradores={colaboradores} concessionarias={concessionarias}
+          contratos={contratos} faltas={faltas} de={de} ate={ate}
+        />
+      )}
       {aba === 'contratos' && !periodosContrato.length && (
         <p className="rel-vazio">Nenhuma programação com encarregado neste período.</p>
       )}
