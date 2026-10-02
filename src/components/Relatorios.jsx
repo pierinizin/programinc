@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
 import { MOTIVOS_FORA_DA_CONTA, rotuloMotivo } from '../lib/motivos';
 import { duracaoTexto, resumoParcial } from '../lib/faltaParcial';
@@ -98,19 +98,35 @@ function LinhaDica({ k, v }) {
    Painel de detalhe — desliza da direita, por cima. Não é uma coluna fixa
    porque, sem nada selecionado, uma coluna fixa é só um buraco na tela.
    --------------------------------------------------------------------------- */
-function Painel({ dados, aoFechar }) {
+function Painel({ dados, aoFechar, aoVoltar, anterior }) {
+  const asideRef = useRef(null);
+  // Voltando pra um painel, devolve a rolagem de onde ele estava.
+  useLayoutEffect(() => {
+    if (asideRef.current) asideRef.current.scrollTop = dados?.rolagem || 0;
+  }, [dados]);
   useEffect(() => {
     if (!dados) return undefined;
-    const esc = (e) => { if (e.key === 'Escape') aoFechar(); };
+    // Esc volta um passo quando dá pra voltar; no primeiro painel, fecha.
+    const esc = (e) => { if (e.key === 'Escape') (aoVoltar || aoFechar)(); };
     window.addEventListener('keydown', esc);
     return () => window.removeEventListener('keydown', esc);
-  }, [dados, aoFechar]);
+  }, [dados, aoFechar, aoVoltar]);
 
   if (!dados) return null;
   return (
     <>
       <div className="rel-fundo" onClick={aoFechar} role="presentation" />
-      <aside className="rel-painel" role="dialog" aria-label={dados.titulo}>
+      <aside className="rel-painel" role="dialog" aria-label={dados.titulo} ref={asideRef}>
+        {/* Voltar pro painel de onde você veio (ex.: da obra de volta pra
+            lista do contratante) sem ter que fechar e refazer o caminho. */}
+        {aoVoltar && (
+          <button type="button" className="rel-voltar" onClick={aoVoltar}>
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span>Voltar{anterior ? <> para <b>{anterior}</b></> : ''}</span>
+          </button>
+        )}
         <div className="rel-p-head">
           <div className="rel-p-ident">
             {dados.avatar}
@@ -125,6 +141,49 @@ function Painel({ dados, aoFechar }) {
         <div className="rel-p-body">{dados.corpo}</div>
       </aside>
     </>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+   Campo de data do filtro.
+   O <input type="date"> controlado direto pelo filtro brigava com quem
+   digita: no meio da digitação o navegador entrega '' (data incompleta) ou
+   um ano pela metade ("0002", "0020", "0202"...). '' fazia o filtro cair de
+   volta no "todo o histórico" e a data pulava pra outra coisa debaixo do
+   dedo; o ano pela metade virava um filtro de verdade, recalculando todos os
+   gráficos a cada tecla, com períodos absurdos.
+   Agora o campo guarda o que está sendo digitado por conta própria e só
+   repassa pro filtro quando a data está COMPLETA e é plausível (ano de 2000
+   em diante). Saiu do campo com algo inválido: volta pro valor de antes.
+   --------------------------------------------------------------------------- */
+function dataValida(v) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) && v >= '2000-01-01' && v <= '2100-12-31';
+}
+
+function DataFiltro({ valor, aoMudar }) {
+  const [texto, setTexto] = useState(valor);
+  const [editando, setEditando] = useState(false);
+  // De fora pra dentro (botões "Este mês", "90 dias"…) só quando ninguém está
+  // digitando — senão o valor de fora atropelaria a digitação.
+  useEffect(() => { if (!editando) setTexto(valor); }, [valor, editando]);
+  return (
+    <input
+      type="date"
+      value={texto}
+      min="2000-01-01"
+      max="2100-12-31"
+      onFocus={() => setEditando(true)}
+      onChange={(e) => {
+        const v = e.target.value;
+        setTexto(v);
+        if (dataValida(v) && v !== valor) aoMudar(v);
+      }}
+      onBlur={() => {
+        setEditando(false);
+        if (!dataValida(texto)) setTexto(valor);
+      }}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+    />
   );
 }
 
@@ -155,7 +214,25 @@ export function Relatorios({
   const [faixa, setFaixa] = useState(null);        // null = todo o histórico
   const [encId, setEncId] = useState('');
   const [incluirFerias, setIncluirFerias] = useState(false);
-  const [detalhe, setDetalhe] = useState(null);
+  /* Painel lateral com histórico: cada clique DENTRO do painel (ex.: numa
+     obra da lista do contratante) empilha um novo painel em vez de trocar o
+     de antes — e a seta "Voltar" desempilha. Clique na página principal só
+     acontece com o painel fechado (o fundo escuro cobre o resto), então
+     abrir de lá sempre começa uma pilha nova. */
+  const [pilha, setPilha] = useState([]);
+  const detalhe = pilha.length ? pilha[pilha.length - 1] : null;
+  // Ao empilhar, guarda onde a lista de baixo estava rolada — voltar pra
+  // obra nº 40 de 60 e cair de novo no topo seria refazer o caminho do mesmo jeito.
+  const setDetalhe = (d) => {
+    const rolagem = document.querySelector('.rel-painel')?.scrollTop || 0;
+    setPilha((p) => {
+      if (!d) return [];
+      if (!p.length) return [d];
+      const topo = { ...p[p.length - 1], rolagem };
+      return [...p.slice(0, -1), topo, d];
+    });
+  };
+  const voltar = () => setPilha((p) => p.slice(0, -1));
   const { liga, balao } = useDica();
 
   /* A largura mínima do bloco (pra caber o clique) é fixada em PIXELS no CSS
@@ -667,11 +744,11 @@ export function Relatorios({
     <div className="rel-filtros">
       <label className="rel-campo">
         <span>De</span>
-        <input type="date" value={de} onChange={(e) => setFaixa({ de: e.target.value, ate })} />
+        <DataFiltro valor={de} aoMudar={(v) => setFaixa({ de: v, ate })} />
       </label>
       <label className="rel-campo">
         <span>Até</span>
-        <input type="date" value={ate} onChange={(e) => setFaixa({ de, ate: e.target.value })} />
+        <DataFiltro valor={ate} aoMudar={(v) => setFaixa({ de, ate: v })} />
       </label>
 
       {aba === 'equipes' && (
@@ -1184,7 +1261,13 @@ export function Relatorios({
         </section>
       )}
 
-      <Painel dados={detalhe} aoFechar={fechar} />
+      <Painel
+        key={pilha.length}
+        dados={detalhe}
+        aoFechar={fechar}
+        aoVoltar={pilha.length > 1 ? voltar : null}
+        anterior={pilha.length > 1 ? pilha[pilha.length - 2].titulo : null}
+      />
       {balao}
     </div>
   );

@@ -3239,6 +3239,15 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
   width: 27px; height: 27px; flex: none; color: var(--tinta-media); line-height: 1;
 }
 .rel-fechar:hover { border-color: var(--borda-forte); color: var(--tinta); }
+.rel-voltar {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin: -4px 0 10px -6px; padding: 5px 9px 5px 6px;
+  border: 0; border-radius: var(--r-sm); background: none;
+  font-size: 12px; color: var(--tinta-media); cursor: pointer; max-width: 100%;
+}
+.rel-voltar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rel-voltar b { color: var(--tinta); font-weight: 600; }
+.rel-voltar:hover { background: var(--superficie-2); color: var(--tinta); }
 .rel-faixa-cor { height: 3px; border-radius: 2px; margin-top: 10px; }
 .rel-p-body { display: grid; gap: 16px; padding-top: 14px; }
 .rel-p-sec { display: grid; gap: 7px; }
