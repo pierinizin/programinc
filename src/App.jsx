@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from './lib/supabase';
+import { buscarTudo } from './lib/buscarTudo';
 import { Auth } from './components/Auth';
 import { Avatar } from './components/Avatar';
 import { QuadroDia } from './components/QuadroDia';
@@ -345,19 +346,19 @@ function AppInner() {
     const minhaVez = ++fetchSeqRef.current;
     const [resCols, resVeics, resProgs, resFaltas, resFerias, resHistorico, resPatio, resPerfis,
            resConcs, resCtrs, resGrupos, resGruposCtrs, resIntegracoes] = await Promise.all([
-      supabase.from('colaboradores').select('*'),
-      supabase.from('veiculos').select('*'),
-      supabase.from('programacoes').select('*'),
-      supabase.from('faltas').select('*'),
-      supabase.from('ferias').select('*'),
-      supabase.from('colaboradores_status_historico').select('*'),
-      supabase.from('patio').select('*'),
-      supabase.from('perfis').select('*'),
-      supabase.from('concessionarias').select('*'),
-      supabase.from('contratos').select('*'),
-      supabase.from('grupos_integracao').select('*'),
-      supabase.from('grupos_integracao_contratos').select('*'),
-      supabase.from('integracoes').select('*')
+      buscarTudo(supabase, 'colaboradores'),
+      buscarTudo(supabase, 'veiculos'),
+      buscarTudo(supabase, 'programacoes'),
+      buscarTudo(supabase, 'faltas'),
+      buscarTudo(supabase, 'ferias'),
+      buscarTudo(supabase, 'colaboradores_status_historico'),
+      buscarTudo(supabase, 'patio'),
+      buscarTudo(supabase, 'perfis'),
+      buscarTudo(supabase, 'concessionarias'),
+      buscarTudo(supabase, 'contratos'),
+      buscarTudo(supabase, 'grupos_integracao'),
+      buscarTudo(supabase, 'grupos_integracao_contratos'),
+      buscarTudo(supabase, 'integracoes')
     ]);
 
     // Com RLS ligada, uma tabela sem permissão volta com error e data null.
@@ -440,8 +441,8 @@ function AppInner() {
   const fetchDocumentos = async () => {
     const [resTipos, resDocs, resPend] = await Promise.all([
       supabase.from('tipos_documento').select('*'),
-      supabase.from('documentos').select('*'),
-      supabase.from('painel_prazos').select('*'),
+      buscarTudo(supabase, 'documentos'),
+      buscarTudo(supabase, 'painel_prazos', { ordem: null }),   // é view, sem id garantido
     ]);
     [resTipos, resDocs, resPend].forEach((r) => {
       if (r?.error) console.error('Documentos:', r.error.message);

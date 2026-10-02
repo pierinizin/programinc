@@ -88,10 +88,14 @@ export function periodosDoEncarregado(programacoes, encarregadoId, de, ate) {
 
   /* Fecha cada período com o que a tela precisa: dias, datas e quem esteve. */
   return periodos.map((per) => {
-    const datas = per.linhas.map((l) => l.data);
+    // Dias, não linhas: equipe gravada duas vezes no mesmo dia conta um dia só.
+    const datas = [...new Set(per.linhas.map((l) => l.data))];
     const presenca = new Map();   // colaboradorId -> nº de dias
+    const vistos = new Set();
     for (const l of per.linhas) {
       for (const id of l.membroIds || []) {
+        if (vistos.has(`${id}|${l.data}`)) continue;
+        vistos.add(`${id}|${l.data}`);
         presenca.set(id, (presenca.get(id) || 0) + 1);
       }
     }
@@ -108,7 +112,7 @@ export function periodosDoEncarregado(programacoes, encarregadoId, de, ate) {
       tipoEquipe,
       ini: per.ini,
       fim: per.fim,
-      dias: per.linhas.length,
+      dias: datas.length,
       datas,
       presenca,
       programacaoIds: per.linhas.map((l) => l.id),
@@ -177,9 +181,17 @@ export function periodosPorContrato(programacoes, colaboradores, contratos, de, 
 
     for (const per of periodos) {
       const contrato = per.contratoId ? contratoDe.get(per.contratoId) : null;
+      // Conta DIAS, não linhas: a mesma equipe gravada duas vezes no mesmo
+      // dia (duplicada sem querer) não pode virar dois dias em campo.
+      const datas = new Set(per.linhas.map((l) => l.data));
       const presenca = new Map();   // colaboradorId -> nº de dias, pro painel de detalhe
+      const vistos = new Set();
       for (const l of per.linhas) {
-        for (const id of l.membroIds || []) presenca.set(id, (presenca.get(id) || 0) + 1);
+        for (const id of l.membroIds || []) {
+          if (vistos.has(`${id}|${l.data}`)) continue;
+          vistos.add(`${id}|${l.data}`);
+          presenca.set(id, (presenca.get(id) || 0) + 1);
+        }
       }
       linhas.push({
         id: `${encarregadoId}|${per.ini}|${per.chave}`,
@@ -191,7 +203,8 @@ export function periodosPorContrato(programacoes, colaboradores, contratos, de, 
         contratoNumero: contrato?.numero || null,
         ini: per.ini,
         fim: per.fim,
-        dias: per.linhas.length,
+        dias: datas.size,
+        datas: [...datas],
         presenca,
         programacaoIds: per.linhas.map((l) => l.id),
       });

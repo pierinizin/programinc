@@ -473,15 +473,20 @@ export function Relatorios({
     const equipes = new Set();
     const contratantesSet = new Set();
     const contratosSet = new Set();
+    const calendario = new Set();
     let dias = 0;
     for (const per of periodosContrato) {
+      per.datas.forEach((d) => calendario.add(d));
       equipes.add(per.encarregadoId);
       contratantesSet.add(per.contratante);
       if (per.contratoId) contratosSet.add(per.contratoId);
       dias += per.dias;
     }
     return {
-      dias, equipes: equipes.size, contratantes: contratantesSet.size, contratos: contratosSet.size,
+      // dias: diárias de equipe (17 equipes x 60 dias = 1020) — base das barras e da participação.
+      // diasCalendario: dias do calendário com pelo menos uma equipe — nunca passa do período.
+      dias, diasCalendario: calendario.size,
+      equipes: equipes.size, contratantes: contratantesSet.size, contratos: contratosSet.size,
     };
   }, [periodosContrato]);
 
@@ -868,7 +873,10 @@ export function Relatorios({
     return s.sort((a, b) => conhecidos.indexOf(a) - conhecidos.indexOf(b));
   }, [periodos, conhecidos]);
 
-  const diasEmCampo = periodos.reduce((s, p) => s + p.dias, 0);
+  // Dias do calendário em que o encarregado esteve em obra (dois lugares no
+  // mesmo dia contam um dia só). A participação por contratante usa a soma.
+  const diasEmCampo = new Set(periodos.flatMap((p) => p.datas)).size;
+  const somaDiasEnc = periodos.reduce((s, p) => s + p.dias, 0);
   const faltasDoEnc = encAtual
     ? faltas.filter((f) => f.colaboradorId === encAtual.id && !MOTIVOS_FORA_DA_CONTA.includes(f.motivo)
         && !f.programacao_id && f.data >= de && f.data <= ate).length
@@ -1067,7 +1075,7 @@ export function Relatorios({
                       <div className="rel-dica-t">{ct}</div>
                       <LinhaDica k="Dias em campo" v={v} />
                       <LinhaDica k="Obras" v={periodos.filter((p) => p.contratante === ct).length} />
-                      <LinhaDica k="Participação" v={`${Math.round((v / diasEmCampo) * 100)}%`} />
+                      <LinhaDica k="Participação" v={`${Math.round((v / somaDiasEnc) * 100)}%`} />
                     </>,
                   )}
                 >
@@ -1118,7 +1126,12 @@ export function Relatorios({
       {aba === 'contratos' && !!periodosContrato.length && (
         <>
           <div className="rel-kpis">
-            <div className="rel-kpi"><b>{resumoContratos.dias}</b><span>dias em campo</span></div>
+            <div className="rel-kpi" title="Dias do calendário em que pelo menos uma equipe estava em obra">
+              <b>{resumoContratos.diasCalendario}</b><span>dias com equipe em campo</span>
+            </div>
+            <div className="rel-kpi" title="Uma diária = uma equipe trabalhando um dia. 2 equipes x 10 dias = 20 diárias">
+              <b>{resumoContratos.dias}</b><span>diárias de equipe</span>
+            </div>
             <div className="rel-kpi"><b>{resumoContratos.equipes}</b><span>equipes</span></div>
             <div className="rel-kpi"><b>{resumoContratos.contratantes}</b><span>contratantes</span></div>
             <div className="rel-kpi"><b>{resumoContratos.contratos}</b><span>contratos vinculados</span></div>
@@ -1193,8 +1206,8 @@ export function Relatorios({
           </section>
 
           <section className="rel-bloco">
-            <h3>Dias por contratante</h3>
-            <p className="rel-sub">Soma de todas as equipes no período.</p>
+            <h3>Diárias por contratante</h3>
+            <p className="rel-sub">Uma diária = uma equipe trabalhando um dia. Soma de todas as equipes no período.</p>
             <div className="rel-barras">
               {diasPorContratanteGeral.map(([ct, v]) => (
                 <button
@@ -1204,7 +1217,7 @@ export function Relatorios({
                   {...liga(
                     <>
                       <div className="rel-dica-t">{ct}</div>
-                      <LinhaDica k="Dias em campo" v={v} />
+                      <LinhaDica k="Diárias de equipe" v={v} />
                       <LinhaDica k="Obras" v={periodosContrato.filter((p) => p.contratante === ct).length} />
                       <LinhaDica k="Participação" v={`${Math.round((v / resumoContratos.dias) * 100)}%`} />
                     </>,
@@ -1216,7 +1229,7 @@ export function Relatorios({
                       width: `${(v / diasPorContratanteGeral[0][1]) * 100}%`, background: corContratante(ct),
                     }} />
                   </span>
-                  <span className="rel-val">{v} d</span>
+                  <span className="rel-val">{v}</span>
                 </button>
               ))}
             </div>
