@@ -616,8 +616,53 @@ function AppInner() {
       console.error('Contratos:', res.error?.message);
       return false;
     }
+    if (payload.ativo) await ligarProgramacoesSemContrato(res.data[0]);
     await fetchDatabase();
     return true;
+  }
+
+  /* Contrato novo não "pega" sozinho as obras que já existiam: elas foram
+     gravadas sem contrato (não havia nenhum) e continuavam assim — o
+     contratante aparecia, o contrato não. Aqui, ao salvar um contrato ativo,
+     oferece ligar as programações daquele contratante que estão SEM contrato
+     (dentro do período do contrato, se ele tiver início/fim). Programação que
+     já tem contrato nunca é mexida. */
+  async function ligarProgramacoesSemContrato(contrato, recemLigadas = []) {
+    // recemLigadas: ids que acabaram de ganhar este contratante no servidor
+    // (vincularTexto) e ainda aparecem sem ele no estado local.
+    const alvo = db.programacoes.filter((p) => (
+      (p.concessionaria_id === contrato.concessionaria_id || recemLigadas.includes(p.id))
+      && !p.contrato_id
+      && (!contrato.inicio || p.data >= contrato.inicio)
+      && (!contrato.fim || p.data <= contrato.fim)
+    ));
+    if (!alvo.length) return;
+    const sigla = db.concessionarias.find((c) => c.id === contrato.concessionaria_id)?.sigla || 'este contratante';
+    const ok = await confirmar({
+      titulo: `Ligar ${alvo.length} programação(ões) a ${contrato.numero}?`,
+      mensagem: `${alvo.length === 1 ? 'Existe 1 programação' : `Existem ${alvo.length} programações`} de ${sigla} `
+        + `sem contrato${contrato.inicio || contrato.fim ? ' dentro do período deste contrato' : ''}. `
+        + 'Ligar todas a ele? As que já têm contrato não mudam.',
+      textoConfirmar: 'Ligar',
+      textoCancelar: 'Agora não',
+      variante: 'atencao',
+    });
+    if (!ok) return;
+    // Filtro no servidor em vez de uma lista de ids: com centenas de obras a
+    // lista estouraria o tamanho da URL.
+    let q = supabase.from('programacoes')
+      .update({ contrato_id: contrato.id })
+      .eq('concessionaria_id', contrato.concessionaria_id)
+      .is('contrato_id', null);
+    if (contrato.inicio) q = q.gte('data', contrato.inicio);
+    if (contrato.fim) q = q.lte('data', contrato.fim);
+    const r = await q;
+    if (r.error) {
+      console.error('Ligar contrato:', r.error.message);
+      notificar({ titulo: 'Não consegui ligar as programações', mensagem: 'O contrato foi salvo; tente de novo editando-o.', variante: 'erro' });
+      return;
+    }
+    notificar({ titulo: `${alvo.length} programação(ões) ligadas a ${contrato.numero}` });
   }
 
   /* Excluir contrato NÃO apaga obra nenhuma: a chave estrangeira é
@@ -730,6 +775,9 @@ function AppInner() {
     const res = await supabase.from('programacoes')
       .update({ concessionaria_id: conc.id, contratante: conc.sigla }).in('id', ids);
     if (res.error) { console.error('Vincular:', res.error.message); return false; }
+    // Já tem contrato vigente? Oferece ligar essas obras a ele também.
+    const vig = contratosVigentes(db.contratos, conc.id);
+    if (vig.length === 1) await ligarProgramacoesSemContrato(vig[0], ids);
     await fetchDatabase();
     return true;
   }
@@ -1316,6 +1364,11 @@ function AppInner() {
         tipoEquipe: eq.tipoEquipe,
         cidade: eq.cidade,
         contratante: eq.contratante,
+        // Contratante e contrato CADASTRADOS vão junto. Antes só o texto era
+        // copiado: o dia novo nascia com "CONVIAS" escrito, mas sem ligação
+        // com o cadastro nem com o contrato — e virava "texto solto".
+        concessionaria_id: eq.concessionaria_id || null,
+        contrato_id: eq.contrato_id || null,
         engenheiro: eq.engenheiro || '',
         encarregadoId: encarregadoFinal,
         membroIds: membrosFinais,
@@ -1478,13 +1531,21 @@ function AppInner() {
     agendarFetch();
   }
 
+  /* Obra antiga gravada antes do contrato existir: ao abrir, já sugere o
+     contrato (quando o contratante tem um vigente só). Salvar confirma. */
+  const comContratoSugerido = (item) => (
+    item.concessionaria_id && !item.contrato_id
+      ? { ...item, contrato_id: contratoAutomatico(db.contratos, item.concessionaria_id) }
+      : item
+  );
+
   function openProgramacaoModal(item = null) {
-    setProgramacaoForm(item ? { ...item } : emptyProgramacao(selectedDate));
+    setProgramacaoForm(item ? comContratoSugerido({ ...item }) : emptyProgramacao(selectedDate));
     setModal('programacao');
   }
 
   function duplicateProgramacao(item) {
-   setProgramacaoForm({ ...item, id: '' });
+   setProgramacaoForm(comContratoSugerido({ ...item, id: '' }));
    setModal('programacao');
   }
 
@@ -3340,10 +3401,10 @@ function AppInner() {
                   options={db.concessionarias.map((c) => ({ value: c.id, label: c.sigla }))}
                 />
 
-                {/* Com um contrato vigente só, ele já entrou sozinho e o campo
-                    nem aparece — um seletor de uma opção é uma pergunta que
-                    não precisava ser feita. */}
-                {contratosVigentes(db.contratos, programacaoForm.concessionaria_id).length > 1 && (
+                {/* Aparece sempre que o contratante tem contrato vigente.
+                    Antes sumia quando havia um só (ele entrava sozinho), mas
+                    aí não dava pra ver nem conferir qual contrato a obra tinha. */}
+                {contratosVigentes(db.contratos, programacaoForm.concessionaria_id).length > 0 && (
                   <Select
                     label="Contrato"
                     value={programacaoForm.contrato_id || ''}
