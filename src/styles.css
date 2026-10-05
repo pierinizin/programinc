@@ -3822,3 +3822,11 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
 .it-card-empresas .it-secao-corpo .it-integrado { max-width: 100%; }
 .it-card-empresas .it-tag-contratante.zero { opacity: .55; }
 .it-card-empresas .it-tag-txt { flex: 0 1 auto; }
+
+/* Equipe que veio do Calendário: pisca em amarelo por uns segundos. */
+.equipe.foco { animation: equipe-foco 2.4s ease-out; }
+@keyframes equipe-foco {
+  0%, 30%, 60% { box-shadow: 0 0 0 3px var(--faixa), 0 0 0 7px color-mix(in srgb, var(--faixa) 35%, transparent); border-color: var(--faixa); }
+  15%, 45%     { box-shadow: 0 0 0 2px var(--faixa); border-color: var(--faixa); }
+  100%         { box-shadow: none; }
+}

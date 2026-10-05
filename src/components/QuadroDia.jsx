@@ -126,6 +126,8 @@ export function QuadroDia({
   db,
   maps,
   selectedDate,
+  focoEquipeId = null,      // veio do Calendário: rolar até esta equipe e destacar
+  onFocoFeito,
   podeEditar,
   tiposEquipe,
   onAdicionarMembro,
@@ -347,6 +349,31 @@ export function QuadroDia({
      fora da vista seria impossível: o ponteiro trava na borda e nada rola.
      Perto da borda, a coluna rola sozinha — quanto mais perto, mais rápido. */
   const equipesRef = useRef(null);
+
+  /* Clicou numa equipe no painel do Calendário: o App troca pra este dia e
+     passa o id aqui. Assim que o card existir na tela, rola até ele e pisca
+     em amarelo — sem isso a pessoa caía no quadro sem saber qual era. */
+  useEffect(() => {
+    if (!focoEquipeId) return undefined;
+    let tentativas = 0;
+    let limpar = null;
+    const procurar = () => {
+      const el = document.querySelector(`[data-equipe="${focoEquipeId}"]`);
+      if (!el) {
+        tentativas += 1;
+        if (tentativas < 20) limpar = setTimeout(procurar, 100);
+        else onFocoFeito?.();
+        return;
+      }
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.remove('foco');
+      void el.offsetWidth;          // reinicia a animação se clicar de novo na mesma
+      el.classList.add('foco');
+      limpar = setTimeout(() => { el.classList.remove('foco'); onFocoFeito?.(); }, 2600);
+    };
+    procurar();
+    return () => clearTimeout(limpar);
+  }, [focoEquipeId]); // eslint-disable-line react-hooks/exhaustive-deps
   function rolarBorda(y) {
     const cx = equipesRef.current;
     if (!cx || cx.scrollHeight <= cx.clientHeight) return;

@@ -333,6 +333,7 @@ function AppInner() {
   const [salvandoAtestadoFerias, setSalvandoAtestadoFerias] = useState(false);
   const [erroAtestadoFerias, setErroAtestadoFerias] = useState('');
   const [expandedProgramacaoId, setExpandedProgramacaoId] = useState(null);
+  const [focoEquipeId, setFocoEquipeId] = useState(null);   // Calendário -> equipe no quadro
   const [colabsSel, setColabsSel] = useState({});
   const [veicsSel, setVeicsSel] = useState({});
   const [calendarMonth, setCalendarMonth] = useState(new Date());
@@ -3106,6 +3107,8 @@ function AppInner() {
                   db={db}
                   maps={maps}
                   selectedDate={selectedDate}
+                  focoEquipeId={focoEquipeId}
+                  onFocoFeito={() => setFocoEquipeId(null)}
                   podeEditar={userRole === 'admin' || userRole === 'editor'}
                   tiposEquipe={TEAM_TYPE_OPTIONS}
                   onAdicionarMembro={adicionarMembro}
@@ -3566,6 +3569,7 @@ function AppInner() {
                     changePage('programacao');
                     setSelectedDate(activeDrawer.date);
                     setExpandedProgramacaoId(equipe.id);
+                    setFocoEquipeId(equipe.id);   // o quadro rola até ela e destaca
                   }}
                 />
               )}
