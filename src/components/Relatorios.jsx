@@ -4,6 +4,9 @@ import { MOTIVOS_FORA_DA_CONTA, rotuloMotivo } from '../lib/motivos';
 import { duracaoTexto, resumoParcial } from '../lib/faltaParcial';
 import { baixarControle, montarLinhasControle, opcoesControle } from '../lib/controleContratante';
 import {
+  ST, calendariosDoMes, hojeISO, letraMotivo, mesesNoIntervalo, semanasDoMes,
+} from '../lib/statusContrato';
+import {
   atribuirFaixas,
   contratantesConhecidos,
   encarregadosComProgramacao,
@@ -62,6 +65,15 @@ const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'o
 const curta = (iso) => (iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '');
 const longa = (iso) => (iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '');
 const rotuloMes = (chave) => MESES[Number(chave.slice(5, 7)) - 1] + '/' + chave.slice(2, 4);
+const MESES_LONGOS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho',
+  'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const mesLongo = (chave) => {
+  const m = MESES_LONGOS[Number(chave.slice(5, 7)) - 1];
+  return `${m.charAt(0).toUpperCase()}${m.slice(1)} de ${chave.slice(0, 4)}`;
+};
+const SEMANA_CURTA = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+const SEMANA_NOME = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+const diaSemana = (iso) => SEMANA_NOME[new Date(`${iso}T12:00:00`).getDay()];
 
 /* ---------------------------------------------------------------------------
    Balão de leitura dos gráficos. Fixo na viewport (não absoluto) porque a
@@ -370,6 +382,7 @@ export function Relatorios({
   const [faixa, setFaixa] = useState(null);        // null = todo o histórico
   const [encId, setEncId] = useState('');
   const [incluirFerias, setIncluirFerias] = useState(false);
+  const [mesStatus, setMesStatus] = useState(null);   // aba Status: 'aaaa-mm'
   /* Painel lateral com histórico: cada clique DENTRO do painel (ex.: numa
      obra da lista do contratante) empilha um novo painel em vez de trocar o
      de antes — e a seta "Voltar" desempilha. Clique na página principal só
@@ -468,6 +481,27 @@ export function Relatorios({
     () => periodosPorContrato(programacoes, colaboradores, contratos, de, ate),
     [programacoes, colaboradores, contratos, de, ate],
   );
+
+  /* ---- aba Status: um calendário por contrato, um mês por vez ----
+     Os meses navegáveis são os que o filtro De/Até toca. Sem escolha, abre no
+     mês de hoje (se estiver no filtro) ou no último mês do filtro. */
+  const hoje = hojeISO();
+  const mesesStatus = useMemo(() => mesesNoIntervalo(de, ate), [de, ate]);
+  const mesStatusAtual = mesesStatus.includes(mesStatus)
+    ? mesStatus
+    : (mesesStatus.includes(hoje.slice(0, 7)) ? hoje.slice(0, 7) : mesesStatus[mesesStatus.length - 1]);
+  const idxMes = mesesStatus.indexOf(mesStatusAtual);
+  const cartoesStatus = useMemo(
+    () => (mesStatusAtual
+      ? calendariosDoMes({ programacoes, concessionarias, contratos, mes: mesStatusAtual, de, ate, hoje })
+      : []),
+    [programacoes, concessionarias, contratos, mesStatusAtual, de, ate, hoje],
+  );
+  const totStatus = useMemo(() => {
+    const t = { ok: 0, campo: 0, pend: 0, erro: 0 };
+    for (const c of cartoesStatus) for (const k of Object.keys(t)) t[k] += c.cont[k];
+    return { ...t, total: t.ok + t.campo + t.pend + t.erro };
+  }, [cartoesStatus]);
 
   const resumoContratos = useMemo(() => {
     const equipes = new Set();
@@ -662,6 +696,47 @@ export function Relatorios({
             })}
           </section>
         </>
+      ),
+    });
+  }
+
+  /* Aba Status: clicar num dia abre as equipes daquele contrato naquele dia. */
+  function abrirDiaStatus(cartao, iso, lista) {
+    setDetalhe({
+      titulo: `${cartao.contrato} · ${diaSemana(iso)} ${longa(iso)}`,
+      sub: `${cartao.contratante} · ${lista.length} ${lista.length === 1 ? 'equipe' : 'equipes'}`,
+      cor: corContratante(cartao.contratante),
+      corpo: (
+        <section className="rel-p-sec">
+          <h5>Equipes no dia</h5>
+          {lista.map(({ p, st, motivo }) => {
+            const enc = pessoaDe.get(p.encarregadoId);
+            const membros = [...new Set(p.membroIds || [])].filter((id) => id !== p.encarregadoId);
+            return (
+              <div className="rel-pbloco" key={p.id}>
+                <div className="rel-pbloco-topo">
+                  <Avatar nome={enc?.nome} url={enc?.fotoUrl} tamanho="small" />
+                  <div>
+                    <div className="rel-nm">{enc?.nome || 'Sem encarregado'}</div>
+                    <div className="rel-fn">
+                      {[p.tipoEquipe, p.cidade].filter(Boolean).join(' · ')}
+                      {membros.length ? ` · +${membros.length} na equipe` : ''}
+                    </div>
+                    <span className={`rs-chip rs-${st}`}>
+                      {ST[st]}{motivo ? ` · ${String(motivo).toLowerCase()}` : ''}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {lista.some((x) => x.st === 'pend') && (
+            <p className="rel-sub" style={{ margin: '4px 0 0' }}>
+              "Sem baixa": o dia já passou e a equipe continua como Em campo. Marque Concluído ou
+              Não realizado no quadro daquele dia.
+            </p>
+          )}
+        </section>
       ),
     });
   }
@@ -957,6 +1032,8 @@ export function Relatorios({
           onClick={() => { setAba('equipes'); fechar(); }}>Equipes</button>
         <button role="tab" aria-selected={aba === 'contratos'} className={`rel-aba${aba === 'contratos' ? ' on' : ''}`}
           onClick={() => { setAba('contratos'); fechar(); }}>Contratos</button>
+        <button role="tab" aria-selected={aba === 'status'} className={`rel-aba${aba === 'status' ? ' on' : ''}`}
+          onClick={() => { setAba('status'); fechar(); }}>Status</button>
         <button role="tab" aria-selected={aba === 'faltas'} className={`rel-aba${aba === 'faltas' ? ' on' : ''}`}
           onClick={() => { setAba('faltas'); fechar(); }}>Faltas</button>
       </div>
@@ -1434,6 +1511,116 @@ export function Relatorios({
           </div>
           <p className="rel-dicaclique">Clique num nome para ver os dias, os horários e o motivo.</p>
         </section>
+      )}
+
+      {/* ================= STATUS ================= */}
+      {aba === 'status' && mesStatusAtual && (
+        <>
+          <div className="rs-mes">
+            <button type="button" className="rs-nav" disabled={idxMes <= 0}
+              onClick={() => setMesStatus(mesesStatus[idxMes - 1])} aria-label="Mês anterior">‹</button>
+            <b>{mesLongo(mesStatusAtual)}</b>
+            <button type="button" className="rs-nav" disabled={idxMes >= mesesStatus.length - 1}
+              onClick={() => setMesStatus(mesesStatus[idxMes + 1])} aria-label="Próximo mês">›</button>
+            {mesesStatus.length > 1 && <span className="rs-mes-dica">meses do filtro De/Até</span>}
+          </div>
+
+          {!cartoesStatus.length && <p className="rel-vazio">Nenhuma programação neste mês.</p>}
+
+          {!!cartoesStatus.length && (
+            <>
+              <div className="rel-kpis">
+                <div className="rel-kpi" title="Uma diária = uma equipe num dia">
+                  <b>{totStatus.total}</b><span>diárias no mês</span>
+                </div>
+                <div className="rel-kpi">
+                  <b>{totStatus.ok}</b>
+                  <span>concluídas ({Math.round((totStatus.ok / totStatus.total) * 100)}%)</span>
+                </div>
+                <div className="rel-kpi"><b>{totStatus.erro}</b><span>não realizadas</span></div>
+                <div className={`rel-kpi${totStatus.pend ? ' rs-kpi-pend' : ''}`}
+                  title="Dias que já passaram e continuam como Em campo">
+                  <b>{totStatus.pend}</b><span>sem baixa</span>
+                </div>
+                <div className="rel-kpi"><b>{cartoesStatus.length}</b><span>contratos</span></div>
+              </div>
+
+              <section className="rel-bloco">
+                <h3>Como ficou cada dia, por contrato</h3>
+                <p className="rel-sub">
+                  Dia com mais de uma equipe aparece dividido, uma faixa por equipe. Passe o mouse para ver as
+                  equipes; clique para abrir o detalhe.
+                </p>
+                <div className="rs-legenda">
+                  <span><i className="rs-q rs-ok" />Concluído</span>
+                  <span><i className="rs-q rs-campo" />Em campo (hoje ou adiante)</span>
+                  <span><i className="rs-q rs-erro" />Não realizado — letra: C chuva · M manutenção · V viagem · I integração · O outros</span>
+                  <span><i className="rs-q rs-pend" />Sem baixa (passou e ficou Em campo)</span>
+                  <span><i className="rs-q rs-vazio" />Sem equipe</span>
+                </div>
+
+                <div className="rs-cals">
+                  {cartoesStatus.map((c) => (
+                    <div className="rs-cal" key={c.chave}>
+                      <div className="rs-cal-topo">
+                        <i className="rel-pt" style={{ background: corContratante(c.contratante) }} />
+                        <div>
+                          <h4 className={c.semContrato ? 'sem' : ''}>{c.contrato}</h4>
+                          <span>{c.contratante}</span>
+                        </div>
+                      </div>
+                      <div className="rs-grade">
+                        {SEMANA_CURTA.map((d, i) => <span key={`h${i}`} className="rs-sem">{d}</span>)}
+                        {semanasDoMes(mesStatusAtual).map((iso, i) => {
+                          if (!iso) return <span key={`x${i}`} />;
+                          const n = Number(iso.slice(8, 10));
+                          const fora = iso < de || iso > ate;
+                          const lista = c.dias[iso];
+                          if (!lista) {
+                            const cls = fora ? 'fora' : iso > hoje ? 'futuro' : 'vazio';
+                            return <span key={iso} className={`rs-dia rs-${cls}`}><b>{n}</b></span>;
+                          }
+                          const unico = lista.every((x) => x.st === lista[0].st) ? lista[0].st : 'misto';
+                          const motivo = lista.find((x) => x.motivo)?.motivo;
+                          return (
+                            <button
+                              type="button"
+                              key={iso}
+                              className={`rs-dia rs-tem rs-${unico}`}
+                              onClick={() => abrirDiaStatus(c, iso, lista)}
+                              {...liga(
+                                <>
+                                  <div className="rel-dica-t">{c.contrato} · {diaSemana(iso)} {curta(iso)}</div>
+                                  {lista.map(({ p, st, motivo: m }) => (
+                                    <LinhaDica
+                                      key={p.id}
+                                      k={pessoaDe.get(p.encarregadoId)?.nome?.split(' ')[0] || 'Equipe'}
+                                      v={`${ST[st]}${m ? ` · ${String(m).toLowerCase()}` : ''}`}
+                                    />
+                                  ))}
+                                </>,
+                              )}
+                            >
+                              {lista.map((x) => <i key={x.p.id} className={`rs-seg rs-${x.st}`} />)}
+                              <b>{n}</b>
+                              {motivo && <em>{letraMotivo(motivo)}</em>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="rs-tot">
+                        {!!c.cont.ok && <span className="rs-chip rs-ok">{c.cont.ok} concluíd{c.cont.ok === 1 ? 'a' : 'as'}</span>}
+                        {!!c.cont.erro && <span className="rs-chip rs-erro">{c.cont.erro} não realizad{c.cont.erro === 1 ? 'a' : 'as'}</span>}
+                        {!!c.cont.pend && <span className="rs-chip rs-pend">{c.cont.pend} sem baixa</span>}
+                        {!!c.cont.campo && <span className="rs-chip rs-campo">{c.cont.campo} em campo</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </>
+          )}
+        </>
       )}
 
       <Painel

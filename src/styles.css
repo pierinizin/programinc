@@ -3577,3 +3577,70 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
   .it-grade { grid-template-columns: 1fr; }
 }
 .tooltip-parcial .tt-titulo { color: var(--erro-texto); }
+
+/* ---- Relatórios › aba Status: calendário por contrato ---- */
+.rs-mes { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; }
+.rs-mes b { font-family: var(--fonte-display); font-size: 15px; min-width: 150px; text-align: center; }
+.rs-nav {
+  width: 30px; height: 30px; border-radius: var(--r-sm); border: 1px solid var(--borda);
+  background: var(--superficie); color: var(--tinta); font-size: 17px; line-height: 1; cursor: pointer;
+}
+.rs-nav:hover:not(:disabled) { border-color: var(--borda-forte); }
+.rs-nav:disabled { opacity: .35; cursor: default; }
+.rs-mes-dica { font-size: 11.5px; color: var(--tinta-fraca); }
+.rs-kpi-pend b { color: var(--faixa-texto); }
+
+/* cores de estado (as mesmas dos selos do quadro) */
+.rs-ok    { --rs-cor: var(--ok); }
+.rs-campo { --rs-cor: var(--campo); }
+.rs-erro  { --rs-cor: var(--erro); }
+
+.rs-legenda { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 4px 0 14px; font-size: 11.5px; color: var(--tinta-media); }
+.rs-legenda span { display: inline-flex; align-items: center; gap: 6px; }
+.rs-q { width: 12px; height: 12px; border-radius: 3px; display: inline-block; background: var(--rs-cor); }
+.rs-q.rs-pend { background: repeating-linear-gradient(135deg, var(--faixa) 0 2px, var(--faixa-fundo) 2px 4px); border: 1px solid var(--faixa); }
+.rs-q.rs-vazio { background: var(--superficie-2); border: 1px solid var(--borda); }
+
+.rs-cals { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.rs-cal { border: 1px solid var(--borda); border-radius: var(--r-md); padding: 12px; background: var(--superficie); }
+.rs-cal-topo { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
+.rs-cal-topo .rel-pt { margin-top: 5px; flex: none; }
+.rs-cal-topo h4 { margin: 0; font-family: var(--fonte-display); font-size: 13px; line-height: 1.3; }
+.rs-cal-topo h4.sem { font-style: italic; font-weight: 600; color: var(--tinta-media); }
+.rs-cal-topo span { font-size: 11px; color: var(--tinta-fraca); }
+
+.rs-grade { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.rs-sem { text-align: center; font-size: 10px; font-weight: 600; color: var(--tinta-fraca); padding-bottom: 2px; }
+.rs-dia {
+  position: relative; aspect-ratio: 1; border-radius: 5px; overflow: hidden;
+  display: flex; flex-direction: column; padding: 0; border: 0; font: inherit;
+}
+.rs-dia > b {
+  position: absolute; top: 3px; left: 4px; font-family: var(--fonte-dado);
+  font-size: 10px; font-weight: 500; color: var(--tinta-fraca); line-height: 1;
+}
+.rs-vazio  { background: var(--superficie-2); }
+.rs-futuro { background: none; border: 1px dashed var(--borda); }
+.rs-fora   { background: none; opacity: .35; }
+.rs-tem { cursor: pointer; background: var(--superficie-2); }
+.rs-tem:hover { outline: 2px solid var(--tinta); outline-offset: 1px; }
+.rs-tem:focus-visible { outline: 2px solid var(--faixa); outline-offset: 1px; }
+.rs-seg { flex: 1; display: block; background: var(--rs-cor); }
+.rs-seg + .rs-seg { border-top: 1.5px solid var(--superficie); }
+.rs-seg.rs-pend { background: repeating-linear-gradient(135deg, var(--faixa) 0 3px, var(--faixa-fundo) 3px 6px); }
+.rs-tem > b { color: #fff; font-weight: 600; text-shadow: 0 1px 1px rgba(0,0,0,.25); }
+.rs-tem.rs-pend > b {
+  color: #16190C; text-shadow: none; background: var(--faixa); border-radius: 3px; padding: 1px 2px; left: 2px; top: 2px;
+}
+.rs-tem > em {
+  position: absolute; right: 3px; bottom: 2px; font-style: normal; font-family: var(--fonte-dado);
+  font-size: 9.5px; font-weight: 700; color: #fff; line-height: 1; text-shadow: 0 1px 1px rgba(0,0,0,.3);
+}
+
+.rs-tot { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.rs-chip { font-size: 11px; font-weight: 500; border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.rs-chip.rs-ok    { background: var(--ok-fundo);    color: var(--ok-texto); }
+.rs-chip.rs-campo { background: var(--campo-fundo); color: var(--campo-texto); }
+.rs-chip.rs-erro  { background: var(--erro-fundo);  color: var(--erro-texto); }
+.rs-chip.rs-pend  { background: var(--faixa-fundo); color: var(--faixa-texto); }
+.rel-pbloco-topo .rs-chip { display: inline-block; margin-top: 5px; }

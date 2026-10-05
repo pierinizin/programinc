@@ -34,7 +34,7 @@ const noPeriodo = (p, de, ate) => !((de && p.data < de) || (ate && p.data > ate)
 
 /* Quem é o contratante de uma programação e a que "item" da lista ela
    pertence: o contrato dela, ou o "sem contrato" do contratante dela. */
-function identificar(p, siglaDe, contratoDe) {
+export function identificar(p, siglaDe, contratoDe) {
   const contrato = p.contrato_id ? contratoDe.get(p.contrato_id) : null;
   const contratante = (p.concessionaria_id && siglaDe.get(p.concessionaria_id))
     || String(p.contratante || '').trim()
