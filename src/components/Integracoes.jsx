@@ -83,6 +83,13 @@ function Integrado({ integ, colaborador, podeEditar, editando, onIniciarEdicao, 
   );
 }
 
+/* "GARCIA E MONTEIRO" -> "GARCIA": no card fechado do grupo cabe a sigla
+   curta + a contagem, no mesmo tamanho dos outros cards. O nome inteiro fica
+   no hover e dentro do card aberto. */
+const siglaCurta = (sigla) => {
+  const partes = String(sigla || '').trim().split(/\s+/);
+  return partes[0].length >= 3 ? partes[0] : partes.slice(0, 2).join(' ');
+};
 const norm = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
 
 /* Quantas fotos cabem no resumo do card fechado antes de virar "+N". */
@@ -91,7 +98,10 @@ const FOTOS_NO_RESUMO = 3;
 /* Resumo do card fechado: fotos de alguns integrados empilhadas + o total.
    Vencido/vencendo aparecem como bolinha com número — fechar o card não pode
    esconder quem precisa ser reintegrado. */
-function ResumoIntegrados({ integrados, colaboradorPorId }) {
+function ResumoIntegrados({ integrados, colaboradorPorId, compacto = false }) {
+  // compacto: card de grupo por empresa — menos fotos e sem a palavra "pessoas",
+  // pra sobrar lugar pras empresas e o card ficar do tamanho dos outros.
+  const maxFotos = compacto ? 2 : FOTOS_NO_RESUMO;
   const pessoas = integrados
     .map((i) => ({ integ: i, c: colaboradorPorId[i.colaborador_id] }))
     .filter((x) => x.c);
@@ -102,13 +112,13 @@ function ResumoIntegrados({ integrados, colaboradorPorId }) {
   return (
     <span className="it-resumo" title={pessoas.map((x) => x.c.nome).join(', ')}>
       <span className="pilha">
-        {pessoas.slice(0, FOTOS_NO_RESUMO).map(({ integ, c }) => (
+        {pessoas.slice(0, maxFotos).map(({ integ, c }) => (
           <span key={integ.id} className="pilha-item"><Avatar nome={c.nome} url={c.fotoUrl} tamanho="small" /></span>
         ))}
-        {n > FOTOS_NO_RESUMO && <span className="mais">+{n - FOTOS_NO_RESUMO}</span>}
+        {n > maxFotos && <span className="mais">+{n - maxFotos}</span>}
       </span>
       <b className="it-resumo-n">{n}</b>
-      <span className="it-resumo-rot">{n === 1 ? 'pessoa' : 'pessoas'}</span>
+      {!compacto && <span className="it-resumo-rot">{n === 1 ? 'pessoa' : 'pessoas'}</span>}
       {vencidos > 0 && <span className="it-resumo-alerta vencido" title={`${vencidos} vencido(s)`}>{vencidos}</span>}
       {vencendo > 0 && <span className="it-resumo-alerta vencendo" title={`${vencendo} vencendo`}>{vencendo}</span>}
     </span>
@@ -195,14 +205,24 @@ function CardUnidade({
             className="it-card-contratantes"
             title={unidade.contratos.map((k) => `${k.sigla}${ehGrupo ? ` · ${k.numero}` : ''}`).join('  |  ')}
           >
-            {unidade.contratos.map((k) => (
-              <span key={k.id} className="it-tag-contratante">
+            {(porEmpresa
+              // empresa com gente primeiro, igual dentro do card aberto
+              ? unidade.contratos.slice().sort((x, y) => (divisao.find((d) => d.chave === y.id)?.n || 0)
+                - (divisao.find((d) => d.chave === x.id)?.n || 0))
+              : unidade.contratos
+            ).map((k) => (
+              <span
+                key={k.id}
+                className={`it-tag-contratante${porEmpresa && !(divisao.find((d) => d.chave === k.id)?.n) ? ' zero' : ''}`}
+              >
                 <i style={{ background: k.cor }} />
                 {/* No grupo, o número do contrato só aparece se for diferente do
                     nome do grupo — "FIRCON · EPR - V.CAFÉ" num card que já se
                     chama EPR - V.CAFÉ só empurrava a sigla pra fora. */}
                 <span className="it-tag-txt">
-                  {k.sigla}{ehGrupo && norm(k.numero) !== norm(unidade.titulo) ? ` · ${k.numero}` : ''}
+                  {porEmpresa
+                    ? siglaCurta(k.sigla)
+                    : <>{k.sigla}{ehGrupo && norm(k.numero) !== norm(unidade.titulo) ? ` · ${k.numero}` : ''}</>}
                 </span>
                 {/* Grupo separado por empresa: quantos foram integrados por esta. */}
                 {porEmpresa && (
@@ -231,7 +251,7 @@ function CardUnidade({
         >
           {aberto
             ? <span className="it-resumo-n-aberto">{unidade.integrados.length}</span>
-            : <ResumoIntegrados integrados={unidade.integrados} colaboradorPorId={colaboradorPorId} />}
+            : <ResumoIntegrados integrados={unidade.integrados} colaboradorPorId={colaboradorPorId} compacto={porEmpresa} />}
           <svg className="it-seta-icone" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
             <path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -247,7 +267,9 @@ function CardUnidade({
               <div key={sx.id || 'sem'} className={`it-secao${sx.id ? '' : ' sem-empresa'}`} {...alvo}>
                 <div className="it-secao-cab">
                   <i style={{ background: sx.cor }} />
-                  {sx.id ? <>Integrados pela {sx.rotulo}</> : 'Empresa não informada'}
+                  <span title={sx.id ? `Integrados pela ${sx.rotulo}` : undefined}>
+                    {sx.id ? <>Integrados pela {sx.rotulo}</> : 'Empresa não informada'}
+                  </span>
                   <small>{sx.itens.length}</small>
                 </div>
                 <div className="it-secao-corpo">
