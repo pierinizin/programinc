@@ -3664,3 +3664,11 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
 .sb-mais { font-size: 12px; color: var(--tinta-media); }
 
 .equipe.st-sembaixa::before { background: repeating-linear-gradient(180deg, var(--faixa) 0 4px, transparent 4px 7px); }
+.rs-exportar { margin-left: auto; }
+.rs-baixar {
+  margin-left: auto; flex: none; width: 28px; height: 28px; border-radius: var(--r-sm);
+  border: 1px solid var(--borda); background: var(--superficie); color: var(--tinta-media);
+  display: grid; place-items: center; cursor: pointer; font: inherit;
+}
+.rs-baixar:hover:not(:disabled) { color: var(--tinta); border-color: var(--borda-forte); }
+.rs-baixar:disabled { opacity: .5; cursor: default; }

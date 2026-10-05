@@ -6,6 +6,7 @@ import { baixarControle, montarLinhasControle, opcoesControle } from '../lib/con
 import {
   ST, calendariosDoMes, hojeISO, letraMotivo, mesesNoIntervalo, semanasDoMes,
 } from '../lib/statusContrato';
+import { baixarStatusXlsx } from '../lib/statusXlsx';
 import {
   atribuirFaixas,
   contratantesConhecidos,
@@ -383,6 +384,7 @@ export function Relatorios({
   const [encId, setEncId] = useState('');
   const [incluirFerias, setIncluirFerias] = useState(false);
   const [mesStatus, setMesStatus] = useState(null);   // aba Status: 'aaaa-mm'
+  const [exportandoStatus, setExportandoStatus] = useState(null);   // 'mes' | chave do contrato
   /* Painel lateral com histórico: cada clique DENTRO do painel (ex.: numa
      obra da lista do contratante) empilha um novo painel em vez de trocar o
      de antes — e a seta "Voltar" desempilha. Clique na página principal só
@@ -698,6 +700,21 @@ export function Relatorios({
         </>
       ),
     });
+  }
+
+  /* Aba Status: Excel do mês (todos os contratos) ou de um contrato só. */
+  async function exportarStatus(lista, quem) {
+    if (exportandoStatus) return;
+    setExportandoStatus(quem);
+    try {
+      await baixarStatusXlsx({
+        cartoes: lista, mes: mesStatusAtual, nomeDe: (id) => pessoaDe.get(id)?.nome,
+      });
+    } catch (e) {
+      console.error('Exportar status:', e);
+    } finally {
+      setExportandoStatus(null);
+    }
   }
 
   /* Aba Status: clicar num dia abre as equipes daquele contrato naquele dia. */
@@ -1523,6 +1540,17 @@ export function Relatorios({
             <button type="button" className="rs-nav" disabled={idxMes >= mesesStatus.length - 1}
               onClick={() => setMesStatus(mesesStatus[idxMes + 1])} aria-label="Próximo mês">›</button>
             {mesesStatus.length > 1 && <span className="rs-mes-dica">meses do filtro De/Até</span>}
+            {!!cartoesStatus.length && (
+              <button
+                type="button"
+                className="ghost-btn rs-exportar"
+                disabled={!!exportandoStatus}
+                onClick={() => exportarStatus(cartoesStatus, 'mes')}
+                title="Um arquivo com a aba Resumo e uma aba por contrato"
+              >
+                {exportandoStatus === 'mes' ? 'Gerando…' : 'Exportar mês (Excel)'}
+              </button>
+            )}
           </div>
 
           {!cartoesStatus.length && <p className="rel-vazio">Nenhuma programação neste mês.</p>}
@@ -1568,6 +1596,21 @@ export function Relatorios({
                           <h4 className={c.semContrato ? 'sem' : ''}>{c.contrato}</h4>
                           <span>{c.contratante}</span>
                         </div>
+                        <button
+                          type="button"
+                          className="rs-baixar"
+                          disabled={!!exportandoStatus}
+                          onClick={() => exportarStatus([c], c.chave)}
+                          title="Baixar o Excel só deste contrato"
+                          aria-label={`Baixar o Excel de ${c.contrato}`}
+                        >
+                          {exportandoStatus === c.chave ? '…' : (
+                            <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+                              <path d="M8 2v8m0 0-3-3m3 3 3-3M3 12.5h10" fill="none" stroke="currentColor"
+                                strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                        </button>
                       </div>
                       <div className="rs-grade">
                         {SEMANA_CURTA.map((d, i) => <span key={`h${i}`} className="rs-sem">{d}</span>)}

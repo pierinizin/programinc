@@ -274,7 +274,9 @@ export async function montarControleXlsx({ dados, de, ate }) {
   const nomeEmpresas = dados.empresas.join(' - ').replace(/[\\/:*?"<>|]/g, '-');
   return {
     buffer: await wb.xlsx.writeBuffer(),
-    nome: `CONTROLE ${nomeEmpresas} ${rotuloPeriodo(de, ate)}.xlsx`,
+    // Sem acento no nome do arquivo ("MARÇO" virava "download" em alguns navegadores).
+    nome: `CONTROLE ${nomeEmpresas} ${rotuloPeriodo(de, ate)}.xlsx`
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
   };
 }
 
