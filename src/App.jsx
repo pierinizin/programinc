@@ -121,6 +121,23 @@ function calculateWorkedHours(saidaBase, inicioObra, saidaAlmoco, retornoAlmoco,
   };
 }
 
+/* Tabelas que podem ser recarregadas sozinhas -> chave em `db`. Colaboradores
+   fica de fora de propósito: a carga dele assina as fotos (ver fetchDatabase). */
+const TABELA_PARA_CHAVE = {
+  veiculos: 'veiculos',
+  programacoes: 'programacoes',
+  faltas: 'faltas',
+  ferias: 'ferias',
+  colaboradores_status_historico: 'historicoStatus',
+  patio: 'patio',
+  perfis: 'perfis',
+  concessionarias: 'concessionarias',
+  contratos: 'contratos',
+  grupos_integracao: 'gruposIntegracao',
+  grupos_integracao_contratos: 'gruposIntegracaoContratos',
+  integracoes: 'integracoes',
+};
+
 function normalizeDb(data) {
  return {
    // [...].sort() para não mutar o array recebido
@@ -346,6 +363,7 @@ function AppInner() {
 
   const fetchDatabase = async () => {
     const minhaVez = ++fetchSeqRef.current;
+    const t0 = performance.now();
     const [resCols, resVeics, resProgs, resFaltas, resFerias, resHistorico, resPatio, resPerfis,
            resConcs, resCtrs, resGrupos, resGruposCtrs, resIntegracoes] = await Promise.all([
       buscarTudo(supabase, 'colaboradores'),
@@ -391,8 +409,18 @@ function AppInner() {
 
     // Uma busca mais nova já foi disparada (e pode até já ter chegado) —
     // esta aqui está desatualizada antes mesmo de terminar. Aplicar agora
-    // seria voltar no tempo.
-    if (minhaVez !== fetchSeqRef.current) return;
+    // seria voltar no tempo. Como agora existem buscas PARCIAIS (só uma
+    // tabela), a mais nova pode não ter trazido tudo: pede a completa de novo
+    // em vez de simplesmente desistir.
+    if (minhaVez !== fetchSeqRef.current) {
+      agendarFetchRef.current();
+      return;
+    }
+
+    // Medição discreta (só no console do navegador, F12): quando esse número
+    // começar a pesar, é a hora de carregar só os meses recentes.
+    console.info(`[Incovia] carga completa em ${Math.round(performance.now() - t0)} ms · `
+      + `${(resProgs.data || []).length} programações`);
 
     setDb(normalizeDb({
       colaboradores: colaboradoresComFoto,
@@ -494,13 +522,48 @@ function AppInner() {
      imediata já fazem atualização otimista. */
   const fetchTimerRef = useRef(null);
   const contadorTmpRef = useRef(0);
-  function agendarFetch() {
+  /* Recarga por tabela: quem mexeu só em faltas não precisa baixar de novo as
+     13 tabelas (com todo o histórico de programações). agendarFetch() sem
+     nada continua sendo a recarga completa; agendarFetch(['faltas']) recarrega
+     só aquela. Pedidos próximos se juntam no mesmo temporizador — se algum
+     deles pediu tudo, vai tudo. */
+  const pendentesRef = useRef(new Set());
+  function agendarFetch(tabelas) {
+    const pend = pendentesRef.current;
+    if (!tabelas || tabelas.some((t) => !TABELA_PARA_CHAVE[t])) pend.add('*');
+    else tabelas.forEach((t) => pend.add(t));
     if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current);
     fetchTimerRef.current = setTimeout(() => {
       fetchTimerRef.current = null;
-      fetchDatabaseRef.current();
+      const lista = [...pendentesRef.current];
+      pendentesRef.current = new Set();
+      if (lista.includes('*')) fetchDatabaseRef.current();
+      else fetchTabelasRef.current(lista);
     }, 250);
   }
+
+  async function fetchTabelas(tabelas, tentativa = 0) {
+    const minhaVez = ++fetchSeqRef.current;
+    const t0 = performance.now();
+    const res = await Promise.all(tabelas.map((t) => buscarTudo(supabase, t)));
+    res.forEach((r, i) => { if (r?.error) console.error(`Erro ao carregar ${tabelas[i]}:`, r.error.message); });
+    if (minhaVez !== fetchSeqRef.current) {
+      // Algo mais novo aconteceu no meio (outra busca ou um clique otimista).
+      // Tenta de novo estas mesmas tabelas; se insistir, faz a completa.
+      if (tentativa < 2) setTimeout(() => fetchTabelasRef.current(tabelas, tentativa + 1), 250);
+      else agendarFetchRef.current();
+      return;
+    }
+    if (res.some((r) => r?.error)) { agendarFetchRef.current(); return; }
+    console.info(`[Incovia] recarregou ${tabelas.join(', ')} em ${Math.round(performance.now() - t0)} ms`);
+    setDb((atual) => {
+      const novo = { ...atual };
+      tabelas.forEach((t, i) => { novo[TABELA_PARA_CHAVE[t]] = res[i].data || []; });
+      return normalizeDb(novo);
+    });
+  }
+  const fetchTabelasRef = useRef(fetchTabelas);
+  fetchTabelasRef.current = fetchTabelas;
   const agendarFetchRef = useRef(agendarFetch);
   agendarFetchRef.current = agendarFetch;
 
@@ -515,7 +578,9 @@ function AppInner() {
 
     const canal = supabase.channel('mudancas-incovia');
     ['colaboradores', 'veiculos', 'programacoes', 'faltas', 'ferias', 'colaboradores_status_historico', 'patio', 'perfis', 'grupos_integracao', 'grupos_integracao_contratos', 'integracoes'].forEach((table) => {
-      canal.on('postgres_changes', { event: '*', schema: 'public', table }, () => agendarFetchRef.current());
+      // Só a tabela que mudou. Colaboradores continua completo (TABELA_PARA_CHAVE
+      // não tem ele): as fotos assinadas vêm junto da carga completa.
+      canal.on('postgres_changes', { event: '*', schema: 'public', table }, () => agendarFetchRef.current([table]));
     });
     canal.subscribe();
 
@@ -854,7 +919,7 @@ function AppInner() {
       if (res.error) reportarErro('Integrações', res.error); else semPermissao('remover esta integração');
       return false;
     }
-    agendarFetch();
+    agendarFetch(['integracoes']);
     return true;
   }
 
@@ -876,7 +941,7 @@ function AppInner() {
       if (res.error) reportarErro('Integrações', res.error); else semPermissao('editar esta validade');
       return false;
     }
-    agendarFetch();
+    agendarFetch(['integracoes']);
     return true;
   }
 
@@ -1228,7 +1293,7 @@ function AppInner() {
       setDb((atual) => ({ ...atual, programacoes: anterior }));
       return semPermissao('alterar esta equipe');
     }
-    agendarFetch();
+    agendarFetch(['programacoes']);
   }
 
   function adicionarMembro(equipe, pessoaId) {
@@ -1524,7 +1589,7 @@ function AppInner() {
       if (res.error) return reportarErro('Erro ao mudar o status', res.error);
       return semPermissao('mudar o status');
     }
-    agendarFetch();
+    agendarFetch(['programacoes']);
   }
 
   async function updateProgramacaoField(itemId, field, value) {
@@ -1547,7 +1612,7 @@ function AppInner() {
       reportarErro('Erro ao atualizar Programação', res.error);
       return;
     }
-    agendarFetch();
+    agendarFetch(['programacoes']);
   }
 
   /* Obra antiga gravada antes do contrato existir: ao abrir, já sugere o
@@ -1811,7 +1876,7 @@ function AppInner() {
       return;
     }
 
-    agendarFetch();
+    agendarFetch(['faltas']);
     setModal(null);
   }
 
