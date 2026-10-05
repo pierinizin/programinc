@@ -1,5 +1,11 @@
 import { useMemo, useState } from 'react';
 import { contratosDe, dataBR, dataISO, textosSoltos } from '../lib/contratos';
+import { situacaoContrato } from '../lib/vigencia';
+
+const hojeISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 /* =============================================================================
    Contratantes e Contratos
@@ -155,6 +161,23 @@ export function Contratos({
     return m;
   }, [programacoes]);
 
+  /* Contrato marcado como ativo mas com o fim já passado (ou quase): é o que
+     o "vigente" de antes escondia. */
+  const hoje = hojeISO();
+  const alertasVig = useMemo(() => (
+    (contratos || [])
+      .map((k) => ({ k, sit: situacaoContrato(k, hoje) }))
+      .filter(({ sit }) => sit.tipo === 'vencido' || sit.tipo === 'vencendo')
+      .sort((a, b) => (a.sit.tipo === 'vencido' ? -1 : 1) - (b.sit.tipo === 'vencido' ? -1 : 1)
+        || String(a.k.fim).localeCompare(String(b.k.fim)))
+  ), [contratos, hoje]);
+  const nVencidos = alertasVig.filter((a) => a.sit.tipo === 'vencido').length;
+  const editarContrato = (k) => {
+    setErro('');
+    setAba('contratos');
+    setForm({ tipo: 'ctr', dados: { ...k, inicio: dataBR(k.inicio), fim: dataBR(k.fim) } });
+  };
+
   const ctrMarcados = Object.keys(selCtr).filter((id) => selCtr[id]);
   const concMarcados = Object.keys(selConc).filter((id) => selConc[id]);
 
@@ -234,8 +257,31 @@ export function Contratos({
           onClick={() => { setAba('contratos'); setForm(null); }}
         >
           Contratos <i>{(contratos || []).length}</i>
+          {nVencidos > 0 && <b className="ct-aba-alerta" title="Contratos vencidos ainda marcados como vigentes">{nVencidos}</b>}
         </button>
       </div>
+
+      {/* Vencido mas ainda "ativo": o app continuaria oferecendo esse contrato
+          na programação. Cada etiqueta abre o contrato pra renovar a data
+          ou desmarcar "vigente". */}
+      {podeEditar && alertasVig.length > 0 && (
+        <div className={`aviso-faixa ${nVencidos ? '' : 'atencao '}ct-vig-aviso`}>
+          <span>
+            {nVencidos > 0
+              ? <><b>{nVencidos}</b> {nVencidos === 1 ? 'contrato vencido ainda está' : 'contratos vencidos ainda estão'} como vigente</>
+              : <><b>{alertasVig.length}</b> {alertasVig.length === 1 ? 'contrato vence' : 'contratos vencem'} nos próximos 30 dias</>}
+            {nVencidos > 0 && alertasVig.length > nVencidos && <> · {alertasVig.length - nVencidos} vencendo em breve</>}
+          </span>
+          <span className="ct-vig-chips">
+            {alertasVig.map(({ k, sit }) => (
+              <button type="button" key={k.id} className={`ct-vig-chip ${sit.tipo}`} onClick={() => editarContrato(k)}
+                title="Abrir o contrato para renovar a data ou encerrar">
+                {k.numero} <i>{sit.texto}</i>
+              </button>
+            ))}
+          </span>
+        </div>
+      )}
 
       <div className="doc-barra">
         <input
@@ -478,7 +524,10 @@ export function Contratos({
                     {k.inicio || k.fim
                       ? `${dataBR(k.inicio) || '?'} → ${dataBR(k.fim) || 'sem fim'}`
                       : '—'}
-                    <i className={k.ativo ? 'sim' : 'nao'}>{k.ativo ? 'vigente' : 'encerrado'}</i>
+                    {(() => {
+                      const sit = situacaoContrato(k, hoje);
+                      return <i className={`sit-${sit.tipo}`}>{sit.texto}</i>;
+                    })()}
                   </span>
                   <span className="ct-obras">{obrasPorContrato[k.id] || 0}</span>
                   <span className="ct-btns">

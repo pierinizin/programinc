@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
 import { iconeVeiculo } from './IconeVeiculo';
 import { contratoAutomatico, contratosVigentes } from '../lib/contratos';
+import { dataBRcurta, foraDaVigencia } from '../lib/vigencia';
 import { derivarDia, disponivelEm } from '../lib/dia';
 import { notificar } from '../lib/dialogos';
 import { MOTIVOS_FALTA, rotuloMotivo } from '../lib/motivos';
@@ -175,6 +176,8 @@ export function QuadroDia({
   const [parcialAberta, setParcialAberta] = useState(null);
   // Cartão de hover da falta parcial — mesmo esquema de posição fixa do de férias.
   const [dicaParcial, setDicaParcial] = useState(null);
+  // Cartão de hover da etiqueta de contrato fora da vigência — mesmo esquema do de férias.
+  const [dicaVig, setDicaVig] = useState(null);
   /* Clique simples abre a falta parcial; clique duplo continua tirando da
      equipe. O navegador dispara "click" nos DOIS cliques de um duplo — então
      o simples espera um instante e só abre se não vier o segundo. */
@@ -819,11 +822,22 @@ export function QuadroDia({
                       {/* Número do contrato onde o olho já procura o
                           contratante. Some quando não há contrato ligado, em
                           vez de mostrar um traço: espaço vazio não informa. */}
-                      {mapaContratos[eq.contrato_id] && (
-                        <span className="ctr-etq">
-                          {mapaContratos[eq.contrato_id].numero}
-                        </span>
-                      )}
+                      {mapaContratos[eq.contrato_id] && (() => {
+                        const k = mapaContratos[eq.contrato_id];
+                        const fora = foraDaVigencia(k, eq.data);
+                        return (
+                          <span
+                            className={`ctr-etq${fora ? ' fora' : ''}`}
+                            onMouseEnter={fora ? (e) => setDicaVig({
+                              id: eq.id, k, fora, data: eq.data,
+                              contratante: eq.contratante, rect: e.currentTarget.getBoundingClientRect(),
+                            }) : undefined}
+                            onMouseLeave={fora ? () => setDicaVig((a) => (a?.id === eq.id ? null : a)) : undefined}
+                          >
+                            {fora && <span className="ctr-etq-ico" aria-hidden="true">!</span>}{k.numero}
+                          </span>
+                        );
+                      })()}
                     </span>
                   </span>
                 </button>
@@ -1167,6 +1181,38 @@ export function QuadroDia({
           </ZonaGente>
         </div>
       </div>
+
+      {dicaVig ? (
+        <div
+          className="tooltip-ferias tooltip-vig"
+          role="tooltip"
+          style={{
+            position: 'fixed',
+            left: dicaVig.rect.left,
+            top: dicaVig.rect.top - 8,
+            transform: 'translateY(-100%)',
+          }}
+        >
+          <div className="tt-topo">
+            <span className="tt-icone tt-icone-vig" aria-hidden="true">!</span>
+            <span className="tt-titulo">Fora da vigência do contrato</span>
+          </div>
+          <p className="tt-linha">
+            Contrato <b>{dicaVig.k.numero}</b>{dicaVig.contratante ? ` · ${dicaVig.contratante}` : ''}
+          </p>
+          <p className="tt-linha">
+            Vigência: <b>{dataBRcurta(dicaVig.k.inicio) || '—'}</b> a <b>{dataBRcurta(dicaVig.k.fim) || 'sem fim'}</b>
+          </p>
+          <p className="tt-linha">
+            Esta obra: <b>{dataBRcurta(dicaVig.data)}</b> — {dicaVig.fora.lado === 'antes' ? 'antes do início' : 'depois do fim'}
+          </p>
+          <p className="tt-linha tt-fraca">
+            {dicaVig.fora.lado === 'antes'
+              ? 'Se o trabalho já era deste contrato, ajuste o início em Contratantes.'
+              : 'Se houve aditivo, atualize o fim do contrato em Contratantes.'}
+          </p>
+        </div>
+      ) : null}
 
       {dicaParcial ? (() => {
         const r = resumoParcial(dicaParcial.eq, dicaParcial.falta);

@@ -7,6 +7,7 @@ import { QuadroDia } from './components/QuadroDia';
 import { Documentos } from './components/Documentos';
 import { Contratos } from './components/Contratos';
 import { contratosVigentes, contratoAutomatico } from './lib/contratos';
+import { foraDaVigencia } from './lib/vigencia';
 import { Integracoes } from './components/Integracoes';
 import { mesclarIntegrados, validadePadrao } from './lib/integracoes';
 import { Apontamentos } from './components/Apontamentos';
@@ -3465,6 +3466,18 @@ function AppInner() {
                       .map((k) => ({ value: k.id, label: k.numero }))}
                   />
                 )}
+                {(() => {
+                  // Data da obra fora do período do contrato escolhido: avisa,
+                  // não bloqueia (pode ser aditivo ainda não cadastrado).
+                  const k = db.contratos.find((x) => x.id === programacaoForm.contrato_id);
+                  const fora = foraDaVigencia(k, programacaoForm.data);
+                  return fora ? (
+                    <p className="aviso-vigencia full">
+                      <b>Atenção:</b> esta data está {fora.texto}. Confira se é o contrato certo
+                      ou atualize a vigência em Contratantes.
+                    </p>
+                  ) : null;
+                })()}
                 <Input
                 label="Engenheiro Responsável"
                 value={programacaoForm.engenheiro}
