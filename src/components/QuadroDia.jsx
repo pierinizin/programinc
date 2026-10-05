@@ -44,6 +44,11 @@ export function nomeCurto(nome) {
   return `${partes[0]} ${partes[partes.length - 1]}`;
 }
 
+const hojeLocal = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 /* 'AAAA-MM-DD' -> 'DD/MM', para caber no tooltip de atestado e férias. */
 function dataCurta(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
@@ -51,7 +56,14 @@ function dataCurta(iso) {
 }
 
 function seloDe(item) {
-  if (item.statusExecucao === 'EXECUTANDO') return ['selo-campo', 'Em campo'];
+  if (item.statusExecucao === 'EXECUTANDO') {
+    // Dia que já passou e ninguém deu baixa: o selo continua "Em campo"
+    // (é o que está gravado), mas a faixa lateral do card fica listrada em
+    // amarelo — o terceiro item é a classe do card.
+    return item.data < hojeLocal()
+      ? ['selo-campo', 'Em campo', 'st-sembaixa']
+      : ['selo-campo', 'Em campo'];
+  }
   if (item.statusExecucao === 'CONCLUÍDO') return ['selo-ok', 'Concluído'];
   if (item.statusExecucao === 'NÃO FOI POSSÍVEL REALIZAR') {
     return ['selo-parado', item.motivoNaoExecucao || 'Não realizado'];
@@ -778,13 +790,13 @@ export function QuadroDia({
               .map((id) => maps.colaboradores[id])
               .filter(Boolean);
             const total = membros.length + (lider ? 1 : 0);
-            const [classeSelo, textoSelo] = seloDe(eq);
+            const [classeSelo, textoSelo, classeCard] = seloDe(eq);
 
             return (
               <div
                 key={eq.id}
                 data-equipe={eq.id}
-                className={`equipe${selecionadas[eq.id] ? ' marcada' : ''} ${classeSelo.replace('selo-', 'st-')}`}
+                className={`equipe${selecionadas[eq.id] ? ' marcada' : ''} ${classeCard || classeSelo.replace('selo-', 'st-')}`}
               >
                 <button
                   type="button"

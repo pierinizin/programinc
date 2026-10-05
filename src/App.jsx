@@ -39,6 +39,7 @@ const TEAM_TYPE_OPTIONS = [
 ];
 
 const STATUS_OPTIONS = ['EXECUTANDO', 'CONCLUÍDO', 'NÃO FOI POSSÍVEL REALIZAR'];
+const DIAS_SEM_BAIXA = 30;   // a faixa de "falta dar baixa" olha só este tanto pra trás
 const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'VIAGEM', 'INTEGRAÇÃO', 'OUTROS'];
 const ROLE_OPTIONS = ['Encarregado', 'Motorista de Veículos Médios', 'Ajudante de produção', 'Operador de máquina de pintura'];
 const VEHICLE_TYPES = ['Caminhão', 'Caminhonete', 'Carro', 'Outro'];
@@ -1055,6 +1056,23 @@ function AppInner() {
   /* Mesma conta que o quadro usa, vinda de src/lib/dia.js — a fita e a lista
      não podem discordar sobre quantos estão livres. */
   const resumoDia = useMemo(() => derivarDia(db, selectedDate), [db, selectedDate]);
+
+  /* Equipes de dias ANTERIORES que continuam "Em campo": ninguém marcou
+     Concluído nem Não realizado. Olha só os últimos DIAS_SEM_BAIXA dias — o
+     histórico mais antigo fica em Relatórios › Status, senão a faixa nasceria
+     com um número enorme de coisa velha e ninguém mais olharia pra ela. */
+  const semBaixa = useMemo(() => {
+    const hoje = today();
+    const limite = shiftDate(hoje, -DIAS_SEM_BAIXA);
+    const porDia = new Map();
+    for (const p of db.programacoes) {
+      if (!p.data || p.data >= hoje || p.data < limite) continue;
+      if ((p.statusExecucao || 'EXECUTANDO') !== 'EXECUTANDO') continue;
+      porDia.set(p.data, (porDia.get(p.data) || 0) + 1);
+    }
+    const dias = [...porDia.entries()].sort((x, y) => y[0].localeCompare(x[0]));
+    return { total: dias.reduce((t, [, n]) => t + n, 0), dias };
+  }, [db.programacoes]);
 
   /* Só o que já é irregular HOJE conta para o selo do menu e para a faixa da
      Programação. "Vence em 30 dias" é assunto da aba Documentos; se entrasse
@@ -2789,6 +2807,36 @@ function AppInner() {
                       : ' documentos vencidos ou nunca entregues'}
                     <span className="ir">ver em Documentos →</span>
                   </button>
+                )}
+
+                {/* Baixa pendente: amarelo (pendência), não vermelho
+                    (impedimento). Cada dia é um atalho pro quadro daquele dia. */}
+                {(userRole === 'admin' || userRole === 'editor') && semBaixa.total > 0 && (
+                  <div className="aviso-faixa atencao sem-baixa">
+                    <span className="sb-txt">
+                      <b>{semBaixa.total}</b>
+                      {semBaixa.total === 1
+                        ? ' equipe de dia anterior ainda está como '
+                        : ' equipes de dias anteriores ainda estão como '}
+                      <i>Em campo</i>
+                    </span>
+                    <span className="sb-dias">
+                      {semBaixa.dias.slice(0, 6).map(([dia, n]) => (
+                        <button
+                          type="button"
+                          key={dia}
+                          className={`sb-dia${dia === selectedDate ? ' on' : ''}`}
+                          onClick={() => { setSelectedDate(dia); setExpandedProgramacaoId(null); }}
+                          title={`Abrir o quadro de ${dia.slice(8, 10)}/${dia.slice(5, 7)}`}
+                        >
+                          {dia.slice(8, 10)}/{dia.slice(5, 7)} <i>{n}</i>
+                        </button>
+                      ))}
+                      {semBaixa.dias.length > 6 && (
+                        <span className="sb-mais">+{semBaixa.dias.length - 6} dias</span>
+                      )}
+                    </span>
+                  </div>
                 )}
 
                 {/* Fita do dia: navegação e contadores na mesma linha. Antes
