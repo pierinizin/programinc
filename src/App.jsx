@@ -927,16 +927,25 @@ function AppInner() {
 
   async function salvarValidadeIntegracao(integ, novaValidadeIso) {
     const anterior = db.integracoes;
+    /* O banco exige validade >= data da integração (16-integracoes.sql), e a
+       data da integração nasce como o dia do cadastro. Então uma validade que
+       JÁ VENCEU (cadastrada de propósito, pra gerar o alerta) era recusada.
+       Se a validade nova é anterior à data da integração, a data da
+       integração recua junto: se já venceu, a integração foi feita antes. */
+    const dataIntegracao = integ.data_integracao || today();
+    const patch = novaValidadeIso < dataIntegracao
+      ? { validade: novaValidadeIso, data_integracao: novaValidadeIso }
+      : { validade: novaValidadeIso };
     avancarVersaoEstado();
     setDb((atual) => ({
       ...atual,
       integracoes: atual.integracoes.map((i) => (
-        i.id === integ.id ? { ...i, validade: novaValidadeIso } : i
+        i.id === integ.id ? { ...i, ...patch } : i
       )),
     }));
 
     const res = await supabase.from('integracoes')
-      .update({ validade: novaValidadeIso }).eq('id', integ.id).select();
+      .update(patch).eq('id', integ.id).select();
     if (res.error || !res.data?.length) {
       avancarVersaoEstado();
       setDb((atual) => ({ ...atual, integracoes: anterior }));
