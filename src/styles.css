@@ -3806,3 +3806,21 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
   font: inherit; font-size: 12px; color: var(--tinta-fraca); text-decoration: underline;
 }
 .it-tag-n { font: 600 10.5px var(--fonte-dado); color: var(--tinta); margin-left: 3px; flex: none; }
+
+/* Grupo separado por empresa: card com o dobro da largura (quando a grade tem
+   espaço), pra caber as empresas inteiras e as pessoas lado a lado. */
+.it-grade { container-type: inline-size; }
+@container (min-width: 620px) {
+  .it-grade > .it-card-empresas { grid-column: span 2; }
+}
+.it-card-empresas .it-card-contratantes { gap: 14px; }
+.it-card-empresas .it-tag-contratante { flex: none; }
+.it-card-empresas .it-tag-txt { overflow: visible; }
+.it-card-empresas .it-tag-n {
+  margin-left: 4px; padding: 0 7px; border-radius: 999px;
+  background: var(--superficie-2); border: 1px solid var(--borda);
+}
+/* Aberto: uma empresa embaixo da outra, largura inteira, pessoas em fila
+   corrida (várias por linha) dentro de cada uma — igual à prévia. */
+.it-card-empresas .it-zona-grupo { padding: 0; }
+.it-card-empresas .it-secao-corpo .it-integrado { max-width: 100%; }

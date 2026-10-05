@@ -144,7 +144,10 @@ function CardUnidade({
   const idsEmpresas = new Set(empresas.map((e) => e.id));
   const secoes = porEmpresa
     ? [
-      ...empresas.map((e) => ({ ...e, itens: unidade.integrados.filter((i) => i.via_contrato_id === e.id) })),
+      // Quem tem gente primeiro; empresa ainda vazia vai pro fim.
+      ...empresas
+        .map((e) => ({ ...e, itens: unidade.integrados.filter((i) => i.via_contrato_id === e.id) }))
+        .sort((x, y) => (y.itens.length > 0) - (x.itens.length > 0)),
       { id: null, cor: 'var(--borda-forte)', rotulo: null,
         itens: unidade.integrados.filter((i) => !idsEmpresas.has(i.via_contrato_id)) },
     ]
@@ -169,7 +172,10 @@ function CardUnidade({
   );
 
   return (
-    <div className={`it-card${ehGrupo ? ' it-card-grupo' : ''}${aberto ? '' : ' fechado'}`} {...alvoProps}>
+    <div
+      className={`it-card${ehGrupo ? ' it-card-grupo' : ''}${porEmpresa ? ' it-card-empresas' : ''}${aberto ? '' : ' fechado'}`}
+      {...alvoProps}
+    >
       <div className="it-card-cab">
         {!ehGrupo && ehAdmin && (
           <button
