@@ -3710,3 +3710,61 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
 .tt-icone.tt-icone-vig { background: var(--erro-fundo); color: var(--erro-texto); font-weight: 700; font-family: var(--fonte-dado); }
 .tooltip-vig .tt-titulo { color: var(--erro-texto); }
 .tooltip-vig .tt-linha + .tt-linha { margin-top: 2px; }
+
+/* ---- Conferência de dados ---- */
+.conf-resumo { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.conf-resumo button {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  border: 1px solid var(--borda); background: var(--superficie); color: var(--tinta);
+  border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px;
+}
+.conf-resumo button b { font: 700 13px var(--fonte-dado); }
+.conf-resumo button.on { border-color: var(--tinta); }
+.conf-resumo .alto b { color: var(--erro-texto); }
+.conf-resumo .medio b { color: var(--faixa-texto); }
+
+.conf-bloco { background: var(--superficie); border: 1px solid var(--borda); border-radius: var(--r-lg); margin-bottom: 14px; overflow: hidden; }
+.conf-bloco > header { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--borda); }
+.conf-bloco h3 { margin: 0; font: 700 14.5px var(--fonte-display); }
+.conf-bloco header p { margin: 3px 0 0; color: var(--tinta-media); font-size: 12.5px; line-height: 1.45; max-width: 760px; }
+.conf-n { margin-left: auto; font: 700 13px var(--fonte-dado); color: var(--tinta-media); }
+.conf-ico { flex: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font: 700 13px var(--fonte-dado); }
+.conf-ico.alto  { background: var(--erro-fundo);  color: var(--erro-texto); }
+.conf-ico.medio { background: var(--faixa-fundo); color: var(--faixa-texto); }
+.conf-ico.ok    { background: var(--ok-fundo);    color: var(--ok-texto); }
+
+.conf-linha { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; padding: 11px 16px; border-top: 1px solid var(--borda); }
+.conf-bloco > header + .conf-linha, .conf-bloco > header + div > .conf-linha { border-top: 0; }
+.conf-txt { flex: 1; min-width: 260px; }
+.conf-t { font-weight: 600; }
+.conf-d { color: var(--tinta-media); font-size: 12px; margin-top: 3px; line-height: 1.6; }
+.conf-d i { font-style: normal; font-family: var(--fonte-dado); font-size: 11.5px; }
+.conf-d em { font-style: normal; color: var(--erro-texto); }
+.conf-tag {
+  display: inline-block; margin-right: 4px; padding: 0 7px; border-radius: 4px;
+  font: 500 11px var(--fonte-dado); background: var(--superficie-2); border: 1px solid var(--borda);
+}
+.conf-acoes { display: flex; flex-wrap: wrap; gap: 6px; }
+.conf-perigo {
+  border: 1px solid var(--erro); background: var(--superficie); color: var(--erro-texto);
+  border-radius: var(--r-sm); padding: 7px 12px; font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.conf-perigo:hover:not(:disabled) { background: var(--erro-fundo); }
+.conf-perigo:disabled { opacity: .5; cursor: default; }
+.conf-sel {
+  border: 1px solid var(--borda-forte); background: var(--superficie); color: var(--tinta);
+  border-radius: var(--r-sm); padding: 7px 10px; font: inherit; font-size: 12.5px;
+}
+.conf-vazio { padding: 12px 16px; color: var(--ok-texto); font-size: 12.5px; }
+.conf-obras { padding: 4px 16px 12px 16px; display: grid; gap: 2px; background: var(--superficie-2); border-top: 1px solid var(--borda); }
+.conf-obra {
+  display: grid; grid-template-columns: 90px 1fr auto; gap: 12px; align-items: center; text-align: left;
+  border: 0; background: none; padding: 6px 8px; border-radius: var(--r-sm); font: inherit; font-size: 12.5px; color: var(--tinta); cursor: pointer;
+}
+.conf-obra:hover { background: var(--superficie); }
+.conf-obra i { font-style: normal; font-family: var(--fonte-dado); font-size: 11.5px; color: var(--tinta-media); }
+.conf-fraco { color: var(--tinta-fraca); font-size: 12px; }
+.conf-mais { padding: 6px 8px; }
+.conf-acoes .conf-sel { width: auto; min-width: 180px; }
+/* botão do menu com contador: número encostado na direita */
+.nav-btn:has(.nav-selo) { display: flex; align-items: center; gap: 8px; }

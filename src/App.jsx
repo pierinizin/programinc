@@ -12,6 +12,8 @@ import { Integracoes } from './components/Integracoes';
 import { mesclarIntegrados, validadePadrao } from './lib/integracoes';
 import { Apontamentos } from './components/Apontamentos';
 import { Relatorios } from './components/Relatorios';
+import { Conferencia } from './components/Conferencia';
+import { equipesRepetidas } from './lib/conferencia';
 import { FichaColaborador } from './components/FichaColaborador';
 import { FichaVeiculo } from './components/FichaVeiculo';
 import { iconeVeiculo } from './components/IconeVeiculo';
@@ -1122,6 +1124,10 @@ function AppInner() {
   /* Mesma conta que o quadro usa, vinda de src/lib/dia.js — a fita e a lista
      não podem discordar sobre quantos estão livres. */
   const resumoDia = useMemo(() => derivarDia(db, selectedDate), [db, selectedDate]);
+  const nRepetidas = useMemo(
+    () => (userRole === 'admin' ? equipesRepetidas(db.programacoes, db.faltas).length : 0),
+    [db.programacoes, db.faltas, userRole],
+  );
 
   /* Equipes de dias ANTERIORES que continuam "Em campo": ninguém marcou
      Concluído nem Não realizado. Olha só os últimos DIAS_SEM_BAIXA dias — o
@@ -1975,7 +1981,7 @@ function AppInner() {
   /* Exclusão em lote a partir da seleção do quadro (a mesma dos checkboxes que
      já servem para copiar). Some de vez, então o aviso lista o que vai embora
      em vez de perguntar "tem certeza?" sobre um número solto. */
-  async function excluirProgramacoes(lista) {
+  async function excluirProgramacoes(lista, aviso = '') {
     if (!lista.length) return false;
 
     const nomes = lista.slice(0, 6)
@@ -1984,7 +1990,7 @@ function AppInner() {
     const resto = lista.length > 6 ? `\n· e mais ${lista.length - 6}` : '';
     const ok = await confirmar({
       titulo: `Excluir ${lista.length} ${lista.length === 1 ? 'programação' : 'programações'}?`,
-      mensagem: `${nomes}${resto}\n\nEsta ação não pode ser desfeita.`,
+      mensagem: `${aviso ? `${aviso}\n\n` : ''}${nomes}${resto}\n\nEsta ação não pode ser desfeita.`,
       textoConfirmar: 'Excluir',
     });
     if (!ok) return false;
@@ -2007,6 +2013,43 @@ function AppInner() {
     agendarFetch();
     return true;
   }
+  /* ---- Conferência de dados ---- */
+  function abrirDiaNaProgramacao(data) {
+    setSelectedDate(data);
+    changePage('programacao');
+  }
+
+  async function excluirCopiasRepetidas(grupo) {
+    const n = (p) => new Set([p.encarregadoId, ...(p.membroIds || [])].filter(Boolean)).size;
+    const aviso = `Fica a equipe com ${n(grupo.fica)} ${n(grupo.fica) === 1 ? 'pessoa' : 'pessoas'}`
+      + `${grupo.fica.statusExecucao && grupo.fica.statusExecucao !== 'EXECUTANDO' ? ` (${grupo.fica.statusExecucao.toLowerCase()})` : ''}.`
+      + ` ${grupo.sobram.length === 1 ? 'Sai a cópia abaixo' : 'Saem as cópias abaixo'}:`;
+    return excluirProgramacoes(grupo.sobram, aviso);
+  }
+
+  async function ligarObrasAoContrato(conc, contrato, quantas) {
+    const ok = await confirmar({
+      titulo: `Ligar ${quantas} ${quantas === 1 ? 'obra' : 'obras'} de ${conc.sigla} ao ${contrato.numero}?`,
+      mensagem: 'Só as obras deste contratante que estão SEM contrato. As que já têm contrato não mudam.',
+      textoConfirmar: 'Ligar',
+      variante: 'atencao',
+    });
+    if (!ok) return false;
+    // Filtro no servidor (e não lista de ids): com centenas de obras a lista
+    // estouraria o tamanho do endereço.
+    const res = await supabase.from('programacoes')
+      .update({ contrato_id: contrato.id })
+      .eq('concessionaria_id', conc.id)
+      .is('contrato_id', null)
+      .select('id');
+    if (res.error) { reportarErro('Erro ao ligar as obras', res.error); return false; }
+    const feitas = res.data?.length || 0;
+    if (!feitas) { semPermissao('alterar estas obras'); return false; }
+    notificar({ titulo: `${feitas} ${feitas === 1 ? 'obra ligada' : 'obras ligadas'} a ${contrato.numero}` });
+    agendarFetch(['programacoes']);
+    return true;
+  }
+
 
   /* ------------------------------------------------------------------
      Pátio e faltas pelo arraste do quadro.
@@ -2493,6 +2536,12 @@ function AppInner() {
              <NavButton active={page === 'relatorios'} onClick={() => changePage('relatorios')}>
                Relatórios
              </NavButton>
+             {userRole === 'admin' && (
+               <NavButton active={page === 'conferencia'} onClick={() => changePage('conferencia')}>
+                 Conferência
+                 {nRepetidas > 0 && <span className="nav-selo">{nRepetidas}</span>}
+               </NavButton>
+             )}
            </>
          )}
 
@@ -2629,6 +2678,23 @@ function AppInner() {
                   faltas={db.faltas}
                   concessionarias={db.concessionarias}
                   contratos={db.contratos}
+                />
+              </>
+            )}
+
+            {page === 'conferencia' && userRole === 'admin' && (
+              <>
+                <div className="page-head">
+                  <div>
+                    <h2>Conferência de dados</h2>
+                    <p>O que parece fora do lugar no histórico. Arrumar aqui deixa os Relatórios e os exports certos.</p>
+                  </div>
+                </div>
+                <Conferencia
+                  db={db}
+                  onAbrirDia={abrirDiaNaProgramacao}
+                  onExcluirCopias={excluirCopiasRepetidas}
+                  onLigarContrato={ligarObrasAoContrato}
                 />
               </>
             )}
