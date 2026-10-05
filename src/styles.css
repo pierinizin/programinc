@@ -3768,3 +3768,41 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
 .conf-acoes .conf-sel { width: auto; min-width: 180px; }
 /* botão do menu com contador: número encostado na direita */
 .nav-btn:has(.nav-selo) { display: flex; align-items: center; gap: 8px; }
+
+/* ---- Integrações: grupo separado por empresa ---- */
+.it-zona.it-zona-grupo { display: grid; gap: 10px; padding: 10px; border: 0; background: none; min-height: 0; }
+.it-secao { border: 1px dashed var(--borda-forte); border-radius: var(--r-md); background: var(--superficie); overflow: hidden; }
+.it-secao.sem-empresa { border-style: solid; border-color: var(--borda); }
+.it-secao.alvo     { border-color: var(--ok-texto); border-style: solid; background: var(--ok-fundo); }
+.it-secao.alvo-nao { border-color: var(--erro-texto); border-style: solid; background: var(--erro-fundo); }
+.it-secao-cab {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  background: var(--superficie-2); border-bottom: 1px solid var(--borda);
+  font: 700 11px var(--fonte-display); letter-spacing: .04em; text-transform: uppercase;
+}
+.it-secao-cab i { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.it-secao-cab small { margin-left: auto; font: 500 11px var(--fonte-dado); color: var(--tinta-media); letter-spacing: 0; }
+.it-secao.alvo .it-secao-cab, .it-secao.alvo-nao .it-secao-cab { background: transparent; }
+.it-secao-corpo { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; min-height: 44px; align-items: center; }
+.it-secao-dica { margin: 0; padding: 0 10px 10px; font-size: 11px; color: var(--tinta-fraca); line-height: 1.4; }
+
+.it-escolha-fundo { position: fixed; inset: 0; z-index: 60; }
+.it-escolha {
+  position: fixed; z-index: 61; width: 260px; padding: 12px;
+  background: var(--superficie); border: 1px solid var(--borda); border-radius: var(--r-md); box-shadow: var(--sombra-lg);
+}
+.it-escolha p { margin: 0 0 10px; font-size: 12.5px; color: var(--tinta-media); line-height: 1.4; }
+.it-escolha p b { color: var(--tinta); }
+.it-escolha-ops { display: grid; gap: 6px; }
+.it-escolha-ops button {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; cursor: pointer;
+  border: 1px solid var(--borda-forte); border-radius: var(--r-sm); background: var(--superficie);
+  font: 700 12.5px var(--fonte-display); color: var(--tinta); text-align: left;
+}
+.it-escolha-ops button:hover, .it-escolha-ops button:focus-visible { border-color: var(--faixa); background: var(--faixa-fundo); outline: none; }
+.it-escolha-ops i { width: 9px; height: 9px; border-radius: 2px; }
+.it-escolha-cancelar {
+  margin-top: 8px; border: 0; background: none; padding: 2px; cursor: pointer;
+  font: inherit; font-size: 12px; color: var(--tinta-fraca); text-decoration: underline;
+}
+.it-tag-n { font: 600 10.5px var(--fonte-dado); color: var(--tinta); margin-left: 3px; flex: none; }

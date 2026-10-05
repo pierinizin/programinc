@@ -283,6 +283,20 @@ function semPermissao(acao) {
   notificar({ titulo: 'Sem permissão', mensagem: `Você não tem permissão para ${acao}.`, variante: 'erro' });
 }
 
+/* Banco ainda sem a coluna via_contrato_id (supabase/19-integracao-empresa.sql)? */
+const semColunaVia = (erro) => /via_contrato_id/i.test(String(erro?.message || ''));
+let avisouSqlVia = false;
+function avisarSqlVia() {
+  if (avisouSqlVia) return;
+  avisouSqlVia = true;
+  notificar({
+    titulo: 'Falta rodar um SQL no Supabase',
+    mensagem: 'Para guardar a empresa de cada integração, rode o arquivo supabase/19-integracao-empresa.sql. Até lá, a integração é gravada sem a empresa.',
+    variante: 'erro',
+    duracao: 12000,
+  });
+}
+
 function toggle(list, value) {
   return list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
 }
@@ -859,12 +873,14 @@ function AppInner() {
      ------------------------------------------------------------------------ */
   /* Arrastou do banco pra dentro de um card: grava uma linha nova ligada ao
      contrato OU ao grupo (nunca aos dois — é o que o card representa). */
-  async function integrarColaborador(colaboradorId, unidade) {
+  async function integrarColaborador(colaboradorId, unidade, viaContratoId = null) {
     const payload = {
       colaborador_id: colaboradorId,
       contrato_id: unidade.tipo === 'contrato' ? unidade.id : null,
       grupo_id: unidade.tipo === 'grupo' ? unidade.id : null,
       validade: validadePadrao(),
+      // Grupo com várias empresas: por qual delas a pessoa foi integrada.
+      ...(unidade.tipo === 'grupo' && viaContratoId ? { via_contrato_id: viaContratoId } : {}),
     };
     const anterior = db.integracoes;
     const idProvisorio = `tmp-${Date.now()}`;
@@ -877,7 +893,13 @@ function AppInner() {
       ],
     }));
 
-    const res = await supabase.from('integracoes').insert([payload]).select();
+    let res = await supabase.from('integracoes').insert([payload]).select();
+    if (res.error && semColunaVia(res.error) && payload.via_contrato_id) {
+      // Banco ainda sem o 19-integracao-empresa.sql: integra mesmo assim, sem a empresa.
+      avisarSqlVia();
+      const { via_contrato_id: _ignorado, ...semVia } = payload;
+      res = await supabase.from('integracoes').insert([semVia]).select();
+    }
     if (res.error || !res.data?.length) {
       avancarVersaoEstado();
       setDb((atual) => ({ ...atual, integracoes: anterior }));
@@ -966,6 +988,29 @@ function AppInner() {
      insert (o id do grupo só existe depois que o servidor responde), mas
      aplica o resultado direto ao voltar, em vez de disparar outro
      fetchDatabase() inteiro por cima do que já teve que esperar. */
+  /* Grupo dividido por empresa: arrastou de novo uma pessoa que já estava
+     no grupo para a seção de OUTRA empresa — só troca a marca. */
+  async function mudarEmpresaIntegracao(integ, viaContratoId) {
+    const anterior = db.integracoes;
+    avancarVersaoEstado();
+    setDb((atual) => ({
+      ...atual,
+      integracoes: atual.integracoes.map((i) => (i.id === integ.id ? { ...i, via_contrato_id: viaContratoId } : i)),
+    }));
+    const res = await supabase.from('integracoes')
+      .update({ via_contrato_id: viaContratoId }).eq('id', integ.id).select();
+    if (res.error || !res.data?.length) {
+      avancarVersaoEstado();
+      setDb((atual) => ({ ...atual, integracoes: anterior }));
+      if (res.error && semColunaVia(res.error)) avisarSqlVia();
+      else if (res.error) reportarErro('Integrações', res.error);
+      else semPermissao('alterar esta integração');
+      return false;
+    }
+    agendarFetch(['integracoes']);
+    return true;
+  }
+
   async function criarGrupoIntegracao(nome, contratoIds) {
     const gRes = await supabase.from('grupos_integracao').insert([{ nome }]).select();
     if (gRes.error || !gRes.data?.length) { reportarErro('Integrações', gRes.error); return false; }
@@ -983,12 +1028,20 @@ function AppInner() {
     const mesclados = mesclarIntegrados([integradosAntigos]);
     let novasLinhas = [];
     if (mesclados.length) {
+      // Cada pessoa leva junto a empresa (contrato) pela qual estava integrada.
       const upsertPayload = mesclados.map((i) => ({
         colaborador_id: i.colaborador_id, grupo_id: grupo.id,
         data_integracao: i.data_integracao, validade: i.validade, observacao: i.observacao || null,
+        via_contrato_id: i.contrato_id || i.via_contrato_id || null,
       }));
-      const uRes = await supabase.from('integracoes')
+      let uRes = await supabase.from('integracoes')
         .upsert(upsertPayload, { onConflict: 'colaborador_id,grupo_id' }).select();
+      if (uRes.error && semColunaVia(uRes.error)) {
+        avisarSqlVia();
+        uRes = await supabase.from('integracoes')
+          .upsert(upsertPayload.map(({ via_contrato_id: _v, ...r }) => r), { onConflict: 'colaborador_id,grupo_id' })
+          .select();
+      }
       if (uRes.error) { reportarErro('Integrações', uRes.error); await fetchDatabase(); return false; }
       novasLinhas = uRes.data?.length ? uRes.data : upsertPayload;
 
@@ -2753,6 +2806,7 @@ function AppInner() {
                   onSalvarValidade={salvarValidadeIntegracao}
                   onCriarGrupo={criarGrupoIntegracao}
                   onDesfazerGrupo={desfazerGrupoIntegracao}
+                  onMudarEmpresa={mudarEmpresaIntegracao}
                 />
               </>
             )}

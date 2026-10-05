@@ -83,6 +83,8 @@ function Integrado({ integ, colaborador, podeEditar, editando, onIniciarEdicao, 
   );
 }
 
+const norm = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+
 /* Quantas fotos cabem no resumo do card fechado antes de virar "+N". */
 const FOTOS_NO_RESUMO = 3;
 
@@ -113,6 +115,19 @@ function ResumoIntegrados({ integrados, colaboradorPorId }) {
   );
 }
 
+/* Grupo com mais de um contrato: cada pessoa fica marcada com a empresa
+   (contrato) pela qual foi integrada — via_contrato_id. O rótulo é a sigla
+   do contratante; se duas empresas tiverem a mesma sigla, vai o número junto. */
+function empresasDoGrupo(unidade) {
+  const siglas = unidade.contratos.map((k) => k.sigla);
+  return unidade.contratos.map((k) => ({
+    id: k.id,
+    cor: k.cor,
+    rotulo: siglas.filter((x) => x === k.sigla).length > 1 ? `${k.sigla} · ${k.numero}` : k.sigla,
+  }));
+}
+const separaPorEmpresa = (u) => u.tipo === 'grupo' && u.contratos.length > 1;
+
 function CardUnidade({
   unidade, colaboradorPorId, podeEditar, ehAdmin,
   selecionado, onSelecionar, editandoValidadeId, onIniciarEdicao,
@@ -123,6 +138,35 @@ function CardUnidade({
   /* Fechado, o card INTEIRO vira a área de soltar — dá pra continuar
      arrastando gente pra dentro sem precisar abrir. */
   const alvoProps = aberto ? {} : { 'data-unidade': unidade.id, 'data-tipo': unidade.tipo };
+
+  const porEmpresa = separaPorEmpresa(unidade);
+  const empresas = porEmpresa ? empresasDoGrupo(unidade) : [];
+  const idsEmpresas = new Set(empresas.map((e) => e.id));
+  const secoes = porEmpresa
+    ? [
+      ...empresas.map((e) => ({ ...e, itens: unidade.integrados.filter((i) => i.via_contrato_id === e.id) })),
+      { id: null, cor: 'var(--borda-forte)', rotulo: null,
+        itens: unidade.integrados.filter((i) => !idsEmpresas.has(i.via_contrato_id)) },
+    ]
+    : [];
+  const divisao = porEmpresa
+    ? secoes.map((sx) => ({ chave: sx.id || 'sem', cor: sx.cor, n: sx.itens.length, rotulo: sx.rotulo || 'empresa não informada' }))
+    : null;
+
+  const ordenar = (lista) => lista.slice().sort((a, b) => String(colaboradorPorId[a.colaborador_id]?.nome || '')
+    .localeCompare(String(colaboradorPorId[b.colaborador_id]?.nome || ''), 'pt-BR'));
+  const chip = (integ) => (
+    <Integrado
+      key={integ.id}
+      integ={integ}
+      colaborador={colaboradorPorId[integ.colaborador_id]}
+      podeEditar={podeEditar}
+      editando={editandoValidadeId === integ.id}
+      onIniciarEdicao={onIniciarEdicao}
+      onSalvarValidade={onSalvarValidade}
+      onRemover={onRemoverIntegracao}
+    />
+  );
 
   return (
     <div className={`it-card${ehGrupo ? ' it-card-grupo' : ''}${aberto ? '' : ' fechado'}`} {...alvoProps}>
@@ -148,7 +192,18 @@ function CardUnidade({
             {unidade.contratos.map((k) => (
               <span key={k.id} className="it-tag-contratante">
                 <i style={{ background: k.cor }} />
-                <span className="it-tag-txt">{k.sigla}{ehGrupo ? ` · ${k.numero}` : ''}</span>
+                {/* No grupo, o número do contrato só aparece se for diferente do
+                    nome do grupo — "FIRCON · EPR - V.CAFÉ" num card que já se
+                    chama EPR - V.CAFÉ só empurrava a sigla pra fora. */}
+                <span className="it-tag-txt">
+                  {k.sigla}{ehGrupo && norm(k.numero) !== norm(unidade.titulo) ? ` · ${k.numero}` : ''}
+                </span>
+                {/* Grupo separado por empresa: quantos foram integrados por esta. */}
+                {porEmpresa && (
+                  <b className="it-tag-n" title={`${divisao.find((d) => d.chave === k.id)?.n || 0} integrado(s) pela ${k.sigla}`}>
+                    {divisao.find((d) => d.chave === k.id)?.n || 0}
+                  </b>
+                )}
               </span>
             ))}
           </span>
@@ -177,7 +232,39 @@ function CardUnidade({
         </button>
       </div>
 
-      {aberto && (
+      {aberto && porEmpresa && (
+        <div className="it-zona it-zona-grupo">
+          {secoes.map((sx) => {
+            if (!sx.id && !sx.itens.length) return null;   // "não informada" só aparece se tiver alguém
+            const alvo = sx.id ? { 'data-unidade': unidade.id, 'data-tipo': unidade.tipo, 'data-via': sx.id } : {};
+            return (
+              <div key={sx.id || 'sem'} className={`it-secao${sx.id ? '' : ' sem-empresa'}`} {...alvo}>
+                <div className="it-secao-cab">
+                  <i style={{ background: sx.cor }} />
+                  {sx.id ? <>Integrados pela {sx.rotulo}</> : 'Empresa não informada'}
+                  <small>{sx.itens.length}</small>
+                </div>
+                <div className="it-secao-corpo">
+                  {!sx.itens.length && (
+                    <span className="it-zona-vazia">
+                      {podeEditar ? `arraste alguém aqui para integrar pela ${sx.rotulo}` : 'ninguém ainda'}
+                    </span>
+                  )}
+                  {ordenar(sx.itens).map(chip)}
+                </div>
+                {!sx.id && podeEditar && (
+                  <p className="it-secao-dica">
+                    Integrados antes desta separação. Pra marcar a empresa, arraste a pessoa da lista da
+                    esquerda para a seção da empresa certa.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {aberto && !porEmpresa && (
       <div
         className={`it-zona${unidade.integrados.length ? '' : ' vazia'}`}
         data-unidade={unidade.id}
@@ -187,22 +274,7 @@ function CardUnidade({
         {unidade.integrados.length === 0 && (
           <span className="it-zona-vazia">{podeEditar ? 'arraste alguém aqui' : 'ninguém integrado ainda'}</span>
         )}
-        {unidade.integrados
-          .slice()
-          .sort((a, b) => String(colaboradorPorId[a.colaborador_id]?.nome || '')
-            .localeCompare(String(colaboradorPorId[b.colaborador_id]?.nome || ''), 'pt-BR'))
-          .map((integ) => (
-            <Integrado
-              key={integ.id}
-              integ={integ}
-              colaborador={colaboradorPorId[integ.colaborador_id]}
-              podeEditar={podeEditar}
-              editando={editandoValidadeId === integ.id}
-              onIniciarEdicao={onIniciarEdicao}
-              onSalvarValidade={onSalvarValidade}
-              onRemover={onRemoverIntegracao}
-            />
-          ))}
+        {ordenar(unidade.integrados).map(chip)}
       </div>
       )}
     </div>
@@ -213,8 +285,10 @@ export function Integracoes({
   colaboradores, contratos, concessionarias,
   gruposIntegracao, gruposIntegracaoContratos, integracoes,
   podeEditar, ehAdmin,
-  onIntegrar, onRemoverIntegracao, onSalvarValidade, onCriarGrupo, onDesfazerGrupo,
+  onIntegrar, onRemoverIntegracao, onSalvarValidade, onCriarGrupo, onDesfazerGrupo, onMudarEmpresa,
 }) {
+  // Soltou no card FECHADO de um grupo com várias empresas: pergunta qual.
+  const [escolhaEmpresa, setEscolhaEmpresa] = useState(null);   // { colaborador, unidade, x, y }
   const [busca, setBusca] = useState('');
   const [selContratos, setSelContratos] = useState({});
   const [agruparAberto, setAgruparAberto] = useState(false);
@@ -300,12 +374,32 @@ export function Integracoes({
     return unidades.find((u) => u.id === alvo.dataset.unidade && u.tipo === alvo.dataset.tipo) || null;
   }
 
-  /* A única coisa que bloqueia o arraste: a pessoa já estar NESTE card. Em
-     qualquer outro card ela pode entrar — integração em vários contratos ao
-     mesmo tempo é o normal, não a exceção. */
-  function jaIntegrado(colaboradorId, unidade) {
-    return Boolean(unidade?.integrados.some((i) => i.colaborador_id === colaboradorId));
+  /* A única coisa que bloqueia o arraste: a pessoa já estar NESTE card (na
+     mesma empresa, num grupo dividido). Em qualquer outro card ela pode
+     entrar — integração em vários contratos ao mesmo tempo é o normal.
+
+     O que acontece ao soltar aqui:
+       'novo'     — integra (num grupo dividido, pela empresa da seção)
+       'mover'    — já está no grupo por outra empresa (ou sem empresa): troca a empresa
+       'escolher' — card fechado de grupo dividido: pergunta a empresa
+       'dup'      — já está aqui */
+  function acaoNoAlvo(colaboradorId, unidade, via) {
+    if (!unidade) return null;
+    const existente = unidade.integrados.find((i) => i.colaborador_id === colaboradorId);
+    if (!separaPorEmpresa(unidade)) return existente ? { tipo: 'dup' } : { tipo: 'novo' };
+    const emp = via ? empresasDoGrupo(unidade).find((e) => e.id === via) : null;
+    if (!via) return existente ? { tipo: 'dup' } : { tipo: 'escolher' };
+    if (existente && existente.via_contrato_id === via) return { tipo: 'dup', emp };
+    if (existente) return { tipo: 'mover', emp, existente };
+    return { tipo: 'novo', emp };
   }
+  const textoAcao = (a) => {
+    if (!a) return '';
+    if (a.tipo === 'dup') return 'já integrado aqui';
+    if (a.tipo === 'mover') return `mudar para ${a.emp.rotulo}`;
+    if (a.tipo === 'escolher') return 'integrar aqui · escolher a empresa';
+    return a.emp ? `integrar pela ${a.emp.rotulo}` : 'integrar aqui';
+  };
 
   function encerrar() {
     const st = arrasteRef.current;
@@ -347,12 +441,13 @@ export function Integracoes({
     if (st.alvo && st.alvo !== alvo) limparAlvo();
     if (alvo && alvo !== st.alvo) {
       st.alvo = alvo;
-      const duplicado = jaIntegrado(st.colaborador.id, unidadeDoAlvo(alvo));
+      const acao = acaoNoAlvo(st.colaborador.id, unidadeDoAlvo(alvo), alvo.dataset.via || null);
+      const duplicado = acao?.tipo === 'dup';
       alvo.classList.add(duplicado ? 'alvo-nao' : 'alvo');
       if (fantasmaRef.current) {
         fantasmaRef.current.dataset.ok = duplicado ? 'nao' : 'sim';
         fantasmaRef.current.querySelector('.veredito').textContent = duplicado ? '✕' : '✓';
-        fantasmaRef.current.querySelector('.motivo').textContent = duplicado ? 'já integrado aqui' : 'integrar aqui';
+        fantasmaRef.current.querySelector('.motivo').textContent = textoAcao(acao);
       }
     }
   }
@@ -363,7 +458,13 @@ export function Integracoes({
     const alvo = alvoSob(ev.clientX, ev.clientY);
     if (alvo) {
       const unidade = unidadeDoAlvo(alvo);
-      if (unidade && !jaIntegrado(st.colaborador.id, unidade)) onIntegrar(st.colaborador.id, unidade);
+      const via = alvo.dataset.via || null;
+      const acao = acaoNoAlvo(st.colaborador.id, unidade, via);
+      if (acao?.tipo === 'novo') onIntegrar(st.colaborador.id, unidade, via);
+      else if (acao?.tipo === 'mover') onMudarEmpresa(acao.existente, via);
+      else if (acao?.tipo === 'escolher') {
+        setEscolhaEmpresa({ colaborador: st.colaborador, unidade, x: ev.clientX, y: ev.clientY });
+      }
     }
     encerrar();
   }
@@ -521,6 +622,43 @@ export function Integracoes({
           </div>
         )}
       </div>
+
+      {escolhaEmpresa && (
+        <>
+          <div className="it-escolha-fundo" onClick={() => setEscolhaEmpresa(null)} role="presentation" />
+          <div
+            className="it-escolha"
+            role="dialog"
+            aria-label="Escolher a empresa"
+            style={{
+              left: Math.min(escolhaEmpresa.x, window.innerWidth - 280),
+              top: Math.min(escolhaEmpresa.y + 8, window.innerHeight - 200),
+            }}
+            onKeyDown={(e) => { if (e.key === 'Escape') setEscolhaEmpresa(null); }}
+          >
+            <p>
+              Integrar <b>{escolhaEmpresa.colaborador.apelido || escolhaEmpresa.colaborador.nome}</b> em{' '}
+              <b>{escolhaEmpresa.unidade.titulo}</b> pela:
+            </p>
+            <div className="it-escolha-ops">
+              {empresasDoGrupo(escolhaEmpresa.unidade).map((e, k) => (
+                <button
+                  type="button"
+                  key={e.id}
+                  autoFocus={k === 0}
+                  onClick={() => {
+                    onIntegrar(escolhaEmpresa.colaborador.id, escolhaEmpresa.unidade, e.id);
+                    setEscolhaEmpresa(null);
+                  }}
+                >
+                  <i style={{ background: e.cor }} />{e.rotulo}
+                </button>
+              ))}
+            </div>
+            <button type="button" className="it-escolha-cancelar" onClick={() => setEscolhaEmpresa(null)}>Cancelar</button>
+          </div>
+        </>
+      )}
 
       <div id="fantasma" ref={fantasmaRef}>
         <span className="veredito" />
