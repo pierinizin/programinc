@@ -897,7 +897,8 @@ function AppInner() {
     if (res.error && semColunaVia(res.error) && payload.via_contrato_id) {
       // Banco ainda sem o 19-integracao-empresa.sql: integra mesmo assim, sem a empresa.
       avisarSqlVia();
-      const { via_contrato_id: _ignorado, ...semVia } = payload;
+      const semVia = { ...payload };
+      delete semVia.via_contrato_id;
       res = await supabase.from('integracoes').insert([semVia]).select();
     }
     if (res.error || !res.data?.length) {
@@ -1039,7 +1040,7 @@ function AppInner() {
       if (uRes.error && semColunaVia(uRes.error)) {
         avisarSqlVia();
         uRes = await supabase.from('integracoes')
-          .upsert(upsertPayload.map(({ via_contrato_id: _v, ...r }) => r), { onConflict: 'colaborador_id,grupo_id' })
+          .upsert(upsertPayload.map((r) => { const c = { ...r }; delete c.via_contrato_id; return c; }), { onConflict: 'colaborador_id,grupo_id' })
           .select();
       }
       if (uRes.error) { reportarErro('Integrações', uRes.error); await fetchDatabase(); return false; }
@@ -1071,17 +1072,26 @@ function AppInner() {
   async function desfazerGrupoIntegracao(unidade) {
     if (!(await confirmar({
       titulo: `Desfazer o grupo "${unidade.titulo}"?`,
-      mensagem: 'Os contratos voltam a ser soltos. Quem está integrado continua integrado em cada um deles.',
+      mensagem: 'Os contratos voltam a ser soltos. Cada pessoa volta para o contrato da empresa pela qual foi '
+        + 'integrada. Quem estava sem empresa marcada fica integrado em todos.',
       textoConfirmar: 'Desfazer',
     }))) return false;
 
     const contratoIds = unidade.contratos.map((k) => k.id);
     let copias = [];
     if (unidade.integrados.length && contratoIds.length) {
-      const copiasPayload = contratoIds.flatMap((contrato_id) => unidade.integrados.map((i) => ({
-        colaborador_id: i.colaborador_id, contrato_id,
-        data_integracao: i.data_integracao, validade: i.validade, observacao: i.observacao || null,
-      })));
+      /* Cada pessoa volta SÓ para o contrato da empresa pela qual foi integrada
+         (via_contrato_id). Antes todo mundo era copiado para todos os
+         contratos do grupo — quem foi integrado pela GARCIA aparecia também
+         na FIRCON depois de desfazer. Só quem não tem empresa marcada (grupo
+         antigo) continua indo para todos, porque não dá pra saber qual era. */
+      const copiasPayload = unidade.integrados.flatMap((i) => {
+        const destinos = contratoIds.includes(i.via_contrato_id) ? [i.via_contrato_id] : contratoIds;
+        return destinos.map((contrato_id) => ({
+          colaborador_id: i.colaborador_id, contrato_id,
+          data_integracao: i.data_integracao, validade: i.validade, observacao: i.observacao || null,
+        }));
+      });
       const uRes = await supabase.from('integracoes')
         .upsert(copiasPayload, { onConflict: 'colaborador_id,contrato_id' }).select();
       if (uRes.error) { reportarErro('Integrações', uRes.error); return false; }
