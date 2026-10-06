@@ -3830,3 +3830,6 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
   15%, 45%     { box-shadow: 0 0 0 2px var(--faixa); border-color: var(--faixa); }
   100%         { box-shadow: none; }
 }
+.rel-pbloco-btn { cursor: pointer; font: inherit; color: inherit; }
+.rel-ir { margin-left: auto; font-size: 18px; line-height: 1; color: var(--tinta-fraca); }
+.rel-pbloco-btn:hover .rel-ir { color: var(--tinta); }

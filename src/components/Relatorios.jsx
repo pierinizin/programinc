@@ -378,6 +378,7 @@ function BlocoPessoa({ pessoa, datas, formato = curta }) {
 
 export function Relatorios({
   colaboradores = [], programacoes = [], faltas = [], concessionarias = [], contratos = [],
+  onAbrirEquipe,   // leva pra Programação daquele dia, rolando até a equipe
 }) {
   const [aba, setAba] = useState('equipes');
   const [faixa, setFaixa] = useState(null);        // null = todo o histórico
@@ -730,7 +731,13 @@ export function Relatorios({
             const enc = pessoaDe.get(p.encarregadoId);
             const membros = [...new Set(p.membroIds || [])].filter((id) => id !== p.encarregadoId);
             return (
-              <div className="rel-pbloco" key={p.id}>
+              <button
+                type="button"
+                className="rel-pbloco rel-pbloco-btn"
+                key={p.id}
+                onClick={onAbrirEquipe ? () => onAbrirEquipe(p) : undefined}
+                title={onAbrirEquipe ? 'Abrir esta equipe na Programação' : undefined}
+              >
                 <div className="rel-pbloco-topo">
                   <Avatar nome={enc?.nome} url={enc?.fotoUrl} tamanho="small" />
                   <div>
@@ -743,8 +750,9 @@ export function Relatorios({
                       {ST[st]}{motivo ? ` · ${String(motivo).toLowerCase()}` : ''}
                     </span>
                   </div>
+                  {onAbrirEquipe && <span className="rel-ir" aria-hidden="true">›</span>}
                 </div>
-              </div>
+              </button>
             );
           })}
           {lista.some((x) => x.st === 'pend') && (

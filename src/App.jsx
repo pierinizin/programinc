@@ -2746,6 +2746,14 @@ function AppInner() {
                   </div>
                 </div>
                 <Relatorios
+                  onAbrirEquipe={(equipe) => {
+                    // mesmo caminho do painel do Calendário: troca de tela, vai pro
+                    // dia certo e o quadro rola até a equipe e destaca
+                    changePage('programacao');
+                    setSelectedDate(equipe.data);
+                    setExpandedProgramacaoId(equipe.id);
+                    setFocoEquipeId(equipe.id);
+                  }}
                   colaboradores={db.colaboradores}
                   programacoes={db.programacoes}
                   faltas={db.faltas}
