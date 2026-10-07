@@ -3833,3 +3833,57 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
 .rel-pbloco-btn { cursor: pointer; font: inherit; color: inherit; }
 .rel-ir { margin-left: auto; font-size: 18px; line-height: 1; color: var(--tinta-fraca); }
 .rel-pbloco-btn:hover .rel-ir { color: var(--tinta); }
+
+/* ---- Programação: seletor de data (setas + calendário + campo digitável) ---- */
+.sd { position: relative; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.sd-data {
+  display: block; text-align: left; cursor: pointer; font: inherit; color: inherit;
+  padding: 3px 9px; margin: -3px -2px; border-radius: var(--r-sm);
+  border: 1px solid transparent; background: none;
+}
+.sd-data:hover, .sd-data.on { background: var(--superficie-2); border-color: var(--borda); }
+.sd-data b {
+  display: flex; align-items: center; gap: 5px;
+  font-family: var(--fonte-display); font-size: 15.5px; font-weight: 700; line-height: 1.2; letter-spacing: -.01em;
+}
+.sd-data b i { font-style: normal; font-size: 10px; color: var(--tinta-fraca); }
+.sd-data > span { display: block; font-family: var(--fonte-dado); font-size: 11px; color: var(--tinta-fraca); }
+
+.sd-campo {
+  display: inline-flex; align-items: center; gap: 6px; margin-left: 4px;
+  padding: 0 9px; height: 32px; border: 1px solid var(--borda-forte); border-radius: var(--r-sm);
+  background: var(--superficie); color: var(--tinta-fraca); cursor: text;
+}
+.sd-campo:focus-within { border-color: var(--faixa); box-shadow: 0 0 0 3px color-mix(in srgb, var(--faixa) 25%, transparent); color: var(--tinta); }
+.sd-campo.erro { border-color: var(--erro); box-shadow: 0 0 0 3px color-mix(in srgb, var(--erro) 20%, transparent); color: var(--erro-texto); }
+.sd-campo input {
+  width: 92px; border: 0; outline: none; background: none; padding: 0;
+  font: 600 13px var(--fonte-dado); color: var(--tinta); font-variant-numeric: tabular-nums;
+}
+
+.sd-pop {
+  position: absolute; top: calc(100% + 8px); left: 30px; z-index: 40; width: 300px; padding: 12px;
+  background: var(--superficie); border: 1px solid var(--borda); border-radius: var(--r-md); box-shadow: var(--sombra-lg);
+}
+.sd-pop-cab { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.sd-pop-cab b { font: 700 14px var(--fonte-display); }
+.sd-grade { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.sd-h { text-align: center; font: 700 9.5px var(--fonte-display); color: var(--tinta-fraca); padding-bottom: 3px; }
+.sd-d {
+  height: 36px; border: 0; border-radius: 6px; background: none; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  font: 600 12.5px var(--fonte-dado); color: var(--tinta);
+}
+.sd-d::after { content: ''; width: 5px; height: 5px; border-radius: 50%; background: transparent; }
+.sd-d.tem::after  { background: var(--ok); }
+.sd-d.pend::after { background: var(--faixa); }
+.sd-d.fora { color: var(--borda-forte); }
+.sd-d:hover { background: var(--superficie-2); }
+.sd-d.hj { box-shadow: inset 0 0 0 1.5px var(--tinta); }
+.sd-d.on { background: var(--faixa); color: #16190C; }
+.sd-d.on::after { background: #16190C; }
+.sd-leg { display: flex; gap: 12px; margin-top: 8px; font-size: 11px; color: var(--tinta-media); }
+.sd-leg i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.sd-leg i.tem { background: var(--ok); }
+.sd-leg i.pend { background: var(--faixa); }
+.sd-pe { display: flex; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--borda); }

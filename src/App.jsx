@@ -13,6 +13,7 @@ import { mesclarIntegrados, validadePadrao } from './lib/integracoes';
 import { Apontamentos } from './components/Apontamentos';
 import { Relatorios } from './components/Relatorios';
 import { Conferencia } from './components/Conferencia';
+import { SeletorData } from './components/SeletorData';
 import { equipesRepetidas } from './lib/conferencia';
 import { FichaColaborador } from './components/FichaColaborador';
 import { FichaVeiculo } from './components/FichaVeiculo';
@@ -1197,6 +1198,42 @@ function AppInner() {
   /* Mesma conta que o quadro usa, vinda de src/lib/dia.js — a fita e a lista
      não podem discordar sobre quantos estão livres. */
   const resumoDia = useMemo(() => derivarDia(db, selectedDate), [db, selectedDate]);
+
+  /* Seletor de data: quais dias têm programação e quais têm equipe sem baixa
+     (bolinhas do calendário). */
+  const { diasComProgramacao, diasSemBaixaTodos } = useMemo(() => {
+    const hoje = today();
+    const com = new Set();
+    const sem = new Set();
+    for (const p of db.programacoes) {
+      if (!p.data) continue;
+      com.add(p.data);
+      if (p.data < hoje && (p.statusExecucao || 'EXECUTANDO') === 'EXECUTANDO') sem.add(p.data);
+    }
+    return { diasComProgramacao: com, diasSemBaixaTodos: sem };
+  }, [db.programacoes]);
+
+  function irParaDia(iso) {
+    setSelectedDate(iso);
+    setExpandedProgramacaoId(null);
+  }
+
+  /* Atalhos na Programação: ← → trocam o dia, H volta pra hoje. Não valem
+     enquanto se digita num campo nem com uma janela (modal) aberta. */
+  useEffect(() => {
+    if (page !== 'programacao') return undefined;
+    const tecla = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const alvo = e.target;
+      if (alvo && (alvo.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(alvo.tagName))) return;
+      if (modal || document.querySelector('.dlg-confirmar, .sd-pop, .modal-backdrop, .modal')) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); irParaDia(shiftDate(selectedDate, -1)); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); irParaDia(shiftDate(selectedDate, 1)); }
+      else if (e.key === 'h' || e.key === 'H') irParaDia(today());
+    };
+    window.addEventListener('keydown', tecla);
+    return () => window.removeEventListener('keydown', tecla);
+  }, [page, selectedDate, modal]); // eslint-disable-line react-hooks/exhaustive-deps
   const nRepetidas = useMemo(
     () => (userRole === 'admin' ? equipesRepetidas(db.programacoes, db.faltas).length : 0),
     [db.programacoes, db.faltas, userRole],
@@ -1234,7 +1271,6 @@ function AppInner() {
     docs.pendencias.forEach((p) => { m[p.colaborador_id] = (m[p.colaborador_id] || 0) + 1; });
     return m;
   }, [docs.pendencias]);
-  const dateLabel = formatDateLabel(selectedDate);
 
   const colaboradoresComStats = useMemo(() => {
     const progPorId = new Map(db.programacoes.map((p) => [p.id, p]));
@@ -3058,24 +3094,12 @@ function AppInner() {
                     apareciam repetidos logo abaixo, no quadro. */}
                 <div className="fita-dia">
                   <span className="fd-nav">
-                    <button
-                      className="icon-btn"
-                      aria-label="Dia anterior"
-                      onClick={() => { setSelectedDate(shiftDate(selectedDate, -1)); setExpandedProgramacaoId(null); }}
-                    >
-                      ‹
-                    </button>
-                    <span className="fd-data">
-                      <b className="capitalize">{dateLabel.weekday}</b>
-                      <span>{dateLabel.full}</span>
-                    </span>
-                    <button
-                      className="icon-btn"
-                      aria-label="Próximo dia"
-                      onClick={() => { setSelectedDate(shiftDate(selectedDate, 1)); setExpandedProgramacaoId(null); }}
-                    >
-                      ›
-                    </button>
+                    <SeletorData
+                      data={selectedDate}
+                      onMudar={irParaDia}
+                      diasComProgramacao={diasComProgramacao}
+                      diasSemBaixa={diasSemBaixaTodos}
+                    />
                   </span>
 
                   <span className="fd-risco" />
