@@ -18,7 +18,7 @@ import { equipesRepetidas } from './lib/conferencia';
 import { FichaColaborador } from './components/FichaColaborador';
 import { FichaVeiculo } from './components/FichaVeiculo';
 import { iconeVeiculo } from './components/IconeVeiculo';
-import { derivarDia, disponivelEm } from './lib/dia';
+import { derivarDia, disponivelEm, primeirasAtividades } from './lib/dia';
 import { duracaoTexto, resumoParcial } from './lib/faltaParcial';
 import { MOTIVOS_FALTA, rotuloMotivo } from './lib/motivos';
 import { prepararFoto, enviarFoto, assinarFotos, assinarFotosEmCache } from './lib/fotos';
@@ -1187,6 +1187,14 @@ function AppInner() {
       colaboradores: Object.fromEntries(db.colaboradores.map((x) => [x.id, x])),
       veiculos: Object.fromEntries(db.veiculos.map((x) => [x.id, x])),
   }), [db.colaboradores, db.veiculos]);
+
+  // Primeira escala/falta/pátio de cada pessoa — decide quem estava na
+  // empresa nos dias que o histórico de status não cobre (lib/dia.js).
+  const primeiraAtividade = useMemo(
+    () => primeirasAtividades(db),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [db.programacoes, db.faltas, db.patio],
+  );
 
   const programacoesDoDia = useMemo(() =>
       db.programacoes
@@ -3734,7 +3742,7 @@ function AppInner() {
                       // Disponível na data desta programação (não a de hoje) —
                       // e nunca esconde quem já está escolhido, mesmo que a
                       // data do formulário tenha mudado depois da escolha.
-                      && (disponivelEm(db.historicoStatus, x, programacaoForm.data)
+                      && (disponivelEm(db.historicoStatus, x, programacaoForm.data, primeiraAtividade)
                         || x.id === programacaoForm.encarregadoId))
                     .map((x) => ({ value: x.id, label: x.nome }))}
                   placeholder="Selecione"
@@ -3805,7 +3813,7 @@ function AppInner() {
                 <MultiSelect
                   label={`Membros da equipe (máx. ${MAX_TEAM_MEMBERS})`}
                   items={db.colaboradores.filter((x) => (
-                    disponivelEm(db.historicoStatus, x, programacaoForm.data)
+                    disponivelEm(db.historicoStatus, x, programacaoForm.data, primeiraAtividade)
                     || programacaoForm.membroIds.includes(x.id)
                   ))}
                   selectedIds={programacaoForm.membroIds}

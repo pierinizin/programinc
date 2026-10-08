@@ -10,15 +10,54 @@
  * backfill), cai de volta no status simples de agora — do jeito que sempre
  * funcionou — em vez de fingir que ninguém está disponível.
  *
+ * ANTES do primeiro período registrado o histórico não sabe nada: ele só
+ * passou a existir em ago/2026, e o primeiro período de quem já trabalhava
+ * nasceu na data da migração (25/08), não na contratação. Ali a pergunta
+ * vira "a pessoa já trabalhava nessa data?" — e quem responde é a primeira
+ * escala, falta ou pátio dela (`primeiraAtividade`, ver primeirasAtividades).
+ * Foi assim que o Emerson sumiu do dia 11/08: sem equipe naquele dia e, pro
+ * histórico, ainda "não contratado" — e a tela dizia "Todo mundo já está
+ * escalado". Quem foi contratado depois continua de fora dos dias antigos,
+ * porque a primeira atividade dele é posterior.
+ *
  * Comparação em texto funciona porque `data` e os limites do período vêm no
  * mesmo formato 'aaaa-mm-dd' (coluna `date` do Postgres).
  */
-export function disponivelEm(historicoStatus, colaborador, data) {
+export function disponivelEm(historicoStatus, colaborador, data, primeiraAtividade) {
   const periodos = (historicoStatus || []).filter((h) => h.colaboradorId === colaborador.id);
   if (!periodos.length) return colaborador.status !== 'inativo';
+
+  const inicioHistorico = periodos.reduce((min, h) => (h.inicio < min ? h.inicio : min), periodos[0].inicio);
+  if (data < inicioHistorico) {
+    const primeira = primeiraAtividade?.get(colaborador.id);
+    return Boolean(primeira && primeira <= data);
+  }
+
   return periodos.some((h) => (
     h.status === 'ativo' && h.inicio <= data && (h.fim == null || data <= h.fim)
   ));
+}
+
+/**
+ * colaboradorId -> a data mais antiga em que a pessoa aparece trabalhando:
+ * numa equipe (encarregado ou membro), numa falta ou no pátio. É a prova de
+ * que ela já era da empresa naquele dia, pros dias que o histórico de status
+ * não cobre (ver disponivelEm).
+ */
+export function primeirasAtividades(db) {
+  const primeira = new Map();
+  const marca = (id, data) => {
+    if (!id || !data) return;
+    const atual = primeira.get(id);
+    if (!atual || data < atual) primeira.set(id, data);
+  };
+  (db.programacoes || []).forEach((p) => {
+    marca(p.encarregadoId, p.data);
+    (p.membroIds || []).forEach((id) => marca(id, p.data));
+  });
+  (db.faltas || []).forEach((f) => marca(f.colaboradorId, f.data));
+  (db.patio || []).forEach((p) => marca(p.colaboradorId, p.data));
+  return primeira;
 }
 
 /**
@@ -97,8 +136,9 @@ export function derivarDia(db, data) {
   // Livre = disponível NESTE dia (histórico, não status de agora), sem
   // equipe hoje, sem falta e fora do pátio. Quem está no pátio veio
   // trabalhar, mas já tem destino — não conta como disponível.
+  const primeiraAtividade = primeirasAtividades(db);
   const pessoasLivres = (db.colaboradores || []).filter(
-    (c) => disponivelEm(db.historicoStatus, c, data)
+    (c) => disponivelEm(db.historicoStatus, c, data, primeiraAtividade)
       && !equipesDaPessoa[c.id]
       && !noPatio.has(c.id)
       && !faltosos.has(c.id)
@@ -122,5 +162,6 @@ export function derivarDia(db, data) {
     pessoasLivres,
     veiculosLivres,
     pessoasEscaladas,
+    primeiraAtividade,
   };
 }

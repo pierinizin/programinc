@@ -214,7 +214,7 @@ export function QuadroDia({
   /* Uma conta só, compartilhada com a fita do cabeçalho (src/lib/dia.js). */
   const {
     equipes, faltosos, parciais, noPatio, atestados, feriasHoje, equipesDaPessoa, equipesDoVeiculo,
-    pessoasLivres, veiculosLivres,
+    pessoasLivres, veiculosLivres, primeiraAtividade,
   } = useMemo(() => derivarDia(db, selectedDate), [db, selectedDate]);
 
   /* A falta parcial desta pessoa NESTA equipe (se estiver em duas equipes no
@@ -255,7 +255,7 @@ export function QuadroDia({
     }
     const base = soLivres
       ? pessoasLivres
-      : db.colaboradores.filter((c) => disponivelEm(db.historicoStatus, c, selectedDate));
+      : db.colaboradores.filter((c) => disponivelEm(db.historicoStatus, c, selectedDate, primeiraAtividade));
     return base
       .filter(
         (p) =>
@@ -267,7 +267,7 @@ export function QuadroDia({
       .sort((a, b) => (equipesDaPessoa[a.id] ? 1 : 0) - (equipesDaPessoa[b.id] ? 1 : 0));
   }, [
     aba, busca, soLivres, pessoasLivres, veiculosLivres, selectedDate,
-    db.colaboradores, db.veiculos, db.historicoStatus, equipesDaPessoa, equipesDoVeiculo,
+    db.colaboradores, db.veiculos, db.historicoStatus, equipesDaPessoa, equipesDoVeiculo, primeiraAtividade,
   ]);
 
   /* ---------------------------------------------------------------
