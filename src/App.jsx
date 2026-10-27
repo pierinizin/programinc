@@ -5,6 +5,7 @@ import { Auth } from './components/Auth';
 import { Avatar } from './components/Avatar';
 import { QuadroDia } from './components/QuadroDia';
 import { Documentos } from './components/Documentos';
+import { Administrativo } from './components/Administrativo';
 import { Contratos } from './components/Contratos';
 import { contratosVigentes, contratoAutomatico } from './lib/contratos';
 import { foraDaVigencia } from './lib/vigencia';
@@ -19,6 +20,9 @@ import { FichaColaborador } from './components/FichaColaborador';
 import { FichaVeiculo } from './components/FichaVeiculo';
 import { iconeVeiculo } from './components/IconeVeiculo';
 import { derivarDia, disponivelEm, primeirasAtividades } from './lib/dia';
+import {
+  SETORES, FUNCOES_TRECHO, FUNCOES_SUGERIDAS, ehTrecho, setorDe, soTrecho,
+} from './lib/setor';
 import { duracaoTexto, resumoParcial } from './lib/faltaParcial';
 import { MOTIVOS_FALTA, rotuloMotivo } from './lib/motivos';
 import { prepararFoto, enviarFoto, assinarFotos, assinarFotosEmCache } from './lib/fotos';
@@ -45,7 +49,7 @@ const TEAM_TYPE_OPTIONS = [
 const STATUS_OPTIONS = ['EXECUTANDO', 'CONCLUÍDO', 'NÃO FOI POSSÍVEL REALIZAR'];
 const DIAS_SEM_BAIXA = 30;   // a faixa de "falta dar baixa" olha só este tanto pra trás
 const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'VIAGEM', 'INTEGRAÇÃO', 'OUTROS'];
-const ROLE_OPTIONS = ['Encarregado', 'Motorista de Veículos Médios', 'Ajudante de produção', 'Operador de máquina de pintura'];
+const ROLE_OPTIONS = FUNCOES_TRECHO;
 const VEHICLE_TYPES = ['Caminhão', 'Caminhonete', 'Carro', 'Outro'];
 const VEHICLE_STATUS = ['Disponível', 'Em uso', 'Manutenção', 'Inativo'];
 const MAX_TEAM_MEMBERS = 10;
@@ -227,7 +231,7 @@ function tagVeiculo(status) {
 function emptyColaborador() {
   return {
     id: '', nome: '', apelido: '', funcao: 'Ajudante de produção',
-    telefone: '', status: 'ativo',
+    telefone: '', status: 'ativo', setor: 'trecho',
     foto_path: null, fotoUrl: null,
     fotoArquivo: null, fotoPreview: null,
   };
@@ -346,6 +350,18 @@ function AppInner() {
      mais cara (uma view que cruza pessoa × tipo) e não tem por que entrar no
      caminho crítico da Programação, que é a tela que todo mundo abre. */
   const [docs, setDocs] = useState({ tipos: [], documentos: [], pendencias: [] });
+
+  /* Duas áreas no mesmo app: '/' é o Incovia do trecho; '/administrativo' é a
+     área do escritório (cadastro, documentos, faltas e férias de quem não vai
+     a campo), com layout próprio. Sem biblioteca de rotas: o caminho da URL
+     decide, e voltar/avançar do navegador funciona pelo popstate. */
+  const areaDaUrl = () => (/^\/administrativo\/?$/.test(window.location.pathname) ? 'administrativo' : 'app');
+  const [area, setArea] = useState(areaDaUrl);
+  useEffect(() => {
+    const aoNavegar = () => setArea(areaDaUrl());
+    window.addEventListener('popstate', aoNavegar);
+    return () => window.removeEventListener('popstate', aoNavegar);
+  }, []);
   // quando o usuário entra em Documentos pelo menu da ficha, já cai na pasta
   // daquela pessoa em vez de na fila geral
   const [docPessoa, setDocPessoa] = useState(null);
@@ -1188,6 +1204,12 @@ function AppInner() {
       veiculos: Object.fromEntries(db.veiculos.map((x) => [x.id, x])),
   }), [db.colaboradores, db.veiculos]);
 
+  // Só o pessoal do trecho (e as faltas/pátio/férias deles): é o que a
+  // Programação, o Calendário, as Integrações, os Relatórios e os exports da
+  // programação enxergam. Escritório, oficina etc. ficam só no cadastro e
+  // em Documentos (lib/setor.js).
+  const dbTrecho = useMemo(() => soTrecho(db), [db]);
+
   // Primeira escala/falta/pátio de cada pessoa — decide quem estava na
   // empresa nos dias que o histórico de status não cobre (lib/dia.js).
   const primeiraAtividade = useMemo(
@@ -1205,7 +1227,7 @@ function AppInner() {
 
   /* Mesma conta que o quadro usa, vinda de src/lib/dia.js — a fita e a lista
      não podem discordar sobre quantos estão livres. */
-  const resumoDia = useMemo(() => derivarDia(db, selectedDate), [db, selectedDate]);
+  const resumoDia = useMemo(() => derivarDia(dbTrecho, selectedDate), [dbTrecho, selectedDate]);
 
   /* Seletor de data: quais dias têm programação e quais têm equipe sem baixa
      (bolinhas do calendário). */
@@ -1264,12 +1286,26 @@ function AppInner() {
     return { total: dias.reduce((t, [, n]) => t + n, 0), dias };
   }, [db.programacoes]);
 
+  /* Pendências de documento separadas: o app principal (menu, faixa da
+     Programação, tela Documentos) fala só do trecho; o /administrativo, só de
+     quem é de fora. */
+  const colaboradoresFora = useMemo(() => db.colaboradores.filter((c) => !ehTrecho(c)), [db.colaboradores]);
+  const idsFora = useMemo(() => new Set(colaboradoresFora.map((c) => c.id)), [colaboradoresFora]);
+  const pendenciasTrecho = useMemo(
+    () => docs.pendencias.filter((p) => !idsFora.has(p.colaborador_id)),
+    [docs.pendencias, idsFora]
+  );
+  const pendenciasFora = useMemo(
+    () => docs.pendencias.filter((p) => idsFora.has(p.colaborador_id)),
+    [docs.pendencias, idsFora]
+  );
+
   /* Só o que já é irregular HOJE conta para o selo do menu e para a faixa da
      Programação. "Vence em 30 dias" é assunto da aba Documentos; se entrasse
      aqui, o aviso ficaria aceso o ano inteiro e viraria paisagem. */
   const pendenciasGraves = useMemo(
-    () => docs.pendencias.filter((p) => p.urgencia <= 2).length,
-    [docs.pendencias]
+    () => pendenciasTrecho.filter((p) => p.urgencia <= 2).length,
+    [pendenciasTrecho]
   );
 
   /* Quantas pendências cada pessoa tem — para o menu da ficha e para a faixa
@@ -1282,7 +1318,8 @@ function AppInner() {
 
   const colaboradoresComStats = useMemo(() => {
     const progPorId = new Map(db.programacoes.map((p) => [p.id, p]));
-    return db.colaboradores.map((c) => {
+    // Colaboradores e Histórico são do trecho; quem é de fora vive no /administrativo.
+    return dbTrecho.colaboradores.map((c) => {
       const escalas = db.programacoes.filter((p) => p.membroIds.includes(c.id));
       const faltas = db.faltas.filter((f) => f.colaboradorId === c.id);
       // Meio período não conta como "uma falta" — vira horas, à parte.
@@ -1299,7 +1336,7 @@ function AppInner() {
         ultimaEscala: [...escalas].sort((a, b) => b.data.localeCompare(a.data))[0] || null,
       };
     });
-  }, [db.colaboradores, db.programacoes, db.faltas]);
+  }, [dbTrecho.colaboradores, db.programacoes, db.faltas]);
 
   const veiculosComStats = useMemo(() => {
     return db.veiculos.map((v) => {
@@ -1315,7 +1352,7 @@ function AppInner() {
 
   const filteredColaboradores = colaboradoresComStats.filter((c) => {
     const t = search.toLowerCase();
-    return c.nome.toLowerCase().includes(t) || c.funcao.toLowerCase().includes(t);
+    return c.nome.toLowerCase().includes(t) || (c.funcao || '').toLowerCase().includes(t);
   });
 
   /* Só conta como selecionado quem ainda está visível na lista filtrada: se a
@@ -1756,9 +1793,17 @@ function AppInner() {
    setModal('programacao');
   }
 
-  function openColaboradorModal(item = null) {
-    setColaboradorForm(item ? { ...item } : emptyColaborador());
+  function openColaboradorModal(item = null, setorNovo = 'trecho') {
+    setColaboradorForm(item ? { ...item, setor: setorDe(item) } : { ...emptyColaborador(), setor: setorNovo, funcao: setorNovo === 'trecho' ? 'Ajudante de produção' : '' });
     setModal('colaborador');
+  }
+
+  function irParaArea(novaArea) {
+    const url = novaArea === 'administrativo' ? '/administrativo' : '/';
+    if (window.location.pathname !== url) window.history.pushState({}, '', url);
+    setActiveDrawer(null);
+    setModal(null);
+    setArea(novaArea);
   }
 
   function openVeiculoModal(item = null) {
@@ -1803,9 +1848,9 @@ function AppInner() {
     try {
       if (de === ate) {
         // Um único dia: comportamento e nome de arquivo idênticos aos de sempre.
-        await exportProgramacaoModeloAntigo(db, de);
+        await exportProgramacaoModeloAntigo(dbTrecho, de);
       } else {
-        const resultado = await exportProgramacaoModeloAntigoIntervalo(db, de, ate);
+        const resultado = await exportProgramacaoModeloAntigoIntervalo(dbTrecho, de, ate);
         notificar({
           mensagem: resultado.diasPulados > 0
             ? `Arquivo exportado com ${resultado.diasExportados} aba(s) — ${resultado.diasPulados} dia(s) sem programação foram pulados.`
@@ -1881,17 +1926,34 @@ function AppInner() {
       funcao: colaboradorForm.funcao,
       telefone: colaboradorForm.telefone,
       status: colaboradorForm.status,
+      setor: setorDe(colaboradorForm),
     };
 
     setSalvandoFoto(Boolean(colaboradorForm.fotoArquivo));
 
     // Grava primeiro, envia a foto depois: um colaborador novo só ganha id
     // no insert, e o caminho da foto no bucket é derivado desse id.
-    let res;
-    if (colaboradorForm.id) {
-      res = await supabase.from('colaboradores').update(payload).eq('id', colaboradorForm.id).select();
-    } else {
-      res = await supabase.from('colaboradores').insert([payload]).select();
+    const gravar = (dados) => (colaboradorForm.id
+      ? supabase.from('colaboradores').update(dados).eq('id', colaboradorForm.id).select()
+      : supabase.from('colaboradores').insert([dados]).select());
+    let res = await gravar(payload);
+
+    // Banco ainda sem a coluna (21-setor.sql não rodou): quem é do trecho
+    // salva normalmente sem ela; quem não é, avisa — senão a pessoa entraria
+    // na Programação como se fosse de campo.
+    if (res.error && /setor/i.test(res.error.message || '')) {
+      if (payload.setor !== 'trecho') {
+        setSalvandoFoto(false);
+        notificar({
+          titulo: 'Falta um passo no banco',
+          mensagem: 'Para cadastrar gente de fora do trecho, rode o arquivo supabase/21-setor.sql no SQL Editor do Supabase.',
+          variante: 'erro',
+        });
+        return;
+      }
+      const semSetor = { ...payload };
+      delete semSetor.setor;
+      res = await gravar(semSetor);
     }
 
     if (res.error) {
@@ -2594,6 +2656,636 @@ function AppInner() {
     );
   }
 
+  /* Gaveta e janelas são as mesmas nas duas áreas (app do trecho e
+     /administrativo): ficam numa variável e cada layout as coloca no lugar. */
+  const drawerJsx = (activeDrawer && (
+            <aside className="drawer">
+              <div className="drawer-head between">
+                <strong>
+                  {activeDrawer.type === 'colaborador'
+                    ? activeDrawer.item.nome
+                    : activeDrawer.type === 'veiculo'
+                    ? activeDrawer.item.placa
+                    : activeDrawer.type === 'resumo-dia'
+                    ? formatDateLabel(activeDrawer.date).full
+                    : activeDrawer.item.tipoEquipe}
+                </strong>
+                <button className="icon-btn" onClick={() => setActiveDrawer(null)}>×</button>
+              </div>
+
+              {activeDrawer.type === 'resumo-dia' && (
+                <ResumoDiaDrawer
+                  date={activeDrawer.date}
+                  db={dbTrecho}
+                  maps={maps}
+                  onGoToDate={() => {
+                    setSelectedDate(activeDrawer.date);
+                    changePage('programacao');
+                  }}
+                  onAbrirEquipe={(equipe) => {
+                    // changePage() zera expandedProgramacaoId (é o comportamento certo
+                    // ao trocar de tela) — por isso a equipe só é marcada DEPOIS dele
+                    // rodar, senão a própria troca de página apagava a escolha.
+                    changePage('programacao');
+                    setSelectedDate(activeDrawer.date);
+                    setExpandedProgramacaoId(equipe.id);
+                    setFocoEquipeId(equipe.id);   // o quadro rola até ela e destaca
+                  }}
+                />
+              )}
+
+              {activeDrawer.type === 'colaborador' && (
+                <ColaboradorDrawer
+                  item={activeDrawer.item}
+                  db={db}
+                  docs={docs}
+                  userRole={userRole}
+                  openEdit={() => openColaboradorModal(activeDrawer.item)}
+                  openFalta={() => openFaltaModal({ ...emptyFalta(), colaboradorId: activeDrawer.item.id })}
+                  openAtestado={() => openAtestadoModal(activeDrawer.item.id)}
+                  openFerias={(item) => openFeriasModal(activeDrawer.item.id, item)}
+                  deleteFalta={deleteFalta}
+                  deleteFerias={deleteFerias}
+                  abrirAtestadoArquivo={abrirAtestadoArquivo}
+                  abrirFeriasArquivo={abrirFeriasArquivo}
+                />
+              )}
+
+              {activeDrawer.type === 'veiculo' && (
+                <VeiculoDrawer
+                  item={activeDrawer.item}
+                  db={db}
+                  userRole={userRole}
+                  openEdit={() => openVeiculoModal(activeDrawer.item)}
+                />
+              )}
+            </aside>
+          ));
+
+  const modalJsx = (modal && (
+        <div className="modal-backdrop">
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-head between">
+              <strong>
+                {modal === 'programacao' && (programacaoForm.id ? 'Editar Programação' : 'Nova Programação')}
+                {modal === 'colaborador' && (area === 'administrativo'
+                  ? (colaboradorForm.id ? 'Editar pessoa' : 'Nova pessoa')
+                  : (colaboradorForm.id ? 'Editar Colaborador' : 'Novo Colaborador'))}
+                {modal === 'veiculo' && (veiculoForm.id ? 'Editar Veículo' : 'Novo Veículo')}
+                {modal === 'falta' && (faltaForm.id ? 'Editar Falta' : 'Registrar Falta')}
+                {modal === 'atestado' && 'Registrar Atestado'}
+                {modal === 'ferias' && (feriasForm.id ? 'Editar Férias' : 'Registrar Férias')}
+                {modal === 'exportarModelo02' && 'Exportar Modelo 02'}
+              </strong>
+              <button className="icon-btn" onClick={() => setModal(null)}>×</button>
+            </div>
+
+            {modal === 'programacao' && (
+              <div className="form-grid two">
+                <Select
+                  label="Tipo de equipe"
+                  value={programacaoForm.tipoEquipe}
+                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, tipoEquipe: v })}
+                  options={TEAM_TYPE_OPTIONS.map((x) => ({ value: x, label: x }))}
+                  placeholder="Selecione"
+                />
+                <Input
+                  label="Data"
+                  type="date"
+                  value={programacaoForm.data}
+                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, data: v })}
+                />
+                <Input
+                  label="Local de Obra"
+                  value={programacaoForm.cidade}
+                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, cidade: v })}
+                />
+                <Select
+                  label="Contratante"
+                  value={programacaoForm.concessionaria_id || ''}
+                  onChange={(v) => {
+                    const c = db.concessionarias.find((x) => x.id === v);
+                    setProgramacaoForm({
+                      ...programacaoForm,
+                      concessionaria_id: v || null,
+                      // o texto acompanha a escolha: é ele que sai nas
+                      // exportações e é por ele que o Kartado casa
+                      contratante: c ? c.sigla : '',
+                      contrato_id: contratoAutomatico(db.contratos, v),
+                    });
+                  }}
+                  placeholder="Selecione"
+                  options={db.concessionarias.map((c) => ({ value: c.id, label: c.sigla }))}
+                />
+
+                {/* Aparece sempre que o contratante tem contrato vigente.
+                    Antes sumia quando havia um só (ele entrava sozinho), mas
+                    aí não dava pra ver nem conferir qual contrato a obra tinha. */}
+                {contratosVigentes(db.contratos, programacaoForm.concessionaria_id).length > 0 && (
+                  <Select
+                    label="Contrato"
+                    value={programacaoForm.contrato_id || ''}
+                    /* Sem esta opção vazia o <select> mostraria o primeiro
+                       contrato da lista com o valor ainda em branco: parece
+                       escolhido, salva sem contrato. */
+                    placeholder="Escolha o contrato"
+                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, contrato_id: v || null })}
+                    options={contratosVigentes(db.contratos, programacaoForm.concessionaria_id)
+                      .map((k) => ({ value: k.id, label: k.numero }))}
+                  />
+                )}
+                {(() => {
+                  // Data da obra fora do período do contrato escolhido: avisa,
+                  // não bloqueia (pode ser aditivo ainda não cadastrado).
+                  const k = db.contratos.find((x) => x.id === programacaoForm.contrato_id);
+                  const fora = foraDaVigencia(k, programacaoForm.data);
+                  return fora ? (
+                    <p className="aviso-vigencia full">
+                      <b>Atenção:</b> esta data está {fora.texto}. Confira se é o contrato certo
+                      ou atualize a vigência em Contratantes.
+                    </p>
+                  ) : null;
+                })()}
+                <Input
+                label="Engenheiro Responsável"
+                value={programacaoForm.engenheiro}
+                onChange={(v) => setProgramacaoForm({ ...programacaoForm, engenheiro: v })}
+                full
+              />
+                
+                <Select
+                  label="Encarregado"
+                  value={programacaoForm.encarregadoId || ''}
+                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, encarregadoId: v })}
+                  options={dbTrecho.colaboradores
+                    .filter((x) => x.funcao === 'Encarregado'
+                      // Disponível na data desta programação (não a de hoje) —
+                      // e nunca esconde quem já está escolhido, mesmo que a
+                      // data do formulário tenha mudado depois da escolha.
+                      && (disponivelEm(db.historicoStatus, x, programacaoForm.data, primeiraAtividade)
+                        || x.id === programacaoForm.encarregadoId))
+                    .map((x) => ({ value: x.id, label: x.nome }))}
+                  placeholder="Selecione"
+                />
+                <Select
+                  label="Status"
+                  value={programacaoForm.statusExecucao}
+                  onChange={(v) =>
+                    setProgramacaoForm({
+                      ...programacaoForm,
+                      statusExecucao: v,
+                      motivoNaoExecucao: v === 'NÃO FOI POSSÍVEL REALIZAR' ? programacaoForm.motivoNaoExecucao : '',
+                    })
+                  }
+                  options={STATUS_OPTIONS.map((x) => ({ value: x, label: x }))}
+                />
+
+                {/* PAINEL DE EDIÇÃO DOS 6 HORÁRIOS */}
+                <div className="full modal-time-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                  <Input
+                    label="Saída (Base)"
+                    type="time"
+                    value={programacaoForm.horarioInicio}
+                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioInicio: v })}
+                  />
+                  <Input
+                    label="Início Obra"
+                    type="time"
+                    value={programacaoForm.horarioInicioObra}
+                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioInicioObra: v })}
+                  />
+                  <Input
+                    label="Saída Almoço"
+                    type="time"
+                    value={programacaoForm.horarioSaidaAlmoco}
+                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioSaidaAlmoco: v })}
+                  />
+                  <Input
+                    label="Retorno Almoço"
+                    type="time"
+                    value={programacaoForm.horarioRetornoAlmoco}
+                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioRetornoAlmoco: v })}
+                  />
+                  <Input
+                    label="Fim Obra"
+                    type="time"
+                    value={programacaoForm.horarioFimObra}
+                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioFimObra: v })}
+                  />
+                  <Input
+                    label="Saída (Retorno)"
+                    type="time"
+                    value={programacaoForm.horarioSaida}
+                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioSaida: v })}
+                  />
+                </div>
+
+                <Select
+                  label="Motivo"
+                  value={programacaoForm.motivoNaoExecucao || ''}
+                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, motivoNaoExecucao: v })}
+                  options={REASON_OPTIONS.map((x) => ({ value: x, label: x }))}
+                  placeholder="Selecione"
+                  disabled={programacaoForm.statusExecucao !== 'NÃO FOI POSSÍVEL REALIZAR'}
+                  full
+                />
+
+                <MultiSelect
+                  label={`Membros da equipe (máx. ${MAX_TEAM_MEMBERS})`}
+                  items={dbTrecho.colaboradores.filter((x) => (
+                    disponivelEm(db.historicoStatus, x, programacaoForm.data, primeiraAtividade)
+                    || programacaoForm.membroIds.includes(x.id)
+                  ))}
+                  selectedIds={programacaoForm.membroIds}
+                  labelKey="nome"
+                  subtitleKey="funcao"
+                  onToggle={(itemId) =>
+                    setProgramacaoForm({
+                      ...programacaoForm,
+                      membroIds: toggleLimited(programacaoForm.membroIds, itemId, programacaoForm.encarregadoId),
+                    })
+                  }
+                  full
+                />
+
+                <MultiSelect
+                  label="Veículos"
+                  items={db.veiculos}
+                  selectedIds={programacaoForm.veiculoIds}
+                  labelKey="placa"
+                  subtitleBuilder={(item) => `${item.modelo} · ${item.ano}`}
+                  onToggle={(itemId) =>
+                    setProgramacaoForm({
+                      ...programacaoForm,
+                      veiculoIds: toggle(programacaoForm.veiculoIds, itemId),
+                    })
+                  }
+                  full
+                />
+
+                <TextArea
+                  label="Observações"
+                  value={programacaoForm.observacoes}
+                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, observacoes: v })}
+                  full
+                />
+
+                <div className="modal-actions full">
+                  <button className="ghost-btn" onClick={() => setModal(null)}>Cancelar</button>
+                  <button className="primary-btn" onClick={saveProgramacao}>Salvar</button>
+                </div>
+              </div>
+            )}
+
+            {modal === 'colaborador' && (
+              <div className="form-grid two">
+                <Input label="Nome" value={colaboradorForm.nome} onChange={(v) => setColaboradorForm({ ...colaboradorForm, nome: v })} />
+                {/* Setor decide onde a pessoa aparece: Trecho entra na
+                    Programação; os outros só em cadastro, Documentos, faltas e
+                    férias. O trecho escolhe entre as quatro funções de sempre;
+                    fora dele a função é livre, com sugestões. */}
+                <Select
+                  label="Setor"
+                  value={setorDe(colaboradorForm)}
+                  onChange={(v) => setColaboradorForm((f) => ({
+                    ...f,
+                    setor: v,
+                    funcao: v === 'trecho'
+                      ? (ROLE_OPTIONS.includes(f.funcao) ? f.funcao : 'Ajudante de produção')
+                      : (ROLE_OPTIONS.includes(f.funcao) ? '' : f.funcao),
+                  }))}
+                  options={SETORES.map((x) => ({ value: x.valor, label: x.rotulo }))}
+                />
+                {ehTrecho(colaboradorForm) ? (
+                  <Select
+                    label="Função"
+                    value={colaboradorForm.funcao}
+                    onChange={(v) => setColaboradorForm({ ...colaboradorForm, funcao: v })}
+                    options={ROLE_OPTIONS.map((x) => ({ value: x, label: x }))}
+                  />
+                ) : (
+                  <label>
+                    <span>Função</span>
+                    <input
+                      list="funcoes-fora-trecho"
+                      value={colaboradorForm.funcao || ''}
+                      placeholder="Digite ou escolha…"
+                      onChange={(e) => setColaboradorForm({ ...colaboradorForm, funcao: e.target.value })}
+                    />
+                    <datalist id="funcoes-fora-trecho">
+                      {[...new Set([
+                        ...db.colaboradores.filter((c) => !ehTrecho(c)).map((c) => c.funcao),
+                        ...FUNCOES_SUGERIDAS,
+                      ])].filter(Boolean).map((f) => <option key={f} value={f} />)}
+                    </datalist>
+                  </label>
+                )}
+                <Input 
+                label="Apelido (Como aparecerá nos relatórios)" 
+                value={colaboradorForm.apelido} 
+                onChange={(v) => setColaboradorForm({ ...colaboradorForm, apelido: v })} 
+              />
+                <Input
+                  label="Telefone"
+                  value={colaboradorForm.telefone}
+                  onChange={(v) => setColaboradorForm({ ...colaboradorForm, telefone: v })}
+                />
+                <Select
+                  label="Status"
+                  value={colaboradorForm.status}
+                  onChange={(v) => setColaboradorForm({ ...colaboradorForm, status: v })}
+                  options={[
+                    { value: 'ativo', label: 'ativo' },
+                    { value: 'inativo', label: 'inativo' },
+                  ]}
+                />
+                <div className="full-row zona-foto-linha">
+                  <Avatar
+                    nome={colaboradorForm.nome}
+                    url={colaboradorForm.fotoPreview || colaboradorForm.fotoUrl}
+                    tamanho="big"
+                  />
+                  <div className="zona-foto-texto">
+                    <strong>Foto</strong>
+                    <span className="small-muted">
+                      Opcional. Sem foto, aparecem as iniciais. A imagem é recortada
+                      no centro e reduzida antes de enviar.
+                    </span>
+                    <div className="chips-row tight" style={{ marginTop: '8px' }}>
+                      <label className="chip-btn" style={{ cursor: 'pointer' }}>
+                        {colaboradorForm.fotoPreview || colaboradorForm.fotoUrl ? 'Trocar foto' : 'Escolher foto'}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          style={{ display: 'none' }}
+                          onChange={(e) => escolherFoto(e.target.files?.[0])}
+                        />
+                      </label>
+                      {colaboradorForm.fotoPreview && (
+                        <button
+                          type="button"
+                          className="chip-btn"
+                          onClick={() =>
+                            setColaboradorForm((f) => ({ ...f, fotoArquivo: null, fotoPreview: null }))
+                          }
+                        >
+                          Desfazer
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="modal-actions full">
+                  <button className="ghost-btn" onClick={() => setModal(null)} disabled={salvandoFoto}>Cancelar</button>
+                  <button className="primary-btn" onClick={saveColaborador} disabled={salvandoFoto}>
+                    {salvandoFoto ? 'Enviando foto...' : 'Salvar'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {modal === 'veiculo' && (
+              <div className="form-grid two">
+                <Input
+                  label="Placa"
+                  value={veiculoForm.placa}
+                  onChange={(v) => setVeiculoForm({ ...veiculoForm, placa: v.toUpperCase() })}
+                />
+                <Input
+                  label="Modelo"
+                  value={veiculoForm.modelo}
+                  onChange={(v) => setVeiculoForm({ ...veiculoForm, modelo: v })}
+                />
+                <Input
+                  label="Ano"
+                  type="number"
+                  value={veiculoForm.ano}
+                  onChange={(v) => setVeiculoForm({ ...veiculoForm, ano: Number(v) })}
+                />
+                <Select
+                  label="Tipo"
+                  value={veiculoForm.tipo}
+                  onChange={(v) => setVeiculoForm({ ...veiculoForm, tipo: v })}
+                  options={VEHICLE_TYPES.map((x) => ({ value: x, label: x }))}
+                />
+                <Select
+                  label="Status"
+                  value={veiculoForm.status}
+                  onChange={(v) => setVeiculoForm({ ...veiculoForm, status: v })}
+                  options={VEHICLE_STATUS.map((x) => ({ value: x, label: x }))}
+                />
+                <div className="modal-actions full">
+                  <button className="ghost-btn" onClick={() => setModal(null)}>Cancelar</button>
+                  <button className="primary-btn" onClick={saveVeiculo}>Salvar</button>
+                </div>
+              </div>
+            )}
+
+            {modal === 'falta' && (
+              <div className="form-grid two">
+                <Select
+                  label="Colaborador"
+                  value={faltaForm.colaboradorId || ''}
+                  onChange={(v) => setFaltaForm({ ...faltaForm, colaboradorId: v })}
+                  options={(area === 'administrativo' ? colaboradoresFora : dbTrecho.colaboradores)
+                    .map((x) => ({ value: x.id, label: x.nome }))}
+                  placeholder="Selecione"
+                />
+                <Input
+                  label="Data"
+                  type="date"
+                  value={faltaForm.data}
+                  onChange={(v) => setFaltaForm({ ...faltaForm, data: v })}
+                />
+                <Select
+                  label="Motivo"
+                  value={faltaForm.motivo}
+                  onChange={(v) => setFaltaForm({ ...faltaForm, motivo: v })}
+                  /* Mesma lista do quadro (lib/motivos.js) — antes era uma cópia à
+                     parte, e motivo novo aparecia num lugar e não no outro.
+                     Férias fica de fora: tem cadastro próprio ("Registrar férias"). */
+                  options={MOTIVOS_FALTA
+                    .filter(([v]) => v !== 'ferias')
+                    .map(([value, label]) => ({ value, label }))}
+                />
+                <TextArea
+                  label="Observação"
+                  value={faltaForm.observacao}
+                  onChange={(v) => setFaltaForm({ ...faltaForm, observacao: v })}
+                  full
+                />
+                <div className="modal-actions full">
+                  <button className="ghost-btn" onClick={() => setModal(null)}>Cancelar</button>
+                  <button className="primary-btn" onClick={saveFalta}>Salvar</button>
+                </div>
+              </div>
+            )}
+
+            {modal === 'atestado' && (
+              <div className="form-grid two">
+                <p className="small-muted full">
+                  Assim que salvar, a pessoa fica indisponível para equipes em todo o
+                  período — o sistema gera a falta sozinho.
+                </p>
+                <Input
+                  label="Início"
+                  type="date"
+                  value={atestadoForm.emitido_em}
+                  onChange={(v) => setAtestadoForm({ ...atestadoForm, emitido_em: v })}
+                />
+                <Input
+                  label="Fim"
+                  type="date"
+                  value={atestadoForm.valido_ate}
+                  onChange={(v) => setAtestadoForm({ ...atestadoForm, valido_ate: v })}
+                />
+                <TextArea
+                  label="Observação"
+                  value={atestadoForm.observacao}
+                  onChange={(v) => setAtestadoForm({ ...atestadoForm, observacao: v })}
+                  full
+                />
+                <label className="full">
+                  <span>Documento (opcional) — PDF, JPG, PNG ou WEBP, até 15 MB</span>
+                  <input
+                    type="file"
+                    accept="application/pdf,image/jpeg,image/png,image/webp"
+                    onChange={(e) => setAtestadoForm({ ...atestadoForm, arquivo: e.target.files?.[0] || null })}
+                  />
+                </label>
+                {erroAtestadoFerias && <div className="mut-erro full">{erroAtestadoFerias}</div>}
+                <div className="modal-actions full">
+                  <button className="ghost-btn" onClick={() => setModal(null)} disabled={salvandoAtestadoFerias}>Cancelar</button>
+                  <button className="primary-btn" onClick={saveAtestado} disabled={salvandoAtestadoFerias}>
+                    {salvandoAtestadoFerias ? 'Salvando…' : 'Salvar'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {modal === 'ferias' && (
+              <div className="form-grid two">
+                <p className="small-muted full">
+                  A pessoa continua disponível para equipes — só ganha o anel amarelo
+                  de aviso no card, com o período ao passar o mouse.
+                </p>
+                <Input
+                  label="Início"
+                  type="date"
+                  value={feriasForm.data_inicio}
+                  onChange={(v) => setFeriasForm({ ...feriasForm, data_inicio: v })}
+                />
+                <Input
+                  label="Fim"
+                  type="date"
+                  value={feriasForm.data_fim}
+                  onChange={(v) => setFeriasForm({ ...feriasForm, data_fim: v })}
+                />
+                <TextArea
+                  label="Observação"
+                  value={feriasForm.observacao}
+                  onChange={(v) => setFeriasForm({ ...feriasForm, observacao: v })}
+                  full
+                />
+                <label className="full">
+                  <span>
+                    {feriasForm.nome_arquivo
+                      ? `Anexo — já tem "${feriasForm.nome_arquivo}". Escolha outro só se quiser substituir.`
+                      : 'Anexo (opcional) — PDF, JPG, PNG ou WEBP, até 15 MB'}
+                  </span>
+                  <input
+                    type="file"
+                    accept="application/pdf,image/jpeg,image/png,image/webp"
+                    onChange={(e) => setFeriasForm({ ...feriasForm, arquivo: e.target.files?.[0] || null })}
+                  />
+                </label>
+                {erroAtestadoFerias && <div className="mut-erro full">{erroAtestadoFerias}</div>}
+                <div className="modal-actions full">
+                  <button className="ghost-btn" onClick={() => setModal(null)} disabled={salvandoAtestadoFerias}>Cancelar</button>
+                  <button className="primary-btn" onClick={saveFerias} disabled={salvandoAtestadoFerias}>
+                    {salvandoAtestadoFerias ? 'Salvando…' : 'Salvar'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {modal === 'exportarModelo02' && (
+              <div className="form-grid two">
+                <p className="small-muted full">
+                  Selecione o período que deseja exportar. Escolhendo mais de um dia,
+                  todos são reunidos no mesmo arquivo — uma aba por dia. Dias sem
+                  programação são pulados automaticamente.
+                </p>
+                <Input
+                  label="De"
+                  type="date"
+                  value={exportModelo02Form.de}
+                  onChange={(v) => setExportModelo02Form({ ...exportModelo02Form, de: v })}
+                />
+                <Input
+                  label="Até"
+                  type="date"
+                  value={exportModelo02Form.ate}
+                  onChange={(v) => setExportModelo02Form({ ...exportModelo02Form, ate: v })}
+                />
+                <div className="modal-actions full">
+                  <button className="ghost-btn" onClick={() => setModal(null)} disabled={exportandoModelo02}>Cancelar</button>
+                  <button className="primary-btn" onClick={exportarModelo02Intervalo} disabled={exportandoModelo02}>
+                    {exportandoModelo02 ? 'Exportando…' : 'Exportar'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ));
+
+  if (area === 'administrativo') {
+    // Por enquanto só o admin entra (os documentos só carregam para admin).
+    // O acesso do pessoal do escritório vem depois, com as permissões revisadas.
+    if (!userRole) return <div className="adm-carregando">Carregando…</div>;
+    if (userRole !== 'admin') {
+      return (
+        <div className="adm-sem-acesso">
+          <b>Esta área ainda não está liberada para o seu usuário.</b>
+          <span>Fale com o administrador do Incovia.</span>
+          <button type="button" className="ghost-btn" onClick={() => irParaArea('app')}>Ir para o Incovia</button>
+        </div>
+      );
+    }
+    const perfil = db.perfis.find((x) => x.id === session?.user?.id);
+    return (
+      <>
+        <Administrativo
+          pessoas={colaboradoresFora}
+          tipos={docs.tipos}
+          documentos={docs.documentos}
+          pendencias={pendenciasFora}
+          faltas={db.faltas}
+          ferias={db.ferias || []}
+          quem={session?.user?.id || null}
+          nomeUsuario={perfil?.nome || session?.user?.email || ''}
+          ehAdmin={userRole === 'admin'}
+          podeEditar={userRole === 'admin'}
+          gaveta={drawerJsx}
+          gavetaAberta={Boolean(activeDrawer)}
+          onNovaPessoa={() => openColaboradorModal(null, 'escritorio')}
+          onEditar={(p) => openColaboradorModal(p)}
+          onVerFicha={(p) => setActiveDrawer({ type: 'colaborador', item: p })}
+          onRegistrarFalta={() => openFaltaModal()}
+          onSalvarDocumento={salvarDocumento}
+          onRemoverDocumento={removerDocumento}
+          onSalvarValidade={salvarValidade}
+          onRecarregar={fetchDocumentos}
+          onVoltarAoApp={() => irParaArea('app')}
+          onSair={() => supabase.auth.signOut()}
+        />
+        {modalJsx}
+      </>
+    );
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -2626,12 +3318,21 @@ function AppInner() {
                Colaboradores
              </NavButton>
              {userRole === 'admin' && (
+               <>
                <NavButton active={page === 'documentos'} onClick={() => changePage('documentos')}>
                  Documentos
                  {/* O número no menu é o ponto do desenho: o prazo cobra
                      sozinho, sem depender de alguém lembrar de abrir a aba. */}
                  {pendenciasGraves > 0 && <span className="nav-selo">{pendenciasGraves}</span>}
                </NavButton>
+               {/* A área do escritório tem endereço e layout próprios. */}
+               <NavButton active={false} onClick={() => irParaArea('administrativo')}>
+                 Administrativo ↗
+                 {pendenciasFora.filter((p) => p.urgencia <= 2).length > 0 && (
+                   <span className="nav-selo">{pendenciasFora.filter((p) => p.urgencia <= 2).length}</span>
+                 )}
+               </NavButton>
+               </>
              )}
              {userRole === 'admin' && (
                <NavButton active={page === 'contratos'} onClick={() => changePage('contratos')}>
@@ -2695,7 +3396,7 @@ function AppInner() {
               <>
                 {userRole !== 'visualizador' && (
                   <>
-                    <button className="ghost-btn" onClick={() => exportProgramacaoXlsx(db, selectedDate)}>
+                    <button className="ghost-btn" onClick={() => exportProgramacaoXlsx(dbTrecho, selectedDate)}>
                       Exportar Modelo 01
                     </button>
                     <button
@@ -2707,7 +3408,7 @@ function AppInner() {
                     >
                       Exportar Modelo 02
                     </button>
-                    <button className="ghost-btn" onClick={() => exportProgramacaoPdfModelo03(db, selectedDate)}>
+                    <button className="ghost-btn" onClick={() => exportProgramacaoPdfModelo03(dbTrecho, selectedDate)}>
                       Exportar Modelo 03
                     </button>
                   </>
@@ -2798,9 +3499,9 @@ function AppInner() {
                     setExpandedProgramacaoId(equipe.id);
                     setFocoEquipeId(equipe.id);
                   }}
-                  colaboradores={db.colaboradores}
+                  colaboradores={dbTrecho.colaboradores}
                   programacoes={db.programacoes}
-                  faltas={db.faltas}
+                  faltas={dbTrecho.faltas}
                   concessionarias={db.concessionarias}
                   contratos={db.contratos}
                 />
@@ -2856,7 +3557,7 @@ function AppInner() {
                   </div>
                 </div>
                 <Integracoes
-                  colaboradores={db.colaboradores}
+                  colaboradores={dbTrecho.colaboradores}
                   contratos={db.contratos}
                   concessionarias={db.concessionarias}
                   gruposIntegracao={db.gruposIntegracao}
@@ -2884,10 +3585,10 @@ function AppInner() {
                 </div>
                 <Documentos
                   key={docPessoa || 'fila'}
-                  colaboradores={db.colaboradores}
+                  colaboradores={dbTrecho.colaboradores}
                   tipos={docs.tipos}
                   documentos={docs.documentos}
-                  pendencias={docs.pendencias}
+                  pendencias={pendenciasTrecho}
                   quem={session?.user?.id || null}
                   pessoaInicial={docPessoa}
                   onSalvarDocumento={salvarDocumento}
@@ -2930,7 +3631,7 @@ function AppInner() {
                     const isSelected = activeDrawer?.type === 'resumo-dia' && activeDrawer.date === dateStr;
                     
                     const progsNoDia = db.programacoes.filter(p => p.data === dateStr);
-                    const faltasNoDia = db.faltas.filter(f => f.data === dateStr);
+                    const faltasNoDia = dbTrecho.faltas.filter(f => f.data === dateStr);
 
                     return (
                       <div 
@@ -3144,7 +3845,7 @@ function AppInner() {
                     Os cartões continuam existindo, mas só para a equipe aberta —
                     é ali que se edita status, horários e observações. */}
                 <QuadroDia
-                  db={db}
+                  db={dbTrecho}
                   maps={maps}
                   selectedDate={selectedDate}
                   focoEquipeId={focoEquipeId}
@@ -3403,7 +4104,7 @@ function AppInner() {
                 <div className="page-head">
                   <div>
                     <h2>Colaboradores</h2>
-                    <p>{db.colaboradores.length} cadastrados</p>
+                    <p>{dbTrecho.colaboradores.length} cadastrados no trecho</p>
                   </div>
                 </div>
                 <SearchBox value={search} onChange={setSearch} placeholder="Buscar por nome ou função..." />
@@ -3548,7 +4249,7 @@ function AppInner() {
                   </div>
                 </div>
                 <div className="stats-grid three">
-                  <StatCard number={db.colaboradores.length} label="Colaboradores" />
+                  <StatCard number={dbTrecho.colaboradores.length} label="Colaboradores" />
                   <StatCard number={db.programacoes.length} label="Total Escalas" subtle />
                   <StatCard number={db.faltas.length} label="Total Faltas" danger />
                 </div>
@@ -3578,553 +4279,11 @@ function AppInner() {
             )}
           </section>
 
-          {activeDrawer && (
-            <aside className="drawer">
-              <div className="drawer-head between">
-                <strong>
-                  {activeDrawer.type === 'colaborador'
-                    ? activeDrawer.item.nome
-                    : activeDrawer.type === 'veiculo'
-                    ? activeDrawer.item.placa
-                    : activeDrawer.type === 'resumo-dia'
-                    ? formatDateLabel(activeDrawer.date).full
-                    : activeDrawer.item.tipoEquipe}
-                </strong>
-                <button className="icon-btn" onClick={() => setActiveDrawer(null)}>×</button>
-              </div>
-
-              {activeDrawer.type === 'resumo-dia' && (
-                <ResumoDiaDrawer
-                  date={activeDrawer.date}
-                  db={db}
-                  maps={maps}
-                  onGoToDate={() => {
-                    setSelectedDate(activeDrawer.date);
-                    changePage('programacao');
-                  }}
-                  onAbrirEquipe={(equipe) => {
-                    // changePage() zera expandedProgramacaoId (é o comportamento certo
-                    // ao trocar de tela) — por isso a equipe só é marcada DEPOIS dele
-                    // rodar, senão a própria troca de página apagava a escolha.
-                    changePage('programacao');
-                    setSelectedDate(activeDrawer.date);
-                    setExpandedProgramacaoId(equipe.id);
-                    setFocoEquipeId(equipe.id);   // o quadro rola até ela e destaca
-                  }}
-                />
-              )}
-
-              {activeDrawer.type === 'colaborador' && (
-                <ColaboradorDrawer
-                  item={activeDrawer.item}
-                  db={db}
-                  docs={docs}
-                  userRole={userRole}
-                  openEdit={() => openColaboradorModal(activeDrawer.item)}
-                  openFalta={() => openFaltaModal()}
-                  openAtestado={() => openAtestadoModal(activeDrawer.item.id)}
-                  openFerias={(item) => openFeriasModal(activeDrawer.item.id, item)}
-                  deleteFalta={deleteFalta}
-                  deleteFerias={deleteFerias}
-                  abrirAtestadoArquivo={abrirAtestadoArquivo}
-                  abrirFeriasArquivo={abrirFeriasArquivo}
-                />
-              )}
-
-              {activeDrawer.type === 'veiculo' && (
-                <VeiculoDrawer
-                  item={activeDrawer.item}
-                  db={db}
-                  userRole={userRole}
-                  openEdit={() => openVeiculoModal(activeDrawer.item)}
-                />
-              )}
-            </aside>
-          )}
+          {drawerJsx}
         </div>
       </main>
 
-      {modal && (
-        <div className="modal-backdrop">
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="drawer-head between">
-              <strong>
-                {modal === 'programacao' && (programacaoForm.id ? 'Editar Programação' : 'Nova Programação')}
-                {modal === 'colaborador' && (colaboradorForm.id ? 'Editar Colaborador' : 'Novo Colaborador')}
-                {modal === 'veiculo' && (veiculoForm.id ? 'Editar Veículo' : 'Novo Veículo')}
-                {modal === 'falta' && (faltaForm.id ? 'Editar Falta' : 'Registrar Falta')}
-                {modal === 'atestado' && 'Registrar Atestado'}
-                {modal === 'ferias' && (feriasForm.id ? 'Editar Férias' : 'Registrar Férias')}
-                {modal === 'exportarModelo02' && 'Exportar Modelo 02'}
-              </strong>
-              <button className="icon-btn" onClick={() => setModal(null)}>×</button>
-            </div>
-
-            {modal === 'programacao' && (
-              <div className="form-grid two">
-                <Select
-                  label="Tipo de equipe"
-                  value={programacaoForm.tipoEquipe}
-                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, tipoEquipe: v })}
-                  options={TEAM_TYPE_OPTIONS.map((x) => ({ value: x, label: x }))}
-                  placeholder="Selecione"
-                />
-                <Input
-                  label="Data"
-                  type="date"
-                  value={programacaoForm.data}
-                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, data: v })}
-                />
-                <Input
-                  label="Local de Obra"
-                  value={programacaoForm.cidade}
-                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, cidade: v })}
-                />
-                <Select
-                  label="Contratante"
-                  value={programacaoForm.concessionaria_id || ''}
-                  onChange={(v) => {
-                    const c = db.concessionarias.find((x) => x.id === v);
-                    setProgramacaoForm({
-                      ...programacaoForm,
-                      concessionaria_id: v || null,
-                      // o texto acompanha a escolha: é ele que sai nas
-                      // exportações e é por ele que o Kartado casa
-                      contratante: c ? c.sigla : '',
-                      contrato_id: contratoAutomatico(db.contratos, v),
-                    });
-                  }}
-                  placeholder="Selecione"
-                  options={db.concessionarias.map((c) => ({ value: c.id, label: c.sigla }))}
-                />
-
-                {/* Aparece sempre que o contratante tem contrato vigente.
-                    Antes sumia quando havia um só (ele entrava sozinho), mas
-                    aí não dava pra ver nem conferir qual contrato a obra tinha. */}
-                {contratosVigentes(db.contratos, programacaoForm.concessionaria_id).length > 0 && (
-                  <Select
-                    label="Contrato"
-                    value={programacaoForm.contrato_id || ''}
-                    /* Sem esta opção vazia o <select> mostraria o primeiro
-                       contrato da lista com o valor ainda em branco: parece
-                       escolhido, salva sem contrato. */
-                    placeholder="Escolha o contrato"
-                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, contrato_id: v || null })}
-                    options={contratosVigentes(db.contratos, programacaoForm.concessionaria_id)
-                      .map((k) => ({ value: k.id, label: k.numero }))}
-                  />
-                )}
-                {(() => {
-                  // Data da obra fora do período do contrato escolhido: avisa,
-                  // não bloqueia (pode ser aditivo ainda não cadastrado).
-                  const k = db.contratos.find((x) => x.id === programacaoForm.contrato_id);
-                  const fora = foraDaVigencia(k, programacaoForm.data);
-                  return fora ? (
-                    <p className="aviso-vigencia full">
-                      <b>Atenção:</b> esta data está {fora.texto}. Confira se é o contrato certo
-                      ou atualize a vigência em Contratantes.
-                    </p>
-                  ) : null;
-                })()}
-                <Input
-                label="Engenheiro Responsável"
-                value={programacaoForm.engenheiro}
-                onChange={(v) => setProgramacaoForm({ ...programacaoForm, engenheiro: v })}
-                full
-              />
-                
-                <Select
-                  label="Encarregado"
-                  value={programacaoForm.encarregadoId || ''}
-                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, encarregadoId: v })}
-                  options={db.colaboradores
-                    .filter((x) => x.funcao === 'Encarregado'
-                      // Disponível na data desta programação (não a de hoje) —
-                      // e nunca esconde quem já está escolhido, mesmo que a
-                      // data do formulário tenha mudado depois da escolha.
-                      && (disponivelEm(db.historicoStatus, x, programacaoForm.data, primeiraAtividade)
-                        || x.id === programacaoForm.encarregadoId))
-                    .map((x) => ({ value: x.id, label: x.nome }))}
-                  placeholder="Selecione"
-                />
-                <Select
-                  label="Status"
-                  value={programacaoForm.statusExecucao}
-                  onChange={(v) =>
-                    setProgramacaoForm({
-                      ...programacaoForm,
-                      statusExecucao: v,
-                      motivoNaoExecucao: v === 'NÃO FOI POSSÍVEL REALIZAR' ? programacaoForm.motivoNaoExecucao : '',
-                    })
-                  }
-                  options={STATUS_OPTIONS.map((x) => ({ value: x, label: x }))}
-                />
-
-                {/* PAINEL DE EDIÇÃO DOS 6 HORÁRIOS */}
-                <div className="full modal-time-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-                  <Input
-                    label="Saída (Base)"
-                    type="time"
-                    value={programacaoForm.horarioInicio}
-                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioInicio: v })}
-                  />
-                  <Input
-                    label="Início Obra"
-                    type="time"
-                    value={programacaoForm.horarioInicioObra}
-                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioInicioObra: v })}
-                  />
-                  <Input
-                    label="Saída Almoço"
-                    type="time"
-                    value={programacaoForm.horarioSaidaAlmoco}
-                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioSaidaAlmoco: v })}
-                  />
-                  <Input
-                    label="Retorno Almoço"
-                    type="time"
-                    value={programacaoForm.horarioRetornoAlmoco}
-                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioRetornoAlmoco: v })}
-                  />
-                  <Input
-                    label="Fim Obra"
-                    type="time"
-                    value={programacaoForm.horarioFimObra}
-                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioFimObra: v })}
-                  />
-                  <Input
-                    label="Saída (Retorno)"
-                    type="time"
-                    value={programacaoForm.horarioSaida}
-                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioSaida: v })}
-                  />
-                </div>
-
-                <Select
-                  label="Motivo"
-                  value={programacaoForm.motivoNaoExecucao || ''}
-                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, motivoNaoExecucao: v })}
-                  options={REASON_OPTIONS.map((x) => ({ value: x, label: x }))}
-                  placeholder="Selecione"
-                  disabled={programacaoForm.statusExecucao !== 'NÃO FOI POSSÍVEL REALIZAR'}
-                  full
-                />
-
-                <MultiSelect
-                  label={`Membros da equipe (máx. ${MAX_TEAM_MEMBERS})`}
-                  items={db.colaboradores.filter((x) => (
-                    disponivelEm(db.historicoStatus, x, programacaoForm.data, primeiraAtividade)
-                    || programacaoForm.membroIds.includes(x.id)
-                  ))}
-                  selectedIds={programacaoForm.membroIds}
-                  labelKey="nome"
-                  subtitleKey="funcao"
-                  onToggle={(itemId) =>
-                    setProgramacaoForm({
-                      ...programacaoForm,
-                      membroIds: toggleLimited(programacaoForm.membroIds, itemId, programacaoForm.encarregadoId),
-                    })
-                  }
-                  full
-                />
-
-                <MultiSelect
-                  label="Veículos"
-                  items={db.veiculos}
-                  selectedIds={programacaoForm.veiculoIds}
-                  labelKey="placa"
-                  subtitleBuilder={(item) => `${item.modelo} · ${item.ano}`}
-                  onToggle={(itemId) =>
-                    setProgramacaoForm({
-                      ...programacaoForm,
-                      veiculoIds: toggle(programacaoForm.veiculoIds, itemId),
-                    })
-                  }
-                  full
-                />
-
-                <TextArea
-                  label="Observações"
-                  value={programacaoForm.observacoes}
-                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, observacoes: v })}
-                  full
-                />
-
-                <div className="modal-actions full">
-                  <button className="ghost-btn" onClick={() => setModal(null)}>Cancelar</button>
-                  <button className="primary-btn" onClick={saveProgramacao}>Salvar</button>
-                </div>
-              </div>
-            )}
-
-            {modal === 'colaborador' && (
-              <div className="form-grid two">
-                <Input label="Nome" value={colaboradorForm.nome} onChange={(v) => setColaboradorForm({ ...colaboradorForm, nome: v })} />
-                <Select
-                  label="Função"
-                  value={colaboradorForm.funcao}
-                  onChange={(v) => setColaboradorForm({ ...colaboradorForm, funcao: v })}
-                  options={ROLE_OPTIONS.map((x) => ({ value: x, label: x }))}
-                />
-                <Input 
-                label="Apelido (Como aparecerá nos relatórios)" 
-                value={colaboradorForm.apelido} 
-                onChange={(v) => setColaboradorForm({ ...colaboradorForm, apelido: v })} 
-              />
-                <Input
-                  label="Telefone"
-                  value={colaboradorForm.telefone}
-                  onChange={(v) => setColaboradorForm({ ...colaboradorForm, telefone: v })}
-                />
-                <Select
-                  label="Status"
-                  value={colaboradorForm.status}
-                  onChange={(v) => setColaboradorForm({ ...colaboradorForm, status: v })}
-                  options={[
-                    { value: 'ativo', label: 'ativo' },
-                    { value: 'inativo', label: 'inativo' },
-                  ]}
-                />
-                <div className="full-row zona-foto-linha">
-                  <Avatar
-                    nome={colaboradorForm.nome}
-                    url={colaboradorForm.fotoPreview || colaboradorForm.fotoUrl}
-                    tamanho="big"
-                  />
-                  <div className="zona-foto-texto">
-                    <strong>Foto</strong>
-                    <span className="small-muted">
-                      Opcional. Sem foto, aparecem as iniciais. A imagem é recortada
-                      no centro e reduzida antes de enviar.
-                    </span>
-                    <div className="chips-row tight" style={{ marginTop: '8px' }}>
-                      <label className="chip-btn" style={{ cursor: 'pointer' }}>
-                        {colaboradorForm.fotoPreview || colaboradorForm.fotoUrl ? 'Trocar foto' : 'Escolher foto'}
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp"
-                          style={{ display: 'none' }}
-                          onChange={(e) => escolherFoto(e.target.files?.[0])}
-                        />
-                      </label>
-                      {colaboradorForm.fotoPreview && (
-                        <button
-                          type="button"
-                          className="chip-btn"
-                          onClick={() =>
-                            setColaboradorForm((f) => ({ ...f, fotoArquivo: null, fotoPreview: null }))
-                          }
-                        >
-                          Desfazer
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="modal-actions full">
-                  <button className="ghost-btn" onClick={() => setModal(null)} disabled={salvandoFoto}>Cancelar</button>
-                  <button className="primary-btn" onClick={saveColaborador} disabled={salvandoFoto}>
-                    {salvandoFoto ? 'Enviando foto...' : 'Salvar'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {modal === 'veiculo' && (
-              <div className="form-grid two">
-                <Input
-                  label="Placa"
-                  value={veiculoForm.placa}
-                  onChange={(v) => setVeiculoForm({ ...veiculoForm, placa: v.toUpperCase() })}
-                />
-                <Input
-                  label="Modelo"
-                  value={veiculoForm.modelo}
-                  onChange={(v) => setVeiculoForm({ ...veiculoForm, modelo: v })}
-                />
-                <Input
-                  label="Ano"
-                  type="number"
-                  value={veiculoForm.ano}
-                  onChange={(v) => setVeiculoForm({ ...veiculoForm, ano: Number(v) })}
-                />
-                <Select
-                  label="Tipo"
-                  value={veiculoForm.tipo}
-                  onChange={(v) => setVeiculoForm({ ...veiculoForm, tipo: v })}
-                  options={VEHICLE_TYPES.map((x) => ({ value: x, label: x }))}
-                />
-                <Select
-                  label="Status"
-                  value={veiculoForm.status}
-                  onChange={(v) => setVeiculoForm({ ...veiculoForm, status: v })}
-                  options={VEHICLE_STATUS.map((x) => ({ value: x, label: x }))}
-                />
-                <div className="modal-actions full">
-                  <button className="ghost-btn" onClick={() => setModal(null)}>Cancelar</button>
-                  <button className="primary-btn" onClick={saveVeiculo}>Salvar</button>
-                </div>
-              </div>
-            )}
-
-            {modal === 'falta' && (
-              <div className="form-grid two">
-                <Select
-                  label="Colaborador"
-                  value={faltaForm.colaboradorId || ''}
-                  onChange={(v) => setFaltaForm({ ...faltaForm, colaboradorId: v })}
-                  options={db.colaboradores.map((x) => ({ value: x.id, label: x.nome }))}
-                  placeholder="Selecione"
-                />
-                <Input
-                  label="Data"
-                  type="date"
-                  value={faltaForm.data}
-                  onChange={(v) => setFaltaForm({ ...faltaForm, data: v })}
-                />
-                <Select
-                  label="Motivo"
-                  value={faltaForm.motivo}
-                  onChange={(v) => setFaltaForm({ ...faltaForm, motivo: v })}
-                  /* Mesma lista do quadro (lib/motivos.js) — antes era uma cópia à
-                     parte, e motivo novo aparecia num lugar e não no outro.
-                     Férias fica de fora: tem cadastro próprio ("Registrar férias"). */
-                  options={MOTIVOS_FALTA
-                    .filter(([v]) => v !== 'ferias')
-                    .map(([value, label]) => ({ value, label }))}
-                />
-                <TextArea
-                  label="Observação"
-                  value={faltaForm.observacao}
-                  onChange={(v) => setFaltaForm({ ...faltaForm, observacao: v })}
-                  full
-                />
-                <div className="modal-actions full">
-                  <button className="ghost-btn" onClick={() => setModal(null)}>Cancelar</button>
-                  <button className="primary-btn" onClick={saveFalta}>Salvar</button>
-                </div>
-              </div>
-            )}
-
-            {modal === 'atestado' && (
-              <div className="form-grid two">
-                <p className="small-muted full">
-                  Assim que salvar, a pessoa fica indisponível para equipes em todo o
-                  período — o sistema gera a falta sozinho.
-                </p>
-                <Input
-                  label="Início"
-                  type="date"
-                  value={atestadoForm.emitido_em}
-                  onChange={(v) => setAtestadoForm({ ...atestadoForm, emitido_em: v })}
-                />
-                <Input
-                  label="Fim"
-                  type="date"
-                  value={atestadoForm.valido_ate}
-                  onChange={(v) => setAtestadoForm({ ...atestadoForm, valido_ate: v })}
-                />
-                <TextArea
-                  label="Observação"
-                  value={atestadoForm.observacao}
-                  onChange={(v) => setAtestadoForm({ ...atestadoForm, observacao: v })}
-                  full
-                />
-                <label className="full">
-                  <span>Documento (opcional) — PDF, JPG, PNG ou WEBP, até 15 MB</span>
-                  <input
-                    type="file"
-                    accept="application/pdf,image/jpeg,image/png,image/webp"
-                    onChange={(e) => setAtestadoForm({ ...atestadoForm, arquivo: e.target.files?.[0] || null })}
-                  />
-                </label>
-                {erroAtestadoFerias && <div className="mut-erro full">{erroAtestadoFerias}</div>}
-                <div className="modal-actions full">
-                  <button className="ghost-btn" onClick={() => setModal(null)} disabled={salvandoAtestadoFerias}>Cancelar</button>
-                  <button className="primary-btn" onClick={saveAtestado} disabled={salvandoAtestadoFerias}>
-                    {salvandoAtestadoFerias ? 'Salvando…' : 'Salvar'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {modal === 'ferias' && (
-              <div className="form-grid two">
-                <p className="small-muted full">
-                  A pessoa continua disponível para equipes — só ganha o anel amarelo
-                  de aviso no card, com o período ao passar o mouse.
-                </p>
-                <Input
-                  label="Início"
-                  type="date"
-                  value={feriasForm.data_inicio}
-                  onChange={(v) => setFeriasForm({ ...feriasForm, data_inicio: v })}
-                />
-                <Input
-                  label="Fim"
-                  type="date"
-                  value={feriasForm.data_fim}
-                  onChange={(v) => setFeriasForm({ ...feriasForm, data_fim: v })}
-                />
-                <TextArea
-                  label="Observação"
-                  value={feriasForm.observacao}
-                  onChange={(v) => setFeriasForm({ ...feriasForm, observacao: v })}
-                  full
-                />
-                <label className="full">
-                  <span>
-                    {feriasForm.nome_arquivo
-                      ? `Anexo — já tem "${feriasForm.nome_arquivo}". Escolha outro só se quiser substituir.`
-                      : 'Anexo (opcional) — PDF, JPG, PNG ou WEBP, até 15 MB'}
-                  </span>
-                  <input
-                    type="file"
-                    accept="application/pdf,image/jpeg,image/png,image/webp"
-                    onChange={(e) => setFeriasForm({ ...feriasForm, arquivo: e.target.files?.[0] || null })}
-                  />
-                </label>
-                {erroAtestadoFerias && <div className="mut-erro full">{erroAtestadoFerias}</div>}
-                <div className="modal-actions full">
-                  <button className="ghost-btn" onClick={() => setModal(null)} disabled={salvandoAtestadoFerias}>Cancelar</button>
-                  <button className="primary-btn" onClick={saveFerias} disabled={salvandoAtestadoFerias}>
-                    {salvandoAtestadoFerias ? 'Salvando…' : 'Salvar'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {modal === 'exportarModelo02' && (
-              <div className="form-grid two">
-                <p className="small-muted full">
-                  Selecione o período que deseja exportar. Escolhendo mais de um dia,
-                  todos são reunidos no mesmo arquivo — uma aba por dia. Dias sem
-                  programação são pulados automaticamente.
-                </p>
-                <Input
-                  label="De"
-                  type="date"
-                  value={exportModelo02Form.de}
-                  onChange={(v) => setExportModelo02Form({ ...exportModelo02Form, de: v })}
-                />
-                <Input
-                  label="Até"
-                  type="date"
-                  value={exportModelo02Form.ate}
-                  onChange={(v) => setExportModelo02Form({ ...exportModelo02Form, ate: v })}
-                />
-                <div className="modal-actions full">
-                  <button className="ghost-btn" onClick={() => setModal(null)} disabled={exportandoModelo02}>Cancelar</button>
-                  <button className="primary-btn" onClick={exportarModelo02Intervalo} disabled={exportandoModelo02}>
-                    {exportandoModelo02 ? 'Exportando…' : 'Exportar'}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {modalJsx}
     </div>
   );
 }
@@ -4390,11 +4549,18 @@ function ColaboradorDrawer({
         </div>
       </div>
 
-      <div className="stats-grid three compact">
-        <StatCard number={escalas.length} label="Escalas" />
-        <StatCard number={faltas.length} label="Faltas" danger />
-        <StatCard number={new Set(escalas.map((x) => x.cidade)).size} label="Cidades" subtle />
-      </div>
+      {/* Quem é de fora do trecho não tem escala nem cidade: só as faltas. */}
+      {ehTrecho(item) ? (
+        <div className="stats-grid three compact">
+          <StatCard number={escalas.length} label="Escalas" />
+          <StatCard number={faltas.length} label="Faltas" danger />
+          <StatCard number={new Set(escalas.map((x) => x.cidade)).size} label="Cidades" subtle />
+        </div>
+      ) : (
+        <div className="stats-grid three compact">
+          <StatCard number={faltas.length} label="Faltas" danger />
+        </div>
+      )}
 
       {userRole === 'admin' && (
         <div className="card-actions">
@@ -4441,6 +4607,7 @@ function ColaboradorDrawer({
         </div>
       )}
 
+      {ehTrecho(item) && (
       <div className="drawer-section">
         <strong>Histórico de Escalas</strong>
         {escalas.length === 0 ? (
@@ -4457,6 +4624,7 @@ function ColaboradorDrawer({
           ))
         )}
       </div>
+      )}
 
       <div className="drawer-section">
         <strong>Registro de Faltas</strong>

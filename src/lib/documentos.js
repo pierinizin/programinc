@@ -9,8 +9,14 @@
    mexer numa lembra da outra.
    ============================================================================= */
 
-/** O tipo se aplica a esta pessoa? Espelha o `where` da view. */
+/** O tipo se aplica a esta pessoa? Espelha o `where` da view.
+    Quem não é do trecho (escritório, oficina…) segue só a marca
+    `vale_fora_trecho` do tipo — a regra por função (motorista, encarregado)
+    é coisa do trecho. Sem a coluna no banco (antes do 21-setor.sql), todo
+    mundo é trecho e tudo funciona como antes. */
 export function seAplica(tipo, colaborador) {
+  if (colaborador?.setor && colaborador.setor !== 'trecho') return tipo.vale_fora_trecho === true;
+  if (tipo.vale_trecho === false) return false;
   const f = String(colaborador?.funcao || '').toLowerCase();
   const motorista = f.includes('motorista');
   const encarregado = f.includes('encarregado');

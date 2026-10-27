@@ -597,21 +597,23 @@ export async function exportProgramacaoModeloAntigoIntervalo(db, deISO, ateISO, 
 }
 
 export function exportPessoasXlsx(db) {
+ const SETOR = { trecho: 'Trecho', escritorio: 'Escritório', oficina: 'Oficina', outros: 'Outros' };
  const pessoas = [...(db.colaboradores || [])].sort((a, b) =>
    (a.nome || '').localeCompare(b.nome || '', 'pt-BR')
  );
 
  const rows = [];
  // Aumentei o mergeAcross de 5 para 6 para cobrir a coluna nova
- rows.push(row([{ value: 'INCOVIA - CADASTRO DE PESSOAS', style: 'title', mergeAcross: 6 }]));
+ rows.push(row([{ value: 'INCOVIA - CADASTRO DE PESSOAS', style: 'title', mergeAcross: 7 }]));
  rows.push(row([
    { value: 'Exportado em', style: 'label' },
-   { value: new Date().toLocaleString('pt-BR'), style: 'value', mergeAcross: 5 },
+   { value: new Date().toLocaleString('pt-BR'), style: 'value', mergeAcross: 6 },
  ]));
  rows.push(row([{ value: '' }]));
  rows.push(row([
    { value: 'NOME', style: 'header' },
    { value: 'FUNÇÃO', style: 'header' },
+   { value: 'SETOR', style: 'header' },
    { value: 'TELEFONE', style: 'header' },
    { value: 'STATUS', style: 'header' },
    { value: 'FALTAS', style: 'header' },
@@ -620,7 +622,7 @@ export function exportPessoasXlsx(db) {
  ]));
 
  if (!pessoas.length) {
-   rows.push(row([{ value: 'Nenhuma pessoa cadastrada.', style: 'empty', mergeAcross: 6 }]));
+   rows.push(row([{ value: 'Nenhuma pessoa cadastrada.', style: 'empty', mergeAcross: 7 }]));
  }
 
  pessoas.forEach((pessoa) => {
@@ -640,6 +642,7 @@ export function exportPessoasXlsx(db) {
    rows.push(row([
      { value: pessoa.nome || '', style: 'cell' },
      { value: pessoa.funcao || '', style: 'cell' },
+     { value: SETOR[pessoa.setor || 'trecho'] || pessoa.setor, style: 'cellCenter' },
      { value: pessoa.telefone || '', style: 'cell' },
      { value: pessoa.status || '', style: 'cellCenter' },
      { value: qtdFaltas, type: 'Number', style: 'cellCenter' },
