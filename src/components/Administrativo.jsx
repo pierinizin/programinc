@@ -195,7 +195,7 @@ const COLUNAS = [
 ];
 const MAX_POR_COLUNA = 8;
 
-function AbaDocumentos({ pendencias, pessoasPorId, seletor, onAbrirPasta, onImportar, podeImportar }) {
+function AbaDocumentos({ pendencias, pessoasPorId, seletor, onAbrirPasta, onVerFicha, onImportar, podeImportar }) {
   const [busca, setBusca] = useState('');
   const [abertas, setAbertas] = useState({});
 
@@ -240,8 +240,13 @@ function AbaDocumentos({ pendencias, pessoasPorId, seletor, onAbrirPasta, onImpo
                     <Avatar nome={pessoa.nome} url={pessoa.fotoUrl} tamanho="small" />
                     <div className="txt"><b>{pessoa.nome}</b><span>{p.assunto}</span></div>
                     {p.data_limite && <span className="dt">{dataBR(p.data_limite)}</span>}
-                    <button type="button" className="adm-btn" onClick={() => onAbrirPasta(pessoa.id)}>
-                      {p.origem === 'atestado' ? 'Ver' : col.botao}
+                    {/* Atestado não mora na pasta: abre a ficha, onde se anexa. */}
+                    <button
+                      type="button"
+                      className="adm-btn"
+                      onClick={() => (p.origem === 'atestado' ? onVerFicha(pessoa) : onAbrirPasta(pessoa.id))}
+                    >
+                      {p.origem === 'atestado' ? (p.situacao === 'atestado sem arquivo' ? 'Anexar' : 'Ver') : col.botao}
                     </button>
                   </div>
                 );
@@ -424,6 +429,7 @@ export function Administrativo({
         pessoasPorId={doGrupoPorId}
         seletor={seletor}
         onAbrirPasta={setPastaDe}
+        onVerFicha={onVerFicha}
         onImportar={() => setImportando(true)}
         podeImportar={podeEditar && tipos.length > 0}
       />

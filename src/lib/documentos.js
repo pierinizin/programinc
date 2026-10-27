@@ -136,6 +136,7 @@ export const ROTULO_SITUACAO = {
   'sem o PDF': 'Sem o PDF anexado',
   'atestado nao anexado': 'Falta abonada sem atestado',
   'falta nao lancada': 'Atestado sem falta lançada',
+  'atestado sem arquivo': 'Atestado sem o arquivo',
 };
 
 /** Classe de cor por urgência, seguindo a semântica já usada no quadro:

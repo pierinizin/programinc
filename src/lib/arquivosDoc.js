@@ -263,8 +263,15 @@ export async function salvarAtestado({
   }
 
   const linha = res.data[0];
-  registrarAcesso({
-    documentoId: linha.id, colaboradorId: colaborador.id, acao: 'enviou', quem,
-  });
+  // Trocou o arquivo de um atestado que já tinha um: o antigo sai do bucket
+  // (senão ficaria lá, sem dono, um documento de saúde que ninguém vê).
+  if (existente?.caminho && caminho && existente.caminho !== caminho) {
+    await supabase.storage.from(BUCKET).remove([existente.caminho]);
+  }
+  if (caminho) {
+    registrarAcesso({
+      documentoId: linha.id, colaboradorId: colaborador.id, acao: 'enviou', quem,
+    });
+  }
   return linha;
 }

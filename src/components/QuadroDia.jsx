@@ -145,6 +145,7 @@ export function QuadroDia({
   onAoPatio,
   onTirarDoPatio,
   onRegistrarFalta,
+  onRegistrarAtestado = null,   // só admin/RH (LGPD); null = não oferece
   onRemoverFalta,
   onSalvarFaltaParcial,
   onRemoverFaltaParcial,
@@ -1311,7 +1312,22 @@ export function QuadroDia({
               <button className="icon-btn" onClick={() => setPedindoFalta(null)} aria-label="Fechar">×</button>
             </div>
             <div className="lista-motivos">
-              {MOTIVOS_FALTA.map(([valor, rotulo]) => (
+              {/* Atestado não é falta de um dia: tem janela própria, com período e
+                  arquivo, e gera as faltas sozinho. Quem não é admin/RH nem vê. */}
+              {onRegistrarAtestado && (
+                <button
+                  type="button"
+                  className="selo-opc"
+                  onClick={() => {
+                    const quem = pedindoFalta;
+                    setPedindoFalta(null);
+                    onRegistrarAtestado(quem.id);
+                  }}
+                >
+                  Atestado médico…
+                </button>
+              )}
+              {MOTIVOS_FALTA.filter(([valor]) => valor !== 'atestado_medico').map(([valor, rotulo]) => (
                 <button
                   key={valor}
                   type="button"

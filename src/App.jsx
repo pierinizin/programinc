@@ -242,7 +242,9 @@ function emptyVeiculo() {
 }
 
 function emptyFalta() {
-  return { id: '', colaboradorId: null, data: today(), motivo: 'atestado_medico', observacao: '' };
+  // Atestado não é mais um motivo de falta avulsa: tem formulário próprio
+  // (período + arquivo), que gera as faltas sozinho. Ver openAtestadoModal.
+  return { id: '', colaboradorId: null, data: today(), motivo: 'falta_justificada', observacao: '' };
 }
 
 // Atestado é sempre um registro NOVO (repetivel) — não existe "editar", só
@@ -1823,11 +1825,20 @@ function AppInner() {
     setModal('falta');
   }
 
-  // Sempre um registro novo — atestado é repetivel, não existe "editar o de
-  // antes" pelo drawer, só lançar outro afastamento.
-  function openAtestadoModal(colaboradorId) {
+  /* O ÚNICO jeito de lançar atestado: um período (início e fim) e o arquivo,
+     na hora ou depois. As faltas de cada dia o banco gera sozinho
+     (13-atestados-ferias.sql). Só admin e RH (LGPD) — o editor não vê esta
+     janela, e "Atestado médico" saiu dos motivos de falta avulsa.
+     `existente` = um atestado já lançado, para anexar o arquivo que faltava
+     ou corrigir o período. */
+  function openAtestadoModal(colaboradorId, { dia = null, existente = null } = {}) {
     setErroAtestadoFerias('');
-    setAtestadoForm({ ...emptyAtestado(), colaboradorId });
+    setAtestadoForm(existente
+      ? {
+        ...emptyAtestado(), colaboradorId: existente.colaboradorId, existente,
+        emitido_em: existente.emitido_em, valido_ate: existente.valido_ate, observacao: existente.observacao || '',
+      }
+      : { ...emptyAtestado(), colaboradorId, ...(dia ? { emitido_em: dia, valido_ate: dia } : {}) });
     setModal('atestado');
   }
 
@@ -2077,7 +2088,10 @@ function AppInner() {
      contrário de saveFalta, aqui não é agendarFetch() — é agendarFetchDocs(),
      e a falta gerada chega pelo canal realtime de 'faltas' que já existe. */
   async function saveAtestado() {
-    if (!atestadoForm.colaboradorId) return;
+    if (!atestadoForm.colaboradorId) {
+      setErroAtestadoFerias('Escolha de quem é o atestado.');
+      return;
+    }
     const colaborador = maps.colaboradores[atestadoForm.colaboradorId];
     const tipoAtestado = docs.tipos.find((t) => t.codigo === 'atestado');
     if (!colaborador || !tipoAtestado) {
@@ -2096,6 +2110,7 @@ function AppInner() {
         validoAte: atestadoForm.valido_ate,
         observacao: atestadoForm.observacao,
         arquivo: atestadoForm.arquivo,
+        existente: atestadoForm.existente || null,
         quem: session?.user?.id,
       });
       agendarFetchDocs();
@@ -2710,7 +2725,7 @@ function AppInner() {
                   podeDocs={podeDocs}
                   openEdit={() => openColaboradorModal(activeDrawer.item)}
                   openFalta={() => openFaltaModal({ ...emptyFalta(), colaboradorId: activeDrawer.item.id })}
-                  openAtestado={() => openAtestadoModal(activeDrawer.item.id)}
+                  openAtestado={(existente) => openAtestadoModal(activeDrawer.item.id, { existente })}
                   openFerias={(item) => openFeriasModal(activeDrawer.item.id, item)}
                   deleteFalta={deleteFalta}
                   deleteFerias={deleteFerias}
@@ -3116,9 +3131,27 @@ function AppInner() {
                      parte, e motivo novo aparecia num lugar e não no outro.
                      Férias fica de fora: tem cadastro próprio ("Registrar férias"). */
                   options={MOTIVOS_FALTA
-                    .filter(([v]) => v !== 'ferias')
+                    .filter(([v]) => v !== 'ferias' && v !== 'atestado_medico')
                     .map(([value, label]) => ({ value, label }))}
                 />
+                {/* Falta antiga que já era "Atestado médico" continua mostrando o
+                    motivo; nova não escolhe mais — atestado tem janela própria. */}
+                <div className="full aviso-atestado">
+                  {podeDocs ? (
+                    <>
+                      É atestado médico?{' '}
+                      <button
+                        type="button"
+                        className="link-btn"
+                        onClick={() => openAtestadoModal(faltaForm.colaboradorId, { dia: faltaForm.data })}
+                      >
+                        Registrar como atestado (com período e arquivo)
+                      </button>
+                    </>
+                  ) : (
+                    'Atestado médico é registrado pelo RH, com o período e o arquivo.'
+                  )}
+                </div>
                 <TextArea
                   label="Observação"
                   value={faltaForm.observacao}
@@ -3135,9 +3168,21 @@ function AppInner() {
             {modal === 'atestado' && (
               <div className="form-grid two">
                 <p className="small-muted full">
-                  Assim que salvar, a pessoa fica indisponível para equipes em todo o
-                  período — o sistema gera a falta sozinho.
+                  {atestadoForm.existente
+                    ? 'Anexe o arquivo que faltava ou corrija o período. As faltas acompanham sozinhas.'
+                    : 'Um atestado por afastamento: coloque o primeiro e o último dia. Ao salvar, a pessoa fica indisponível para equipes no período todo — a falta de cada dia é lançada sozinha.'}
                 </p>
+                <Select
+                  label="Colaborador"
+                  value={atestadoForm.colaboradorId || ''}
+                  onChange={(v) => setAtestadoForm({ ...atestadoForm, colaboradorId: v })}
+                  options={db.colaboradores
+                    .filter((x) => x.status !== 'inativo' || x.id === atestadoForm.colaboradorId)
+                    .map((x) => ({ value: x.id, label: x.nome }))}
+                  placeholder="Selecione"
+                  disabled={Boolean(atestadoForm.existente)}
+                  full
+                />
                 <Input
                   label="Início"
                   type="date"
@@ -3157,7 +3202,11 @@ function AppInner() {
                   full
                 />
                 <label className="full">
-                  <span>Documento (opcional) — PDF, JPG, PNG ou WEBP, até 15 MB</span>
+                  <span>
+                    {atestadoForm.existente?.caminho
+                      ? 'Trocar o arquivo (opcional) — PDF, JPG, PNG ou WEBP, até 15 MB'
+                      : 'Arquivo do atestado — PDF, JPG, PNG ou WEBP, até 15 MB. Sem ele agora, fica a pendência "atestado sem o arquivo" para anexar depois.'}
+                  </span>
                   <input
                     type="file"
                     accept="application/pdf,image/jpeg,image/png,image/webp"
@@ -3880,6 +3929,7 @@ function AppInner() {
                   onAoPatio={adicionarAoPatio}
                   onTirarDoPatio={removerDoPatio}
                   onRegistrarFalta={registrarFalta}
+                  onRegistrarAtestado={podeDocs ? (pessoaId) => openAtestadoModal(pessoaId, { dia: selectedDate }) : null}
                   onRemoverFalta={removerFalta}
                   onSalvarFaltaParcial={salvarFaltaParcial}
                   onRemoverFaltaParcial={removerFaltaParcial}
@@ -4583,7 +4633,7 @@ function ColaboradorDrawer({
         <div className="card-actions">
           {podeCadastro && <button className="ghost-btn" onClick={openEdit}>Editar</button>}
           {podeCadastro && <button className="ghost-btn" onClick={openFalta}>Nova falta</button>}
-          {podeDocs && <button className="ghost-btn perigo-borda" onClick={openAtestado}>Registrar atestado</button>}
+          {podeDocs && <button className="ghost-btn perigo-borda" onClick={() => openAtestado()}>Registrar atestado</button>}
           {podeDocs && <button className="ghost-btn atencao-borda" onClick={() => openFerias()}>Registrar férias</button>}
         </div>
       )}
@@ -4677,9 +4727,16 @@ function ColaboradorDrawer({
                     {' até '}
                     {new Date(`${a.valido_ate}T12:00:00`).toLocaleDateString('pt-BR')}
                   </strong>
-                  {a.caminho && (
-                    <button className="chip-btn" onClick={() => abrirAtestadoArquivo(a)}>Abrir</button>
-                  )}
+                  <span className="chips-row tight">
+                    {a.caminho ? (
+                      <button className="chip-btn" onClick={() => abrirAtestadoArquivo(a)}>Abrir</button>
+                    ) : (
+                      <span className="tag aten">Sem o arquivo</span>
+                    )}
+                    <button className="chip-btn" onClick={() => openAtestado(a)}>
+                      {a.caminho ? 'Editar' : 'Anexar'}
+                    </button>
+                  </span>
                 </div>
                 <p>{a.observacao || 'Sem observação'}</p>
               </div>
