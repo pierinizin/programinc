@@ -627,12 +627,19 @@ function AppInner() {
      a consulta voltaria vazia por policy e a tela mentiria dizendo "tudo em
      dia". Um painel de prazos que erra para menos é pior do que não existir. */
   const ehAdmin = userRole === 'admin';
+  /* RH (22-cargo-rh.sql): vê tudo o que o editor vê, mais documentos,
+     atestados e férias de todos; edita só documentos, atestados, férias e o
+     cadastro/faltas de quem é de fora do trecho. O banco garante isso; aqui é
+     só a tela não oferecer o que o banco vai recusar. */
+  const ehRH = userRole === 'rh';
+  const podeDocs = ehAdmin || ehRH;
+  const vePainel = ehAdmin || userRole === 'editor' || ehRH;
   const fetchDocumentosRef = useRef(fetchDocumentos);
   fetchDocumentosRef.current = fetchDocumentos;
   useEffect(() => {
-    if (!userId || !ehAdmin) return;
+    if (!userId || !podeDocs) return;
     fetchDocumentosRef.current();
-  }, [userId, ehAdmin]);
+  }, [userId, podeDocs]);
 
   /* ------------------------------------------------------------------------
      Registrar / apagar um documento na conferência
@@ -2700,6 +2707,7 @@ function AppInner() {
                   db={db}
                   docs={docs}
                   userRole={userRole}
+                  podeDocs={podeDocs}
                   openEdit={() => openColaboradorModal(activeDrawer.item)}
                   openFalta={() => openFaltaModal({ ...emptyFalta(), colaboradorId: activeDrawer.item.id })}
                   openAtestado={() => openAtestadoModal(activeDrawer.item.id)}
@@ -2954,7 +2962,9 @@ function AppInner() {
                       ? (ROLE_OPTIONS.includes(f.funcao) ? f.funcao : 'Ajudante de produção')
                       : (ROLE_OPTIONS.includes(f.funcao) ? '' : f.funcao),
                   }))}
-                  options={SETORES.map((x) => ({ value: x.valor, label: x.rotulo }))}
+                  // RH não cadastra nem move ninguém para o trecho (o banco recusa).
+                  options={SETORES.filter((x) => !(ehRH && x.valor === 'trecho'))
+                    .map((x) => ({ value: x.valor, label: x.rotulo }))}
                 />
                 {ehTrecho(colaboradorForm) ? (
                   <Select
@@ -3242,10 +3252,9 @@ function AppInner() {
       ));
 
   if (area === 'administrativo') {
-    // Por enquanto só o admin entra (os documentos só carregam para admin).
-    // O acesso do pessoal do escritório vem depois, com as permissões revisadas.
+    // Entram admin e RH — os dois cargos que veem documentos (LGPD).
     if (!userRole) return <div className="adm-carregando">Carregando…</div>;
-    if (userRole !== 'admin') {
+    if (!podeDocs) {
       return (
         <div className="adm-sem-acesso">
           <b>Esta área ainda não está liberada para o seu usuário.</b>
@@ -3259,15 +3268,16 @@ function AppInner() {
       <>
         <Administrativo
           pessoas={colaboradoresFora}
+          pessoasTrecho={dbTrecho.colaboradores}
           tipos={docs.tipos}
           documentos={docs.documentos}
-          pendencias={pendenciasFora}
+          pendencias={docs.pendencias}
           faltas={db.faltas}
           ferias={db.ferias || []}
           quem={session?.user?.id || null}
           nomeUsuario={perfil?.nome || session?.user?.email || ''}
-          ehAdmin={userRole === 'admin'}
-          podeEditar={userRole === 'admin'}
+          podeVerApp={vePainel}
+          podeEditar={podeDocs}
           gaveta={drawerJsx}
           gavetaAberta={Boolean(activeDrawer)}
           onNovaPessoa={() => openColaboradorModal(null, 'escritorio')}
@@ -3308,16 +3318,16 @@ function AppInner() {
 
         <div className="section-line" style={{ margin: '10px 0', opacity: 0.3 }} />
 
-         {(userRole === 'admin' || userRole === 'editor') && (
+         {vePainel && (
            <div className="menu-group-title">Painel do Administrador</div>
          )}
 
-         {(userRole === 'admin' || userRole === 'editor') && (
+         {vePainel && (
            <>
              <NavButton active={page === 'colaboradores'} onClick={() => changePage('colaboradores')}>
                Colaboradores
              </NavButton>
-             {userRole === 'admin' && (
+             {podeDocs && (
                <>
                <NavButton active={page === 'documentos'} onClick={() => changePage('documentos')}>
                  Documentos
@@ -3334,7 +3344,7 @@ function AppInner() {
                </NavButton>
                </>
              )}
-             {userRole === 'admin' && (
+             {(userRole === 'admin' || ehRH) && (
                <NavButton active={page === 'contratos'} onClick={() => changePage('contratos')}>
                  Contratantes
                </NavButton>
@@ -3482,7 +3492,7 @@ function AppInner() {
               </>
             )}
 
-            {page === 'relatorios' && (userRole === 'admin' || userRole === 'editor') && (
+            {page === 'relatorios' && vePainel && (
               <>
                 <div className="page-head">
                   <div>
@@ -3525,7 +3535,7 @@ function AppInner() {
               </>
             )}
 
-            {page === 'contratos' && userRole === 'admin' && (
+            {page === 'contratos' && (userRole === 'admin' || ehRH) && (
               <>
                 <div className="page-head">
                   <div>
@@ -3548,7 +3558,7 @@ function AppInner() {
               </>
             )}
 
-            {page === 'integracoes' && (userRole === 'admin' || userRole === 'editor') && (
+            {page === 'integracoes' && vePainel && (
               <>
                 <div className="page-head">
                   <div>
@@ -3575,7 +3585,7 @@ function AppInner() {
               </>
             )}
 
-            {page === 'documentos' && userRole === 'admin' && (
+            {page === 'documentos' && podeDocs && (
               <>
                 <div className="page-head">
                   <div>
@@ -3710,6 +3720,7 @@ function AppInner() {
                       <option value="pendente">Pendente (Aguardando)</option>
                       <option value="visualizador">Visualizador</option>
                       <option value="editor">Editor</option>
+                      <option value="rh">RH (documentos e pessoas)</option>
                       <option value="admin">Admin</option>
                     </select>
                       <button
@@ -3754,7 +3765,7 @@ function AppInner() {
                     a programação das 6h não vai parar para cadastrar validade —
                     mas precisa saber, antes de escalar, que tem gente com NR
                     vencida. */}
-                {userRole === 'admin' && pendenciasGraves > 0 && (
+                {podeDocs && pendenciasGraves > 0 && (
                   <button
                     type="button"
                     className="aviso-faixa clicavel"
@@ -4020,7 +4031,7 @@ function AppInner() {
                                 })}
                               </div>
 
-                              {userRole !== 'visualizador' && (
+                              {(userRole === 'admin' || userRole === 'editor') && (
                                 <>
                                   <div className="section-line" />
                                   
@@ -4516,9 +4527,15 @@ function ResumoDiaDrawer({ date, db, maps, onGoToDate, onAbrirEquipe }) {
 }
 
 function ColaboradorDrawer({
-  item, db, docs, userRole, openEdit, openFalta, openAtestado, openFerias,
+  item, db, docs, userRole, podeDocs, openEdit, openFalta, openAtestado, openFerias,
   deleteFalta, deleteFerias, abrirAtestadoArquivo, abrirFeriasArquivo,
 }) {
+  // Admin faz tudo; RH faz o que é dele: atestado e férias de todos, cadastro
+  // e falta só de quem é de fora do trecho (a mesma regra do banco).
+  const ehAdminAqui = userRole === 'admin';
+  const rhNestaPessoa = userRole === 'rh' && !ehTrecho(item);
+  const podeCadastro = ehAdminAqui || rhNestaPessoa;
+  const podeApagarFalta = (f) => ehAdminAqui || rhNestaPessoa || (userRole === 'rh' && f.origem_documento_id);
   const escalas = db.programacoes
     .filter((p) => p.membroIds.includes(item.id))
     .sort((a, b) => b.data.localeCompare(a.data));
@@ -4562,12 +4579,12 @@ function ColaboradorDrawer({
         </div>
       )}
 
-      {userRole === 'admin' && (
+      {(podeCadastro || podeDocs) && (
         <div className="card-actions">
-          <button className="ghost-btn" onClick={openEdit}>Editar</button>
-          <button className="ghost-btn" onClick={openFalta}>Nova falta</button>
-          <button className="ghost-btn perigo-borda" onClick={openAtestado}>Registrar atestado</button>
-          <button className="ghost-btn atencao-borda" onClick={() => openFerias()}>Registrar férias</button>
+          {podeCadastro && <button className="ghost-btn" onClick={openEdit}>Editar</button>}
+          {podeCadastro && <button className="ghost-btn" onClick={openFalta}>Nova falta</button>}
+          {podeDocs && <button className="ghost-btn perigo-borda" onClick={openAtestado}>Registrar atestado</button>}
+          {podeDocs && <button className="ghost-btn atencao-borda" onClick={() => openFerias()}>Registrar férias</button>}
         </div>
       )}
 
@@ -4593,10 +4610,10 @@ function ColaboradorDrawer({
                   {f.caminho && (
                     <button className="chip-btn" onClick={() => abrirFeriasArquivo(f)}>Abrir</button>
                   )}
-                  {userRole === 'admin' && (
+                  {podeDocs && (
                     <button className="chip-btn" onClick={() => openFerias(f)}>Editar</button>
                   )}
-                  {userRole === 'admin' && (
+                  {podeDocs && (
                     <button className="mini-danger" onClick={() => deleteFerias(f)}>Excluir</button>
                   )}
                 </span>
@@ -4635,7 +4652,7 @@ function ColaboradorDrawer({
             <div key={f.id} className="mini-card">
               <div className="between">
                 <strong>{rotuloMotivo(f.motivo)}{textoParcial(f, db)}</strong>
-                {userRole === 'admin' && (
+                {podeApagarFalta(f) && (
                   <button className="mini-danger" onClick={() => deleteFalta(f.id)}>Excluir</button>
                 )}
               </div>
@@ -4646,7 +4663,7 @@ function ColaboradorDrawer({
         )}
       </div>
 
-      {userRole === 'admin' && (
+      {podeDocs && (
         <div className="drawer-section">
           <strong>Registro de Atestados</strong>
           {atestados.length === 0 ? (

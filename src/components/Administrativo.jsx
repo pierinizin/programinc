@@ -3,7 +3,7 @@ import { Avatar } from './Avatar';
 import { FichaDocumentos } from './FichaDocumentos';
 import { ImportacaoEmMassa } from './ImportacaoEmMassa';
 import { tiposDaPessoa, statusPasta, dataBR } from '../lib/documentos';
-import { SETORES, rotuloSetor } from '../lib/setor';
+import { SETORES, rotuloSetor, ehTrecho } from '../lib/setor';
 import { rotuloMotivo } from '../lib/motivos';
 
 /* =============================================================================
@@ -73,26 +73,21 @@ function Segmentado({ opcoes, valor, onMudar }) {
 /* --------------------------------------------------------------------------
    Aba Pessoas
    -------------------------------------------------------------------------- */
-function AbaPessoas({ pessoas, resumos, onNova, onAbrirPasta, onVerFicha, onEditar, podeEditar }) {
+function AbaPessoas({ pessoas, resumos, grupo, seletor, onNova, onAbrirPasta, onVerFicha, onEditar, podeEditar }) {
   const [busca, setBusca] = useState('');
-  const [setor, setSetor] = useState('todos');
   const [verInativos, setVerInativos] = useState(false);
+  const doTrecho = grupo === 'trecho';
 
   const ativos = pessoas.filter((p) => p.status !== 'inativo');
   const nInativos = pessoas.length - ativos.length;
   const base = verInativos ? pessoas : ativos;
-
-  const porSetor = { todos: base.length };
-  base.forEach((p) => { porSetor[p.setor] = (porSetor[p.setor] || 0) + 1; });
-  const setorAtivo = porSetor[setor] ? setor : 'todos';
 
   const kpi = { vencido: 0, 'em-andamento': 0, 'sem-anexos': 0, finalizado: 0 };
   ativos.forEach((p) => { kpi[resumos[p.id].status] += 1; });
 
   const termo = busca.trim().toLowerCase();
   const visiveis = base.filter((p) => (
-    (setorAtivo === 'todos' || p.setor === setorAtivo)
-    && (!termo || p.nome.toLowerCase().includes(termo) || (p.funcao || '').toLowerCase().includes(termo))
+    !termo || p.nome.toLowerCase().includes(termo) || (p.funcao || '').toLowerCase().includes(termo)
   ));
   const hoje = hojeISO();
 
@@ -101,9 +96,14 @@ function AbaPessoas({ pessoas, resumos, onNova, onAbrirPasta, onVerFicha, onEdit
       <div className="adm-cab">
         <div>
           <h1>Pessoas</h1>
-          <p>Escritório, oficina e quem não vai a campo · {ativos.length} {ativos.length === 1 ? 'ativo' : 'ativos'}</p>
+          <p>
+            {doTrecho
+              ? 'Pessoal do trecho · aqui só a pasta de documentos; o cadastro fica no app do trecho'
+              : 'Escritório, oficina e quem não vai a campo'}
+            {' · '}{ativos.length} {ativos.length === 1 ? 'ativo' : 'ativos'}
+          </p>
         </div>
-        {podeEditar && (
+        {podeEditar && !doTrecho && (
           <div className="acoes">
             <button type="button" className="primary-btn" onClick={onNova}>+ Nova pessoa</button>
           </div>
@@ -119,13 +119,7 @@ function AbaPessoas({ pessoas, resumos, onNova, onAbrirPasta, onVerFicha, onEdit
 
       <div className="adm-filtros">
         <input placeholder="Buscar pelo nome ou função…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-        <Segmentado
-          valor={setorAtivo}
-          onMudar={setSetor}
-          opcoes={[{ valor: 'todos', rotulo: 'Todos', n: porSetor.todos },
-            ...SETORES.filter((s) => s.valor !== 'trecho' && porSetor[s.valor])
-              .map((s) => ({ valor: s.valor, rotulo: s.rotulo, n: porSetor[s.valor] }))]}
-        />
+        {seletor}
         {nInativos > 0 && (
           <label className="adm-check">
             <input type="checkbox" checked={verInativos} onChange={(e) => setVerInativos(e.target.checked)} />
@@ -176,7 +170,8 @@ function AbaPessoas({ pessoas, resumos, onNova, onAbrirPasta, onVerFicha, onEdit
                       </span>
                     </td>
                     <td className="adm-acoes">
-                      {podeEditar && <button type="button" className="adm-btn leve" onClick={() => onEditar(p)}>Editar</button>}
+                      {/* Cadastro do trecho se edita no app do trecho (e o RH só vê). */}
+                      {podeEditar && !ehTrecho(p) && <button type="button" className="adm-btn leve" onClick={() => onEditar(p)}>Editar</button>}
                       <button type="button" className="adm-btn" onClick={() => onAbrirPasta(p.id)}>Abrir pasta</button>
                     </td>
                   </tr>
@@ -200,16 +195,14 @@ const COLUNAS = [
 ];
 const MAX_POR_COLUNA = 8;
 
-function AbaDocumentos({ pendencias, pessoasPorId, onAbrirPasta, onImportar, podeImportar }) {
+function AbaDocumentos({ pendencias, pessoasPorId, seletor, onAbrirPasta, onImportar, podeImportar }) {
   const [busca, setBusca] = useState('');
-  const [setor, setSetor] = useState('todos');
   const [abertas, setAbertas] = useState({});
 
   const termo = busca.trim().toLowerCase();
   const filtradas = pendencias.filter((p) => {
     const pessoa = pessoasPorId[p.colaborador_id];
     if (!pessoa || pessoa.status === 'inativo') return false;
-    if (setor !== 'todos' && pessoa.setor !== setor) return false;
     return !termo || p.colaborador.toLowerCase().includes(termo) || String(p.assunto).toLowerCase().includes(termo);
   });
 
@@ -229,11 +222,7 @@ function AbaDocumentos({ pendencias, pessoasPorId, onAbrirPasta, onImportar, pod
 
       <div className="adm-filtros">
         <input placeholder="Buscar pessoa ou documento…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-        <Segmentado
-          valor={setor}
-          onMudar={setSetor}
-          opcoes={[{ valor: 'todos', rotulo: 'Todos' }, ...SETORES.filter((s) => s.valor !== 'trecho').map((s) => ({ valor: s.valor, rotulo: s.rotulo }))]}
-        />
+        {seletor}
       </div>
 
       <div className="adm-fila">
@@ -277,7 +266,7 @@ function AbaDocumentos({ pendencias, pessoasPorId, onAbrirPasta, onImportar, pod
 /* --------------------------------------------------------------------------
    Aba Faltas e férias
    -------------------------------------------------------------------------- */
-function AbaFaltasFerias({ pessoasPorId, faltas, ferias, onRegistrarFalta, onVerFicha, podeEditar }) {
+function AbaFaltasFerias({ pessoasPorId, seletor, faltas, ferias, onRegistrarFalta, onVerFicha, podeLancarFalta }) {
   const hoje = hojeISO();
   const limite = (() => { const d = new Date(); d.setDate(d.getDate() - 90); return d.toISOString().slice(0, 10); })();
   const listaFaltas = faltas
@@ -294,12 +283,14 @@ function AbaFaltasFerias({ pessoasPorId, faltas, ferias, onRegistrarFalta, onVer
           <h1>Faltas e férias</h1>
           <p>Faltas dos últimos 90 dias e férias em andamento ou marcadas. Atestado e férias se lançam pela ficha da pessoa.</p>
         </div>
-        {podeEditar && (
+        {podeLancarFalta && (
           <div className="acoes">
             <button type="button" className="primary-btn" onClick={onRegistrarFalta}>Registrar falta</button>
           </div>
         )}
       </div>
+
+      <div className="adm-filtros">{seletor}</div>
 
       <div className="adm-duas">
         <div className="adm-bloco">
@@ -341,8 +332,8 @@ function AbaFaltasFerias({ pessoasPorId, faltas, ferias, onRegistrarFalta, onVer
    A área inteira
    -------------------------------------------------------------------------- */
 export function Administrativo({
-  pessoas, tipos, documentos, pendencias, faltas, ferias, quem, nomeUsuario,
-  ehAdmin, podeEditar, gaveta, gavetaAberta,
+  pessoas, pessoasTrecho = [], tipos, documentos, pendencias, faltas, ferias, quem, nomeUsuario,
+  podeVerApp, podeEditar, gaveta, gavetaAberta,
   onNovaPessoa, onEditar, onVerFicha, onRegistrarFalta,
   onSalvarDocumento, onRemoverDocumento, onSalvarValidade, onRecarregar,
   onVoltarAoApp, onSair,
@@ -350,21 +341,57 @@ export function Administrativo({
   const [aba, setAba] = useState('pessoas');
   const [pastaDe, setPastaDe] = useState(null);       // id da pessoa com a pasta aberta
   const [importando, setImportando] = useState(false);
+  /* Grupo escolhido, o mesmo nas três abas. Abre em "Fora do trecho" (o
+     escritório é a razão de ser desta área); "Trecho" existe para o RH cuidar
+     da pasta de documentos do pessoal de campo sem sair daqui. */
+  const [grupo, setGrupo] = useState('fora');
 
-  const pessoasPorId = useMemo(() => Object.fromEntries(pessoas.map((p) => [p.id, p])), [pessoas]);
+  const todas = useMemo(() => [...pessoas, ...pessoasTrecho], [pessoas, pessoasTrecho]);
+  const todasPorId = useMemo(() => Object.fromEntries(todas.map((p) => [p.id, p])), [todas]);
+
+  const contagem = useMemo(() => {
+    const m = { fora: 0, trecho: 0 };
+    todas.filter((p) => p.status !== 'inativo').forEach((p) => {
+      if (ehTrecho(p)) m.trecho += 1;
+      else { m.fora += 1; m[p.setor] = (m[p.setor] || 0) + 1; }
+    });
+    return m;
+  }, [todas]);
+
+  const doGrupo = useMemo(() => {
+    if (grupo === 'trecho') return pessoasTrecho;
+    if (grupo === 'fora') return pessoas;
+    return pessoas.filter((p) => p.setor === grupo);
+  }, [grupo, pessoas, pessoasTrecho]);
+  const doGrupoPorId = useMemo(() => Object.fromEntries(doGrupo.map((p) => [p.id, p])), [doGrupo]);
 
   const resumos = useMemo(() => {
     const docsPorPessoa = {};
     (documentos || []).forEach((d) => {
-      if (d.tipo_id && pessoasPorId[d.colaboradorId]) (docsPorPessoa[d.colaboradorId] ||= {})[d.tipo_id] = d;
+      if (d.tipo_id && todasPorId[d.colaboradorId]) (docsPorPessoa[d.colaboradorId] ||= {})[d.tipo_id] = d;
     });
-    return Object.fromEntries(pessoas.map((p) => [p.id, resumoPasta(tipos, p, docsPorPessoa[p.id] || {})]));
-  }, [pessoas, pessoasPorId, documentos, tipos]);
+    return Object.fromEntries(todas.map((p) => [p.id, resumoPasta(tipos, p, docsPorPessoa[p.id] || {})]));
+  }, [todas, todasPorId, documentos, tipos]);
 
-  const nUrgentes = pendencias.filter((p) => p.urgencia <= 2 && pessoasPorId[p.colaborador_id]?.status !== 'inativo').length;
-  const pessoaDaPasta = pastaDe ? pessoasPorId[pastaDe] : null;
+  // O número da aba conta tudo que esta área cobre (fora e trecho).
+  const nUrgentes = pendencias.filter((p) => p.urgencia <= 2 && todasPorId[p.colaborador_id]
+    && todasPorId[p.colaborador_id].status !== 'inativo').length;
+  const pessoaDaPasta = pastaDe ? todasPorId[pastaDe] : null;
 
   function irPara(novaAba) { setAba(novaAba); setPastaDe(null); setImportando(false); }
+
+  const seletor = (
+    <Segmentado
+      valor={grupo}
+      onMudar={setGrupo}
+      opcoes={[
+        { valor: 'fora', rotulo: 'Fora do trecho', n: contagem.fora },
+        ...SETORES.filter((x) => x.valor !== 'trecho' && contagem[x.valor])
+          .map((x) => ({ valor: x.valor, rotulo: x.rotulo, n: contagem[x.valor] })),
+        ...(pessoasTrecho.length ? [{ valor: 'trecho', rotulo: 'Trecho', n: contagem.trecho }] : []),
+      ]}
+    />
+  );
 
   let corpo;
   if (pessoaDaPasta) {
@@ -382,7 +409,7 @@ export function Administrativo({
   } else if (importando) {
     corpo = (
       <ImportacaoEmMassa
-        colaboradores={pessoas.filter((p) => p.status !== 'inativo')}
+        colaboradores={doGrupo.filter((p) => p.status !== 'inativo')}
         tipos={tipos}
         documentos={documentos}
         onSalvar={onSalvarDocumento}
@@ -394,7 +421,8 @@ export function Administrativo({
     corpo = (
       <AbaDocumentos
         pendencias={pendencias}
-        pessoasPorId={pessoasPorId}
+        pessoasPorId={doGrupoPorId}
+        seletor={seletor}
         onAbrirPasta={setPastaDe}
         onImportar={() => setImportando(true)}
         podeImportar={podeEditar && tipos.length > 0}
@@ -403,7 +431,9 @@ export function Administrativo({
   } else if (aba === 'faltas') {
     corpo = (
       <AbaFaltasFerias
-        pessoasPorId={pessoasPorId}
+        pessoasPorId={doGrupoPorId}
+        seletor={seletor}
+        podeLancarFalta={podeEditar && grupo !== 'trecho'}
         faltas={faltas}
         ferias={ferias}
         onRegistrarFalta={onRegistrarFalta}
@@ -414,7 +444,9 @@ export function Administrativo({
   } else {
     corpo = (
       <AbaPessoas
-        pessoas={pessoas}
+        pessoas={doGrupo}
+        grupo={grupo}
+        seletor={seletor}
         resumos={resumos}
         onNova={onNovaPessoa}
         onAbrirPasta={setPastaDe}
@@ -442,7 +474,7 @@ export function Administrativo({
         </nav>
         <div className="adm-user">
           {nomeUsuario && <span>Logado como <b>{nomeUsuario}</b></span>}
-          {ehAdmin && <button type="button" onClick={onVoltarAoApp}>Ir para o app do trecho</button>}
+          {podeVerApp && <button type="button" onClick={onVoltarAoApp}>Ir para o app do trecho</button>}
           <button type="button" onClick={onSair}>Sair</button>
         </div>
       </header>
