@@ -870,6 +870,19 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .secao-ficha-cab strong { white-space: nowrap; }
 .secao-ficha-cab .tag { margin-left: auto; white-space: nowrap; font-size: 10px; padding: 2px 6px; }
 .secao-ficha-corpo { display: grid; gap: 8px; padding-bottom: 12px; }
+.cartao-falta .between { align-items: flex-start; gap: 8px; }
+.cartao-falta .chips-row { flex-wrap: nowrap; flex-shrink: 0; }
+.cartao-falta .chip-btn, .cartao-falta .mini-danger { white-space: nowrap; }
+.cartao-falta > p { margin: 2px 0 0; }
+.obs-edicao { display: grid; gap: 6px; margin-top: 6px; }
+.obs-edicao textarea {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 54px;
+  border: 1px solid var(--borda-forte); border-radius: var(--r-sm); background: var(--superficie);
+  color: var(--tinta); padding: 7px 9px; font: inherit; font-size: 13px;
+}
+.obs-edicao textarea:focus { outline: none; border-color: var(--faixa); }
+.obs-acoes { display: flex; justify-content: flex-end; gap: 6px; }
+.obs-acoes button { padding: 5px 12px; font-size: 12.5px; }
 .mini-card {
   background: var(--superficie-2);
   border: 1px solid var(--borda);

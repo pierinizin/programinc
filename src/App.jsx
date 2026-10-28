@@ -2759,6 +2759,16 @@ function AppInner() {
     }
   }
 
+  /* Observação de uma falta já lançada (pela ficha). Encaixa a linha que
+     voltou do banco na tela na hora; o tempo real só confirma. */
+  async function salvarObservacaoFalta(id, texto) {
+    const res = await supabase.from('faltas').update({ observacao: texto.trim() || null }).eq('id', id).select();
+    if (res.error) { reportarErro('Erro ao salvar a observação', res.error); return false; }
+    if (!res.data?.length) { semPermissao('mudar a observação desta falta'); return false; }
+    setDb((atual) => ({ ...atual, faltas: aplicarEvento(atual.faltas, { eventType: 'UPDATE', new: res.data[0] }) }));
+    return true;
+  }
+
   async function deleteFalta(itemId) {
     if (!(await confirmar({ titulo: 'Excluir este registro de falta?', textoConfirmar: 'Excluir' }))) return;
     const res = await supabase.from('faltas').delete().eq('id', itemId).select();
@@ -2910,6 +2920,7 @@ function AppInner() {
                   openAtestado={(existente) => openAtestadoModal(activeDrawer.item.id, { existente })}
                   openFerias={(item) => openFeriasModal(activeDrawer.item.id, item)}
                   deleteFalta={deleteFalta}
+                  salvarObservacaoFalta={salvarObservacaoFalta}
                   deleteFerias={deleteFerias}
                   abrirAtestadoArquivo={abrirAtestadoArquivo}
                   abrirFeriasArquivo={abrirFeriasArquivo}
@@ -4794,9 +4805,60 @@ function SecaoFicha({ chave, titulo, n, alerta = null, inicial = false, children
   );
 }
 
+/* Falta na ficha. A observação dá para pôr ou corrigir depois de lançada,
+   ali mesmo, sem abrir o formulário; sem observação, não ocupa linha. */
+function CartaoFalta({ falta, titulo, podeApagar, podeObservar, onApagar, onSalvarObservacao }) {
+  const [editando, setEditando] = useState(false);
+  const [texto, setTexto] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const abrir = () => { setTexto(falta.observacao || ''); setEditando(true); };
+  const salvar = async () => {
+    setSalvando(true);
+    const ok = await onSalvarObservacao(texto);
+    setSalvando(false);
+    if (ok) setEditando(false);
+  };
+  return (
+    <div className="mini-card cartao-falta">
+      <div className="between">
+        <strong>{titulo}</strong>
+        <span className="chips-row tight">
+          {podeObservar && !editando && (
+            <button className="chip-btn" onClick={abrir} title={falta.observacao ? 'Editar a observação' : 'Adicionar observação'}>
+              {falta.observacao ? '✎ Obs.' : '+ Obs.'}
+            </button>
+          )}
+          {podeApagar && <button className="mini-danger" onClick={onApagar}>Excluir</button>}
+        </span>
+      </div>
+      <div className="meta-row">{new Date(`${falta.data}T12:00:00`).toLocaleDateString('pt-BR')}</div>
+      {editando ? (
+        <div className="obs-edicao">
+          <textarea
+            autoFocus
+            rows={2}
+            value={texto}
+            maxLength={500}
+            placeholder="Ex.: avisou por telefone, levou declaração…"
+            onChange={(e) => setTexto(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setEditando(false);
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) salvar();
+            }}
+          />
+          <div className="obs-acoes">
+            <button className="ghost-btn" onClick={() => setEditando(false)} disabled={salvando}>Cancelar</button>
+            <button className="primary-btn" onClick={salvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</button>
+          </div>
+        </div>
+      ) : falta.observacao && <p>{falta.observacao}</p>}
+    </div>
+  );
+}
+
 function ColaboradorDrawer({
   item, db, docs, userRole, podeDocs, openEdit, openFalta, openAtestado, openFerias,
-  deleteFalta, deleteFerias, abrirAtestadoArquivo, abrirFeriasArquivo,
+  deleteFalta, deleteFerias, abrirAtestadoArquivo, abrirFeriasArquivo, salvarObservacaoFalta,
 }) {
   // Admin faz tudo; RH faz o que é dele: atestado e férias de todos, cadastro
   // e falta só de quem é de fora do trecho (a mesma regra do banco).
@@ -4885,7 +4947,7 @@ function ColaboradorDrawer({
                   )}
                 </span>
               </div>
-              <p>{f.observacao || 'Sem observação'}</p>
+              {f.observacao && <p>{f.observacao}</p>}
             </div>
           ))}
         </SecaoFicha>
@@ -4914,16 +4976,15 @@ function ColaboradorDrawer({
           <p className="small-muted">Nenhuma falta registrada.</p>
         ) : (
           faltas.map((f) => (
-            <div key={f.id} className="mini-card">
-              <div className="between">
-                <strong>{rotuloMotivo(f.motivo)}{textoParcial(f, db)}</strong>
-                {podeApagarFalta(f) && (
-                  <button className="mini-danger" onClick={() => deleteFalta(f.id)}>Excluir</button>
-                )}
-              </div>
-              <div className="meta-row">{new Date(`${f.data}T12:00:00`).toLocaleDateString('pt-BR')}</div>
-              <p>{f.observacao || 'Sem observação'}</p>
-            </div>
+            <CartaoFalta
+              key={f.id}
+              falta={f}
+              titulo={`${rotuloMotivo(f.motivo)}${textoParcial(f, db)}`}
+              podeApagar={podeApagarFalta(f)}
+              podeObservar={podeApagarFalta(f) || userRole === 'editor'}
+              onApagar={() => deleteFalta(f.id)}
+              onSalvarObservacao={(texto) => salvarObservacaoFalta(f.id, texto)}
+            />
           ))
         )}
       </SecaoFicha>
@@ -4957,7 +5018,7 @@ function ColaboradorDrawer({
                     </button>
                   </span>
                 </div>
-                <p>{a.observacao || 'Sem observação'}</p>
+                {a.observacao && <p>{a.observacao}</p>}
               </div>
             ))
           )}
