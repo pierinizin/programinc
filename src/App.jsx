@@ -4762,6 +4762,38 @@ function ResumoDiaDrawer({ date, db, maps, onGoToDate, onAbrirEquipe }) {
   );
 }
 
+/* Seção da ficha que abre e fecha pela setinha. O cabeçalho mostra quantos
+   itens tem (e um alerta, se houver), então dá para saber o que tem lá dentro
+   sem abrir. Aberta ou fechada fica lembrado neste navegador. */
+function SecaoFicha({ chave, titulo, n, alerta = null, inicial = false, children }) {
+  const memoria = `incovia:ficha:${chave}`;
+  const [aberta, setAberta] = useState(() => {
+    try {
+      const v = localStorage.getItem(memoria);
+      return v == null ? inicial : v === '1';
+    } catch {
+      return inicial;
+    }
+  });
+  const alternar = () => {
+    setAberta((a) => {
+      try { localStorage.setItem(memoria, a ? '0' : '1'); } catch { /* sem problema */ }
+      return !a;
+    });
+  };
+  return (
+    <div className={`drawer-section secao-ficha${aberta ? ' aberta' : ''}`}>
+      <button type="button" className="secao-ficha-cab" onClick={alternar} aria-expanded={aberta}>
+        <svg className="seta" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+        <strong>{titulo}</strong>
+        <span className="secao-ficha-n">{n}</span>
+        {alerta && <span className="tag aten">{alerta}</span>}
+      </button>
+      {aberta && <div className="secao-ficha-corpo">{children}</div>}
+    </div>
+  );
+}
+
 function ColaboradorDrawer({
   item, db, docs, userRole, podeDocs, openEdit, openFalta, openAtestado, openFerias,
   deleteFalta, deleteFerias, abrirAtestadoArquivo, abrirFeriasArquivo,
@@ -4832,8 +4864,7 @@ function ColaboradorDrawer({
           Fica visível a todo mundo que já lê falta hoje — não é dado
           admin-only, ao contrário de atestado. */}
       {ferias.length > 0 && (
-        <div className="drawer-section">
-          <strong>Registro de Férias</strong>
+        <SecaoFicha chave="ferias" titulo="Registro de Férias" n={ferias.length} inicial>
           {ferias.map((f) => (
             <div key={f.id} className="mini-card">
               <div className="between">
@@ -4857,12 +4888,11 @@ function ColaboradorDrawer({
               <p>{f.observacao || 'Sem observação'}</p>
             </div>
           ))}
-        </div>
+        </SecaoFicha>
       )}
 
       {ehTrecho(item) && (
-      <div className="drawer-section">
-        <strong>Histórico de Escalas</strong>
+      <SecaoFicha chave="escalas" titulo="Histórico de Escalas" n={escalas.length}>
         {escalas.length === 0 ? (
           <p className="small-muted">Nenhuma escala registrada.</p>
         ) : (
@@ -4876,11 +4906,10 @@ function ColaboradorDrawer({
             </div>
           ))
         )}
-      </div>
+      </SecaoFicha>
       )}
 
-      <div className="drawer-section">
-        <strong>Registro de Faltas</strong>
+      <SecaoFicha chave="faltas" titulo="Registro de Faltas" n={faltas.length}>
         {faltas.length === 0 ? (
           <p className="small-muted">Nenhuma falta registrada.</p>
         ) : (
@@ -4897,11 +4926,15 @@ function ColaboradorDrawer({
             </div>
           ))
         )}
-      </div>
+      </SecaoFicha>
 
       {podeDocs && (
-        <div className="drawer-section">
-          <strong>Registro de Atestados</strong>
+        <SecaoFicha
+          chave="atestados"
+          titulo="Registro de Atestados"
+          n={atestados.length}
+          alerta={atestados.some((a) => !a.caminho) ? `${atestados.filter((a) => !a.caminho).length} sem arquivo` : null}
+        >
           {atestados.length === 0 ? (
             <p className="small-muted">Nenhum atestado registrado.</p>
           ) : (
@@ -4928,7 +4961,7 @@ function ColaboradorDrawer({
               </div>
             ))
           )}
-        </div>
+        </SecaoFicha>
       )}
 
     </div>

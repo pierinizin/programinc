@@ -851,6 +851,25 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .drawer-body { display: grid; gap: 15px; padding-top: 13px; }
 .hero-block { display: flex; gap: 12px; align-items: start; }
 .drawer-section { display: grid; gap: 8px; }
+/* Seções da ficha que abrem e fecham */
+.secao-ficha { gap: 0; border-top: 1px solid var(--borda); }
+.secao-ficha-cab {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 11px 2px; text-align: left;
+  border: 0; background: none; color: var(--tinta); font: inherit; cursor: pointer;
+}
+.secao-ficha-cab:hover strong { text-decoration: underline; text-underline-offset: 3px; }
+.secao-ficha-cab .seta {
+  width: 15px; height: 15px; flex: none; fill: none; stroke: var(--tinta-media); stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round; transition: transform .15s;
+}
+.secao-ficha.aberta .seta { transform: rotate(90deg); }
+.secao-ficha-n {
+  font: 700 11px var(--fonte-dado); color: var(--tinta-media);
+  background: var(--superficie-2); border: 1px solid var(--borda); border-radius: 999px; padding: 0 7px;
+}
+.secao-ficha-cab strong { white-space: nowrap; }
+.secao-ficha-cab .tag { margin-left: auto; white-space: nowrap; font-size: 10px; padding: 2px 6px; }
+.secao-ficha-corpo { display: grid; gap: 8px; padding-bottom: 12px; }
 .mini-card {
   background: var(--superficie-2);
   border: 1px solid var(--borda);
