@@ -60,7 +60,10 @@ function soFimDeSemanaEntre(de, ate) {
 /**
  * Faltas + férias → lista de períodos.
  * { id, pessoaId, tipo, motivo, rotulo, inicio, fim, dias, parcial,
- *   observacao, documentoId, faltaIds, feriasId }
+ *   observacao, documentoId, faltaIds, feriasId, datas }
+ * `datas` = os dias que têm falta lançada (null nas férias, que valem o
+ * período inteiro). Uma falta de sexta + segunda é um período só, mas a
+ * pessoa não estava "fora" no sábado e no domingo — o calendário usa isto.
  */
 export function agruparAusencias(faltas = [], ferias = []) {
   const periodos = [];
@@ -72,7 +75,7 @@ export function agruparAusencias(faltas = [], ferias = []) {
     periodos.push({
       id: `v:${f.id}`, pessoaId: f.colaboradorId, tipo: 'ferias', motivo: 'ferias', rotulo: 'Férias',
       inicio: f.data_inicio, fim: f.data_fim, dias: diasEntre(f.data_inicio, f.data_fim) + 1,
-      parcial: false, observacao: f.observacao || '', documentoId: null, faltaIds: [], feriasId: f.id,
+      parcial: false, observacao: f.observacao || '', documentoId: null, faltaIds: [], feriasId: f.id, datas: null,
     });
   });
   const dentroDeFerias = (pessoaId, dia) => (feriasPorPessoa[pessoaId] || [])
@@ -100,6 +103,7 @@ export function agruparAusencias(faltas = [], ferias = []) {
       if (f.data !== atual.ultimoDia) atual.dias += 1;
       atual.ultimoDia = f.data;
       atual.faltaIds.push(f.id);
+      if (!atual.datas.includes(f.data)) atual.datas.push(f.data);
       atual.parcial ||= Boolean(f.trabalhou_de);
       if (!atual.observacao && f.observacao) atual.observacao = f.observacao;
       return;
@@ -109,7 +113,7 @@ export function agruparAusencias(faltas = [], ferias = []) {
       id: `f:${f.id}`, chave, pessoaId: f.colaboradorId, tipo: tipoDoMotivo(f.motivo), motivo: f.motivo,
       rotulo: rotuloMotivo(f.motivo), inicio: f.data, fim: f.data, ultimoDia: f.data, dias: 1,
       parcial: Boolean(f.trabalhou_de), observacao: f.observacao || '', documentoId: doc,
-      faltaIds: [f.id], feriasId: null,
+      faltaIds: [f.id], feriasId: null, datas: [f.data],
     };
   });
   fechar();
@@ -127,34 +131,36 @@ export function situacaoAusencia(p, hoje) {
 /** O período cruza a janela [de, ate]? */
 export const cruza = (p, de, ate) => p.inicio <= ate && p.fim >= de;
 
-/* ---------- período escolhido no filtro ---------- */
-export const ATALHOS_PERIODO = [
-  { valor: 'mes', rotulo: 'Este mês' },
-  { valor: 'mes-passado', rotulo: 'Mês passado' },
-  { valor: 'proximos-30', rotulo: 'Próximos 30 dias' },
-  { valor: 'ultimos-90', rotulo: 'Últimos 90 dias' },
-  { valor: 'padrao', rotulo: 'Últimas 6 semanas e próximas 4' },
-];
-export const PERIODO_PADRAO = 'padrao';
+/** A pessoa estava fora neste dia? */
+export const foraNoDia = (p, dia) => (p.datas ? p.datas.includes(dia) : p.inicio <= dia && dia <= p.fim);
 
-/** valor do filtro ('mes', 'padrao', '2026-10-01_2026-10-31'…) → { de, ate, rotulo } */
-export function intervaloDoPeriodo(valor, hoje = isoLocal()) {
-  const [a, m] = hoje.split('-').map(Number);
-  const primeiro = (ano, mes) => isoLocal(new Date(ano, mes - 1, 1));
-  const ultimo = (ano, mes) => isoLocal(new Date(ano, mes, 0));
-  const personalizado = /^(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})$/.exec(valor || '');
-  if (personalizado && personalizado[1] <= personalizado[2]) {
-    return { de: personalizado[1], ate: personalizado[2], rotulo: `${curta(personalizado[1])} → ${curta(personalizado[2])}` };
-  }
-  switch (valor) {
-    case 'mes': return { de: primeiro(a, m), ate: ultimo(a, m), rotulo: 'Este mês' };
-    case 'mes-passado': return { de: primeiro(a, m - 1), ate: ultimo(a, m - 1), rotulo: 'Mês passado' };
-    case 'proximos-30': return { de: hoje, ate: somaDias(hoje, 30), rotulo: 'Próximos 30 dias' };
-    case 'ultimos-90': return { de: somaDias(hoje, -90), ate: hoje, rotulo: 'Últimos 90 dias' };
-    default: {
-      const de = somaDias(hoje, -42);
-      const ate = somaDias(hoje, 28);
-      return { de, ate, rotulo: `${curta(de)} → ${curta(ate)}` };
-    }
-  }
+/** Primeiro dia útil depois do fim (pula sábado e domingo). */
+export function diaDaVolta(fim) {
+  let d = somaDias(fim, 1);
+  while (fimDeSemana(d)) d = somaDias(d, 1);
+  return d;
+}
+
+export const DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+export const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
+/** Segunda-feira da semana do dia. */
+export const segundaDa = (iso) => somaDias(iso, -((diaDaSemana(iso) + 6) % 7));
+
+/** Dias que a grade do mês mostra ('2026-10' → de seg antes do dia 1 até dom depois do último). */
+export function gradeDoMes(mes) {
+  const [a, m] = mes.split('-').map(Number);
+  const primeiro = `${mes}-01`;
+  const ultimo = isoLocal(new Date(a, m, 0));
+  const de = segundaDa(primeiro);
+  const ate = somaDias(segundaDa(ultimo), 6);
+  const dias = [];
+  for (let d = de; d <= ate; d = somaDias(d, 1)) dias.push(d);
+  return dias;
+}
+
+export function mesVizinho(mes, n) {
+  const [a, m] = mes.split('-').map(Number);
+  const d = new Date(a, m - 1 + n, 1);
+  return `${d.getFullYear()}-${dois(d.getMonth() + 1)}`;
 }

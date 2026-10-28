@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { ATALHOS_PERIODO, intervaloDoPeriodo } from '../lib/ausencias';
 
 /* =============================================================================
    Barra de filtros do /administrativo
@@ -163,49 +162,5 @@ export function FiltroSim({ rotulo, ativo, onMudar }) {
       <button type="button" onClick={() => onMudar(false)}><b>{rotulo}</b></button>
       <button type="button" className="x" onClick={() => onMudar(false)} aria-label={`Tirar o filtro ${rotulo}`}>✕</button>
     </span>
-  );
-}
-
-/** Período: atalhos ou de/até. O padrão não conta como filtro ligado. */
-export function FiltroPeriodo({ valor, padrao, onMudar, hoje }) {
-  const [aberto, setAberto] = useState(false);
-  const atual = intervaloDoPeriodo(valor, hoje);
-  const [de, setDe] = useState(atual.de);
-  const [ate, setAte] = useState(atual.ate);
-  const fechar = () => setAberto(false);
-  const ref = useFechaFora(aberto, fechar);
-  const abrir = () => { setDe(atual.de); setAte(atual.ate); setAberto(true); };
-  const escolher = (v) => { onMudar(v); fechar(); };
-  const personalizadoOk = de && ate && de <= ate;
-
-  return (
-    <div className="adm-fwrap" ref={ref}>
-      <span className={`adm-fchip on${valor === padrao ? ' padrao' : ''}${aberto ? ' aberto' : ''}`}>
-        <button type="button" onClick={() => (aberto ? fechar() : abrir())} aria-expanded={aberto}>Período: <b>{atual.rotulo}</b></button>
-        {valor !== padrao && (
-          <button type="button" className="x" onClick={() => escolher(padrao)} aria-label="Voltar ao período padrão">✕</button>
-        )}
-      </span>
-      {aberto && (
-        <div className="adm-pop" role="dialog" aria-label="Período">
-          <div className="adm-pop-tit">Atalhos</div>
-          {ATALHOS_PERIODO.map((a) => (
-            <button key={a.valor} type="button" className="adm-op" role="radio" aria-checked={valor === a.valor} onClick={() => escolher(a.valor)}>
-              <span className={`rd${valor === a.valor ? ' on' : ''}`} />
-              <span className="r">{a.rotulo}</span>
-            </button>
-          ))}
-          <div className="adm-pop-tit">Personalizado</div>
-          <div className="adm-pop-datas">
-            <label><small>De</small><input type="date" value={de} onChange={(e) => setDe(e.target.value)} /></label>
-            <label><small>Até</small><input type="date" value={ate} onChange={(e) => setAte(e.target.value)} /></label>
-          </div>
-          <div className="adm-pop-pe">
-            <span>{personalizadoOk ? 'A linha do tempo acompanha' : 'O fim vem depois do início'}</span>
-            <button type="button" disabled={!personalizadoOk} onClick={() => escolher(`${de}_${ate}`)}>Aplicar</button>
-          </div>
-        </div>
-      )}
-    </div>
   );
 }

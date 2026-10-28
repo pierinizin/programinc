@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
 import { FichaDocumentos } from './FichaDocumentos';
 import { ImportacaoEmMassa } from './ImportacaoEmMassa';
-import { BarraFiltros, FiltroMenu, FiltroPeriodo, FiltroSim, Segmentos } from './FiltrosAdm';
+import { BarraFiltros, FiltroMenu, FiltroSim, Segmentos } from './FiltrosAdm';
 import { tiposDaPessoa, statusPasta, dataBR } from '../lib/documentos';
 import { SETORES, setorDe, rotuloSetor, ehTrecho } from '../lib/setor';
 import {
-  agruparAusencias, situacaoAusencia, cruza, intervaloDoPeriodo, PERIODO_PADRAO,
-  TIPOS_AUSENCIA, TIPO_AUSENCIA, SITUACOES_AUSENCIA, isoLocal, somaDias, diasEntre, curta, fimDeSemana, diaDaSemana,
+  agruparAusencias, cruza, foraNoDia, diaDaVolta, segundaDa, gradeDoMes, mesVizinho, DIAS_SEMANA, MESES,
+  TIPOS_AUSENCIA, TIPO_AUSENCIA, isoLocal, somaDias, diasEntre, curta, fimDeSemana, diaDaSemana,
 } from '../lib/ausencias';
 import { FILTROS_PADRAO, lerFiltros, escreverFiltros } from '../lib/filtrosUrl';
 
@@ -436,177 +436,94 @@ function AbaDocumentos({ pessoas, pessoasPorId, resumos, pendencias, tipos, f, m
 }
 
 /* =================================================================== Ausências */
-const LINHAS_TEMPO = 20;
-const LINHAS_TABELA = 40;
+/* Calendário: cada dia mostra as fotos de quem está fora (uma por cima da
+   outra, até 4) e a cor do contorno diz o tipo. Ao lado, o dia escolhido. */
+const MAX_FOTOS = 4;
 
-function rotuloDia(iso, n) {
-  if (iso.endsWith('-01')) return curta(iso);
-  if (n <= 70) return diaDaSemana(iso) === 1 ? iso.slice(8, 10) : '';
-  if (n <= 200) return iso.endsWith('-15') ? iso.slice(8, 10) : '';
-  return '';
-}
-
-function LinhaDoTempo({ linhas, de, ate, hoje, onVerFicha, nTotal, onVerTodas }) {
-  const n = diasEntre(de, ate) + 1;
-  const dias = useMemo(() => Array.from({ length: n }, (_, k) => somaDias(de, k)), [de, n]);
-  const pct = (iso) => (diasEntre(de, iso) / n) * 100;
-  const hojeDentro = hoje >= de && hoje <= ate;
-
+function FotoAus({ pessoa, tipo, z }) {
   return (
-    <div className="adm-lt">
-      <div className="adm-lt-cab">
-        <b>Linha do tempo</b>
-        <span className="mono fraca">{curta(de)} → {curta(ate)} · um afastamento = uma barra</span>
-        <div className="adm-leg estatica">
-          {TIPOS_AUSENCIA.map((t) => <span key={t.valor}><i style={{ background: t.cor }} />{t.rotulo}</span>)}
-        </div>
-      </div>
-      <div className="adm-lt-rola">
-        <div className="adm-lt-grade">
-          <div className="adm-lt-nomes">
-            <div className="adm-lt-th">Pessoa</div>
-            {linhas.map(({ pessoa }) => (
-              <button key={pessoa.id} type="button" className="adm-lt-nome" onClick={() => onVerFicha(pessoa)}>
-                <Avatar nome={pessoa.nome} url={pessoa.fotoUrl} tamanho="small" />
-                <span>{pessoa.nome}<small>{rotuloSetor(setorDe(pessoa))}</small></span>
-              </button>
-            ))}
-          </div>
-          <div className="adm-lt-area">
-            <div className="adm-lt-dias">
-              {dias.map((d) => {
-                const r = rotuloDia(d, n);
-                return r ? <span key={d} className={d.endsWith('-01') ? 'mes' : ''} style={{ left: `${pct(d)}%` }}>{r}</span> : null;
-              })}
-            </div>
-            <div className="adm-lt-pistas">
-              {n <= 100 && dias.filter(fimDeSemana).map((d) => (
-                <span key={d} className="adm-lt-fds" style={{ left: `${pct(d)}%`, width: `${100 / n}%` }} />
-              ))}
-              {hojeDentro && (
-                <>
-                  <span className="adm-lt-hoje" style={{ left: `${pct(hoje) + 50 / n}%` }} />
-                  <span className="adm-lt-hoje-tag" style={{ left: `${pct(hoje) + 50 / n}%` }}>HOJE</span>
-                </>
-              )}
-              {linhas.map(({ pessoa, periodos }) => (
-                <div key={pessoa.id} className="adm-lt-pista">
-                  {periodos.map((p) => {
-                    const a = p.inicio < de ? de : p.inicio;
-                    const b = p.fim > ate ? ate : p.fim;
-                    const left = pct(a);
-                    const largura = ((diasEntre(a, b) + 1) / n) * 100;
-                    const t = TIPO_AUSENCIA[p.tipo];
-                    const titulo = `${p.rotulo} · ${dataBR(p.inicio)} → ${dataBR(p.fim)} · ${plural(p.dias, 'dia', 'dias')}${p.parcial ? ' (com meio período)' : ''}`;
-                    const texto = (
-                      <>{t.rotulo}<small>{p.dias === 1 ? curta(p.inicio) : `${curta(p.inicio)}–${curta(p.fim)} · ${p.dias}d`}</small></>
-                    );
-                    const dentro = largura >= 14;
-                    const comRotulo = dentro || n <= 120;
-                    const foraEsq = !dentro && left + largura > 78;
-                    return (
-                      <span key={p.id}>
-                        <button
-                          type="button"
-                          className={`adm-lt-barra${p.dias === 1 ? ' um' : ''}${p.inicio < de ? ' cont-e' : ''}${p.fim > ate ? ' cont-d' : ''}`}
-                          style={{ left: `${left}%`, width: `${largura}%`, background: t.cor }}
-                          title={titulo}
-                          onClick={() => onVerFicha(pessoa)}
-                        >
-                          {dentro && texto}
-                        </button>
-                        {!dentro && comRotulo && (
-                          <span className={`adm-lt-rot${foraEsq ? ' esq' : ''}`}
-                            style={foraEsq ? { right: `calc(${100 - left}% + 6px)` } : { left: `calc(${left + largura}% + 6px)` }}>
-                            {texto}
-                          </span>
-                        )}
-                      </span>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-      {nTotal > linhas.length && (
-        <button type="button" className="adm-mais" onClick={onVerTodas}>Ver todas as {nTotal} pessoas na linha do tempo</button>
-      )}
-    </div>
+    <span className="adm-cal-av" style={{ '--c': TIPO_AUSENCIA[tipo].cor, zIndex: z }}>
+      <Avatar nome={pessoa.nome} url={pessoa.fotoUrl} tamanho="small" titulo={`${pessoa.nome} · ${TIPO_AUSENCIA[tipo].rotulo}`} />
+    </span>
   );
 }
 
-function AbaAusencias({ pessoas, pessoasPorId, periodos, faltas, f, mudar, hoje, podeLancarFalta, podeLancarAtestado, onRegistrarFalta, onRegistrarAtestado, onVerFicha }) {
-  const [todasNoTempo, setTodasNoTempo] = useState(false);
-  const [quantas, setQuantas] = useState(LINHAS_TABELA);
+function Pilha({ itens }) {
+  const n = itens.length;
+  const mostra = n <= MAX_FOTOS ? itens : itens.slice(0, MAX_FOTOS - 1);
+  return (
+    <span className="adm-cal-pilha">
+      {mostra.map((x, i) => <FotoAus key={x.p.id} pessoa={x.pessoa} tipo={x.p.tipo} z={10 - i} />)}
+      {n > mostra.length && <em>+{n - mostra.length}</em>}
+    </span>
+  );
+}
+
+const nomeDoDia = (iso) => {
+  const [a, m, d] = iso.split('-').map(Number);
+  const s = new Date(a, m - 1, d).toLocaleDateString('pt-BR', { weekday: 'long' });
+  return `${s.charAt(0).toUpperCase()}${s.slice(1).replace('-feira', '')}, ${d} de ${MESES[m - 1]}`;
+};
+
+function AbaAusencias({ pessoas, pessoasPorId, periodos, f, mudar, hoje, podeLancarFalta, podeLancarAtestado, onRegistrarFalta, onRegistrarAtestado, onVerFicha }) {
   const ids = useMemo(() => new Set(pessoas.map((p) => p.id)), [pessoas]);
   const doSetor = useMemo(() => periodos.filter((p) => ids.has(p.pessoaId)), [periodos, ids]);
 
-  // KPIs — mês corrente, setor inteiro, sem os filtros
-  const mes = hoje.slice(0, 7);
-  const agora = doSetor.filter((p) => situacaoAusencia(p, hoje) === 'andamento');
+  // Frase do topo — setor inteiro, sem os filtros.
+  const agora = doSetor.filter((p) => foraNoDia(p, hoje));
   const pessoasAgora = new Set(agora.map((p) => p.pessoaId));
   const tiposAgora = contar(agora, (p) => p.tipo);
-  const faltasMes = faltas.filter((x) => ids.has(x.colaboradorId) && x.data?.startsWith(mes));
-  const diasAtestado = faltasMes.filter((x) => x.motivo === 'atestado_medico').length;
-  const afastMes = doSetor.filter((p) => p.tipo === 'atestado' && cruza(p, `${mes}-01`, `${mes}-31`)).length;
-  const avulsas = faltasMes.filter((x) => x.motivo === 'falta_justificada' || x.motivo === 'falta_injustificada');
-  const injust = avulsas.filter((x) => x.motivo === 'falta_injustificada').length;
-  const feriasAgora = agora.filter((p) => p.tipo === 'ferias').length;
-  const feriasMarcadas = doSetor.filter((p) => p.tipo === 'ferias' && p.inicio > hoje).sort((a, b) => a.inicio.localeCompare(b.inicio));
+  const proxSegunda = somaDias(segundaDa(hoje), 7);
+  const voltam = new Set(agora.filter((p) => p.tipo !== 'falta' && diaDaVolta(p.fim) <= proxSegunda).map((p) => p.pessoaId)).size;
+  const marcados = doSetor.filter((p) => p.inicio > hoje).length;
 
   // Filtros
-  const { de, ate } = intervaloDoPeriodo(f.per, hoje);
   const termo = f.aq.trim().toLowerCase();
-  const naJanela = doSetor.filter((p) => cruza(p, de, ate));
-  const visiveis = naJanela.filter((p) => {
+  const visiveis = doSetor.filter((p) => {
     const pessoa = pessoasPorId[p.pessoaId];
     return pessoa
       && (!termo || pessoa.nome.toLowerCase().includes(termo))
-      && (!f.atipo.length || f.atipo.includes(p.tipo))
-      && (!f.asit.length || f.asit.includes(situacaoAusencia(p, hoje)))
-      && (!f.apes.length || f.apes.includes(p.pessoaId));
+      && (!f.atipo.length || f.atipo.includes(p.tipo));
   });
-  const nTipo = contar(naJanela, (p) => p.tipo);
-  const nSit = contar(naJanela, (p) => situacaoAusencia(p, hoje));
-  const nPes = contar(naJanela, (p) => p.pessoaId);
-  const opPessoas = Object.keys(nPes).filter((id) => pessoasPorId[id])
-    .map((id) => ({ valor: id, rotulo: pessoasPorId[id].nome, n: nPes[id] }))
-    .sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR'));
-  const totalDias = visiveis.reduce((s, p) => s + p.dias, 0);
-  const temFiltro = Boolean(termo || f.atipo.length || f.asit.length || f.apes.length || f.per !== PERIODO_PADRAO);
-  const limpar = () => mudar({ aq: '', atipo: [], asit: [], apes: [], per: PERIODO_PADRAO });
+  const nTipo = contar(doSetor, (p) => p.tipo);
+  const temFiltro = Boolean(termo || f.atipo.length);
 
-  // Linha do tempo: uma linha por pessoa; quem está fora agora primeiro.
-  const porPessoa = new Map();
-  visiveis.forEach((p) => {
-    if (!porPessoa.has(p.pessoaId)) porPessoa.set(p.pessoaId, []);
-    porPessoa.get(p.pessoaId).push(p);
-  });
-  const linhas = [...porPessoa.entries()].map(([id, lista]) => ({
-    pessoa: pessoasPorId[id],
-    periodos: lista,
-    agora: lista.some((p) => situacaoAusencia(p, hoje) === 'andamento'),
-    recente: lista.reduce((m, p) => (p.inicio > m ? p.inicio : m), ''),
-  })).sort((a, b) => (Number(b.agora) - Number(a.agora)) || b.recente.localeCompare(a.recente));
+  // Mês, semana e dia escolhidos
+  const dia = f.dia || hoje;
+  const mes = f.mes || dia.slice(0, 7);
+  const semana = f.vis === 'semana';
+  const dias = useMemo(
+    () => (semana ? Array.from({ length: 7 }, (_, k) => somaDias(segundaDa(dia), k)) : gradeDoMes(mes)),
+    [semana, dia, mes]
+  );
+  const de = dias[0];
+  const ate = dias[dias.length - 1];
+  const naJanela = visiveis.filter((p) => cruza(p, de, ate));
+  const foraEm = (d) => naJanela
+    .filter((p) => foraNoDia(p, d))
+    .map((p) => ({ p, pessoa: pessoasPorId[p.pessoaId] }))
+    .sort((a, b) => a.p.inicio.localeCompare(b.p.inicio));
+  const doDia = visiveis.filter((p) => foraNoDia(p, dia))
+    .map((p) => ({ p, pessoa: pessoasPorId[p.pessoaId] }))
+    .sort((a, b) => a.p.fim.localeCompare(b.p.fim));
+  const maior = Math.max(1, ...dias.map((d) => foraEm(d).length));
 
-  const ORDEM_SIT = { andamento: 0, agendado: 1, encerrado: 2 };
-  const tabela = visiveis.slice().sort((a, b) => {
-    const sa = situacaoAusencia(a, hoje);
-    const sb = situacaoAusencia(b, hoje);
-    if (sa !== sb) return ORDEM_SIT[sa] - ORDEM_SIT[sb];
-    return sa === 'agendado' ? a.inicio.localeCompare(b.inicio) : b.inicio.localeCompare(a.inicio);
-  });
-  const SIT = Object.fromEntries(SITUACOES_AUSENCIA.map((s) => [s.valor, s]));
+  const escolher = (d) => mudar({ dia: d === hoje ? '' : d, mes: d.slice(0, 7) === hoje.slice(0, 7) ? '' : d.slice(0, 7) });
+  const andar = (n) => {
+    if (semana) { escolher(somaDias(dia, 7 * n)); return; }
+    const novo = mesVizinho(mes, n);
+    mudar({ mes: novo === hoje.slice(0, 7) ? '' : novo, dia: novo === hoje.slice(0, 7) ? '' : `${novo}-01` });
+  };
+  const [ano, m] = mes.split('-').map(Number);
+  const titulo = semana
+    ? `${curta(de)} → ${curta(ate)}`
+    : `${MESES[m - 1].charAt(0).toUpperCase()}${MESES[m - 1].slice(1)} ${ano}`;
+  const tom = (n) => (n ? { background: `color-mix(in srgb, var(--erro) ${Math.round(12 + (n / maior) * 40)}%, var(--superficie))` } : undefined);
 
   return (
     <>
       <div className="adm-cab">
-        <div>
-          <h1>Ausências</h1>
-          <p>Faltas, atestados e férias — cada afastamento aparece uma vez, com início e fim</p>
-        </div>
+        <div><h1>Ausências</h1></div>
         {(podeLancarFalta || podeLancarAtestado) && (
           <div className="acoes">
             {podeLancarFalta && <button type="button" className="ghost-btn" onClick={onRegistrarFalta}>Registrar falta</button>}
@@ -615,84 +532,96 @@ function AbaAusencias({ pessoas, pessoasPorId, periodos, faltas, f, mudar, hoje,
         )}
       </div>
 
-      <div className="adm-kpis">
-        <Kpi n={pessoasAgora.size} titulo="Ausentes hoje" cor="var(--erro)" corN="var(--erro-texto)"
-          sub={agora.length ? TIPOS_AUSENCIA.filter((t) => tiposAgora[t.valor]).map((t) => `${tiposAgora[t.valor]} ${tiposAgora[t.valor] === 1 ? t.rotulo.toLowerCase() : t.plural}`).join(' · ') : 'todo mundo trabalhando'}
-          onClick={() => mudar({ asit: ['andamento'] })} ativo={f.asit.length === 1 && f.asit[0] === 'andamento'} />
-        <Kpi n={diasAtestado} titulo="Dias de atestado no mês" cor="var(--erro)"
-          sub={afastMes ? `em ${plural(afastMes, 'afastamento', 'afastamentos')}` : 'nenhum atestado no mês'}
-          onClick={() => mudar({ atipo: ['atestado'], per: 'mes' })} ativo={f.per === 'mes' && f.atipo.length === 1 && f.atipo[0] === 'atestado'} />
-        <Kpi n={avulsas.length} titulo="Faltas avulsas no mês" cor={TIPO_AUSENCIA.falta.cor}
-          sub={avulsas.length ? `${avulsas.length - injust} justificadas · ${injust} não justificadas` : 'nenhuma falta no mês'}
-          onClick={() => mudar({ atipo: ['falta'], per: 'mes' })} ativo={f.per === 'mes' && f.atipo.length === 1 && f.atipo[0] === 'falta'} />
-        <Kpi n={feriasAgora} titulo="De férias agora" cor="var(--campo)" corN="var(--campo-texto)"
-          sub={feriasMarcadas.length
-            ? `${plural(feriasMarcadas.length, 'marcada', 'marcadas')} · próxima: ${pessoasPorId[feriasMarcadas[0].pessoaId]?.nome.split(' ')[0] || ''} ${curta(feriasMarcadas[0].inicio)}`
-            : 'nenhuma férias marcada'}
-          onClick={() => mudar({ atipo: ['ferias'] })} ativo={f.atipo.length === 1 && f.atipo[0] === 'ferias'} />
-      </div>
+      <p className="adm-frase">
+        {pessoasAgora.size
+          ? (
+            <>
+              <b>{plural(pessoasAgora.size, 'pessoa fora hoje', 'pessoas fora hoje')}</b>
+              {' — '}{TIPOS_AUSENCIA.filter((t) => tiposAgora[t.valor]).map((t) => `${tiposAgora[t.valor]} ${tiposAgora[t.valor] === 1 ? t.rotulo.toLowerCase() : t.plural}`).join(', ')}
+            </>
+          )
+          : <b>Ninguém fora hoje</b>}
+        {voltam > 0 && <><span className="sep">/</span><b>{voltam} {voltam === 1 ? 'volta' : 'voltam'}</b> até {DIAS_SEMANA[diaDaSemana(proxSegunda)]} {curta(proxSegunda)}</>}
+        <span className="sep">/</span>
+        {marcados ? <><b>{plural(marcados, 'afastamento', 'afastamentos')}</b> {marcados === 1 ? 'marcado' : 'marcados'}</> : 'nada marcado pela frente'}
+      </p>
 
-      <BarraFiltros
-        busca={f.aq}
-        onBusca={(aq) => mudar({ aq })}
-        placeholder="Buscar pessoa…"
-        resumo={`${plural(visiveis.length, 'afastamento', 'afastamentos')} · ${plural(totalDias, 'dia', 'dias')}`}
-        temFiltro={temFiltro}
-        onLimpar={limpar}
-      >
-        <FiltroPeriodo valor={f.per} padrao={PERIODO_PADRAO} onMudar={(per) => mudar({ per })} hoje={hoje} />
+      <BarraFiltros busca={f.aq} onBusca={(aq) => mudar({ aq })} placeholder="Buscar pessoa…" temFiltro={temFiltro} onLimpar={() => mudar({ aq: '', atipo: [] })}>
         <FiltroMenu rotulo="Tipo" valor={f.atipo} onMudar={(atipo) => mudar({ atipo })}
           opcoes={TIPOS_AUSENCIA.map((t) => ({ ...t, n: nTipo[t.valor] || 0 }))} />
-        <FiltroMenu rotulo="Situação" valor={f.asit} onMudar={(asit) => mudar({ asit })}
-          opcoes={SITUACOES_AUSENCIA.map((s) => ({ ...s, n: nSit[s.valor] || 0 }))} />
-        <FiltroMenu rotulo="Pessoa" valor={f.apes} onMudar={(apes) => mudar({ apes })} opcoes={opPessoas} buscavel
-          vazio="Ninguém ausente neste período." />
       </BarraFiltros>
 
-      {!visiveis.length ? (
-        <Vazio titulo="Nenhuma ausência com esses filtros." texto={naJanela.length ? 'Tire algum filtro ou use “Limpar filtros”.' : 'Ninguém faltou, teve atestado ou férias neste período.'} />
-      ) : (
-        <>
-          <LinhaDoTempo
-            linhas={todasNoTempo ? linhas : linhas.slice(0, LINHAS_TEMPO)}
-            nTotal={linhas.length}
-            onVerTodas={() => setTodasNoTempo(true)}
-            de={de}
-            ate={ate}
-            hoje={hoje}
-            onVerFicha={onVerFicha}
-          />
-          <div className="adm-cartao adm-rola">
-            <table className="adm-tab adm-periodos">
-              <thead><tr><th>Pessoa</th><th>Tipo</th><th>Período</th><th>Dias</th><th>Situação</th><th>Observação</th></tr></thead>
-              <tbody>
-                {tabela.slice(0, quantas).map((p) => {
-                  const pessoa = pessoasPorId[p.pessoaId];
-                  const s = SIT[situacaoAusencia(p, hoje)];
-                  return (
-                    <tr key={p.id} className="clicavel" onClick={() => onVerFicha(pessoa)}>
-                      <td><span className="adm-nome"><Avatar nome={pessoa.nome} url={pessoa.fotoUrl} tamanho="small" /><b>{pessoa.nome}</b></span></td>
-                      <td>
-                        <span className="adm-pill"><span className="ponto" style={{ background: TIPO_AUSENCIA[p.tipo].cor }} />{p.tipo === 'falta' || p.tipo === 'licenca' ? p.rotulo : TIPO_AUSENCIA[p.tipo].rotulo}</span>
-                        {p.parcial && <small className="fraca"> · meio período</small>}
-                      </td>
-                      <td className="mono">{p.dias === 1 && p.inicio === p.fim ? dataBR(p.inicio) : `${curta(p.inicio)} → ${dataBR(p.fim)}`}</td>
-                      <td className="mono">{p.dias}</td>
-                      <td><Ponto cor={s.cor}>{s.rotulo}</Ponto></td>
-                      <td className="adm-obs">{p.observacao || <span className="fraca">—</span>}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {tabela.length > quantas && (
-              <button type="button" className="adm-mais" onClick={() => setQuantas((q) => q + LINHAS_TABELA)}>
-                Mostrar mais ({tabela.length - quantas})
-              </button>
-            )}
+      <div className="adm-cal-wrap">
+        <div className="adm-cal">
+          <div className="adm-cal-cab">
+            <button type="button" className="nav" onClick={() => andar(-1)} aria-label={semana ? 'Semana anterior' : 'Mês anterior'}>‹</button>
+            <b>{titulo}</b>
+            <button type="button" className="nav" onClick={() => andar(1)} aria-label={semana ? 'Próxima semana' : 'Próximo mês'}>›</button>
+            {(dia !== hoje || f.mes) && <button type="button" className="adm-cal-hoje" onClick={() => mudar({ dia: '', mes: '' })}>Hoje</button>}
+            <span className="adm-cal-escala" aria-hidden="true">pessoas fora no dia <i style={tom(maior * 0.25)} /><i style={tom(maior * 0.6)} /><i style={tom(maior)} /></span>
+            <Segmentos valor={f.vis} onMudar={(vis) => mudar({ vis })}
+              opcoes={[{ valor: 'mes', rotulo: 'Mês' }, { valor: 'semana', rotulo: 'Semana' }]} />
           </div>
-        </>
-      )}
+          <div className="adm-cal-sem">
+            {['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'].map((s) => (
+              <span key={s}>{s}</span>
+            ))}
+          </div>
+          <div className={`adm-cal-grade${semana ? ' semana' : ''}`}>
+            {dias.map((d) => {
+              const fx = foraEm(d);
+              const cls = [
+                'adm-cal-dia',
+                !semana && d.slice(0, 7) !== mes ? 'fora-mes' : '',
+                fimDeSemana(d) ? 'fds' : '',
+                d === hoje ? 'hoje' : '',
+                d === dia ? 'sel' : '',
+              ].filter(Boolean).join(' ');
+              return (
+                <button key={d} type="button" className={cls} onClick={() => escolher(d)}
+                  aria-label={`${nomeDoDia(d)}: ${plural(fx.length, 'pessoa fora', 'pessoas fora')}`} aria-pressed={d === dia}>
+                  <span className="n"><b>{semana ? `${DIAS_SEMANA[diaDaSemana(d)]} ${curta(d)}` : Number(d.slice(8))}</b>{fx.length > 0 && <span className="q" style={tom(fx.length)}>{fx.length}</span>}</span>
+                  {semana ? (
+                    <span className="adm-cal-nomes">
+                      {fx.map((x) => (
+                        <span key={x.p.id} className="adm-cal-nome">
+                          <FotoAus pessoa={x.pessoa} tipo={x.p.tipo} />
+                          <span>{x.pessoa.nome.split(' ')[0]}<small>{TIPO_AUSENCIA[x.p.tipo].rotulo}</small></span>
+                        </span>
+                      ))}
+                    </span>
+                  ) : fx.length > 0 && <Pilha itens={fx} />}
+                </button>
+              );
+            })}
+          </div>
+          <div className="adm-cal-rod">
+            <div className="adm-leg estatica">
+              {TIPOS_AUSENCIA.map((t) => <span key={t.valor}><i style={{ background: t.cor }} />{t.rotulo}</span>)}
+            </div>
+            <span>a cor do contorno mostra o tipo</span>
+          </div>
+        </div>
+
+        <aside className="adm-cal-lado">
+          <h3>{nomeDoDia(dia)}</h3>
+          <p>{doDia.length ? plural(doDia.length, 'pessoa fora', 'pessoas fora') : 'Ninguém fora neste dia'} · clique num dia para ver quem</p>
+          {doDia.map(({ p, pessoa }) => (
+            <button key={p.id} type="button" className="adm-cal-it" onClick={() => onVerFicha(pessoa)}
+              title={p.observacao || undefined}>
+              <Avatar nome={pessoa.nome} url={pessoa.fotoUrl} />
+              <span className="tx">
+                <b>{pessoa.nome}</b>
+                <span className="adm-tp"><i style={{ background: TIPO_AUSENCIA[p.tipo].cor }} />{p.tipo === 'falta' || p.tipo === 'licenca' ? p.rotulo : TIPO_AUSENCIA[p.tipo].rotulo}{p.parcial ? ' · meio período' : ''}</span>
+              </span>
+              <span className="vt">
+                {p.inicio === p.fim ? curta(p.inicio) : `${curta(p.inicio)} → ${curta(p.fim)}`}
+                <small>{p.inicio === p.fim ? (p.inicio === hoje ? 'hoje' : `${p.dias} dia`) : p.fim < hoje ? `${p.dias} dias` : `volta ${curta(diaDaVolta(p.fim))}`}</small>
+              </span>
+            </button>
+          ))}
+        </aside>
+      </div>
     </>
   );
 }
@@ -803,7 +732,7 @@ export function Administrativo({
     const m = {};
     const limite = somaDias(hoje, 30);
     periodos.forEach((p) => {
-      const agora = p.inicio <= hoje && p.fim >= hoje;
+      const agora = foraNoDia(p, hoje);
       const breve = p.inicio > hoje && p.inicio <= limite;
       if (!agora && !breve) return;
       const atual = m[p.pessoaId];
@@ -814,7 +743,7 @@ export function Administrativo({
 
   const nUrgentes = pendencias.filter((p) => p.urgencia <= 2 && todasPorId[p.colaborador_id]
     && todasPorId[p.colaborador_id].status !== 'inativo').length;
-  const nAusentes = new Set(periodos.filter((p) => p.inicio <= hoje && p.fim >= hoje).map((p) => p.pessoaId)).size;
+  const nAusentes = new Set(periodos.filter((p) => foraNoDia(p, hoje)).map((p) => p.pessoaId)).size;
   const pessoaDaPasta = pastaDe ? todasPorId[pastaDe] : null;
 
   function irPara(aba) { mudar({ aba }); setPastaDe(null); setImportando(false); }
@@ -842,7 +771,7 @@ export function Administrativo({
     );
   } else if (f.aba === 'ausencias') {
     corpo = (
-      <AbaAusencias pessoas={noSetor} pessoasPorId={noSetorPorId} periodos={periodos} faltas={faltas || []} f={f} mudar={mudar} hoje={hoje}
+      <AbaAusencias pessoas={noSetor} pessoasPorId={noSetorPorId} periodos={periodos} f={f} mudar={mudar} hoje={hoje}
         podeLancarFalta={podeEditar && f.setor !== 'trecho'} podeLancarAtestado={podeEditar && Boolean(onRegistrarAtestado)}
         onRegistrarFalta={onRegistrarFalta} onRegistrarAtestado={onRegistrarAtestado} onVerFicha={onVerFicha} />
     );

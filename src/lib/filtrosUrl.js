@@ -20,15 +20,15 @@ const CAMPOS = {
   dsit: 'lista',     // situação do documento
   pes: 'lista',      // pessoas (Documentos)
   aq: 'texto',       // busca da aba Ausências
-  per: 'texto',      // período
   atipo: 'lista',    // tipo de ausência
-  asit: 'lista',     // situação da ausência
-  apes: 'lista',     // pessoas (Ausências)
+  mes: 'texto',      // mês do calendário (AAAA-MM); vazio = mês atual
+  dia: 'texto',      // dia escolhido (AAAA-MM-DD); vazio = hoje
+  vis: 'texto',      // mes (padrão) | semana
 };
 
 export const FILTROS_PADRAO = {
   aba: 'pessoas', setor: '', q: '', st: 'ativos', sit: [], fun: [], aus: false,
-  dq: '', tipo: [], dsit: [], pes: [], aq: '', per: 'padrao', atipo: [], asit: [], apes: [],
+  dq: '', tipo: [], dsit: [], pes: [], aq: '', atipo: [], mes: '', dia: '', vis: 'mes',
 };
 
 const ABAS = ['pessoas', 'documentos', 'ausencias'];
@@ -45,6 +45,9 @@ export function lerFiltros(search = typeof window !== 'undefined' ? window.locat
   });
   if (!ABAS.includes(f.aba)) f.aba = 'pessoas';
   if (!['ativos', 'inativos', 'todos'].includes(f.st)) f.st = 'ativos';
+  if (!/^\d{4}-\d{2}$/.test(f.mes)) f.mes = '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(f.dia)) f.dia = '';
+  if (!['mes', 'semana'].includes(f.vis)) f.vis = 'mes';
   return f;
 }
 
