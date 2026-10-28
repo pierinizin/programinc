@@ -7,16 +7,37 @@
    Foi isso que deixou os Relatórios com "1000 dias em campo" cravado.
 
    Aqui a busca vem em páginas de 1000, ordenadas pelo id (pra uma página não
-   repetir nem pular linha da outra). A primeira página já pergunta quantas
-   linhas a tabela tem; com isso as páginas seguintes saem TODAS AO MESMO
-   TEMPO em vez de uma esperando a outra — com 5000 programações são 2 idas
-   ao servidor em vez de 5. Se o servidor não informar o total, cai no jeito
-   antigo (uma página depois da outra).
+   repetir nem pular linha da outra).
+
+   Todas as páginas saem AO MESMO TEMPO. Antes, a primeira página tinha que
+   voltar (com o total de linhas) para só então as outras saírem — com 1.231
+   programações, a segunda página esperava a primeira inteira. Agora o app
+   lembra quantas linhas cada tabela tinha da última vez e já pede todas as
+   páginas de uma vez. A primeira continua trazendo o total: se a tabela
+   cresceu além do que se imaginava, as páginas que faltaram saem em seguida;
+   se diminuiu, as páginas a mais voltam vazias e não atrapalham.
 
    Devolve no mesmo formato do supabase ({ data, error }).
    ============================================================================= */
 
 const PAGINA = 1000;   // igual ao "Max rows" do Supabase
+const CHAVE_MEMORIA = 'incovia:linhas:';
+const totais = new Map();   // nesta aba; o localStorage guarda entre visitas
+
+function totalLembrado(tabela) {
+  if (totais.has(tabela)) return totais.get(tabela);
+  try {
+    const v = Number(localStorage.getItem(CHAVE_MEMORIA + tabela));
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  } catch {
+    return 0;   // navegador sem localStorage: só perde o atalho
+  }
+}
+
+function lembrarTotal(tabela, total) {
+  totais.set(tabela, total);
+  try { localStorage.setItem(CHAVE_MEMORIA + tabela, String(total)); } catch { /* sem problema */ }
+}
 
 function consulta(supabase, tabela, ordem, de, comTotal) {
   let q = supabase.from(tabela).select('*', comTotal ? { count: 'exact' } : undefined);
@@ -25,25 +46,33 @@ function consulta(supabase, tabela, ordem, de, comTotal) {
 }
 
 export async function buscarTudo(supabase, tabela, { ordem = 'id' } = {}) {
-  const primeira = await consulta(supabase, tabela, ordem, 0, true);
-  if (primeira.error) return { data: null, error: primeira.error };
-  const linhas = [...(primeira.data || [])];
-  if (linhas.length < PAGINA) return { data: linhas, error: null };
+  // Quantas páginas pedir já de saída, pelo tamanho da última vez. (Views sem
+  // ordem — painel_prazos — vão uma página primeiro, como sempre foram.)
+  const previstas = ordem ? Math.max(1, Math.ceil(totalLembrado(tabela) / PAGINA)) : 1;
+  const primeiras = await Promise.all(
+    Array.from({ length: previstas }, (_, i) => consulta(supabase, tabela, ordem, i * PAGINA, i === 0))
+  );
 
-  const total = typeof primeira.count === 'number' ? primeira.count : null;
+  const erro = primeiras.find((p) => p.error);
+  if (erro) return { data: primeiras[0].data || null, error: erro.error };
+
+  const linhas = primeiras.flatMap((p) => p.data || []);
+  const total = typeof primeiras[0].count === 'number' ? primeiras[0].count : null;
 
   if (total != null) {
-    // Sabemos o tamanho: pede o resto em paralelo.
-    const inicios = [];
-    for (let de = PAGINA; de < total; de += PAGINA) inicios.push(de);
-    const paginas = await Promise.all(inicios.map((de) => consulta(supabase, tabela, ordem, de, false)));
-    for (const p of paginas) {
-      if (p.error) return { data: linhas, error: p.error };
-      linhas.push(...(p.data || []));
+    // Cresceu além do previsto: pede só as páginas que faltaram, juntas.
+    const faltam = [];
+    for (let de = previstas * PAGINA; de < total; de += PAGINA) faltam.push(de);
+    if (faltam.length) {
+      const resto = await Promise.all(faltam.map((de) => consulta(supabase, tabela, ordem, de, false)));
+      const erroResto = resto.find((p) => p.error);
+      if (erroResto) return { data: linhas, error: erroResto.error };
+      resto.forEach((p) => linhas.push(...(p.data || [])));
     }
-  } else {
-    // Sem total: uma página depois da outra até vir uma incompleta.
-    for (let de = PAGINA; ; de += PAGINA) {
+    if (ordem) lembrarTotal(tabela, total);
+  } else if ((primeiras[primeiras.length - 1].data || []).length === PAGINA) {
+    // Servidor não informou o total e a última página veio cheia: uma depois da outra.
+    for (let de = previstas * PAGINA; ; de += PAGINA) {
       const p = await consulta(supabase, tabela, ordem, de, false);
       if (p.error) return { data: linhas, error: p.error };
       linhas.push(...(p.data || []));

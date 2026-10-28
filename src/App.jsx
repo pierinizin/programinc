@@ -368,7 +368,19 @@ function AppInner() {
   // daquela pessoa em vez de na fila geral
   const [docPessoa, setDocPessoa] = useState(null);
 
-  const fetchUserRole = async (userId) => {
+  /* Ao abrir, o Supabase avisa a sessão duas vezes (getSession e o evento
+     inicial) e o cargo era buscado duas vezes. Agora, uma busca por usuário:
+     a segunda chamada reaproveita a que já está em voo. Trocar de usuário
+     (sair e entrar com outro) busca de novo. */
+  const cargoBuscadoRef = useRef({ userId: null, promessa: null });
+  const fetchUserRole = (userId) => {
+    const atual = cargoBuscadoRef.current;
+    if (atual.userId === userId && atual.promessa) return atual.promessa;
+    const promessa = buscarCargo(userId);
+    cargoBuscadoRef.current = { userId, promessa };
+    return promessa;
+  };
+  const buscarCargo = async (userId) => {
     const { data } = await supabase.from('perfis').select('cargo').eq('id', userId).single();
     if (data && data.cargo) {
       setUserRole(data.cargo.toLowerCase()); 
@@ -542,11 +554,15 @@ function AppInner() {
       if (session) {
         fetchUserRole(session.user.id); 
       } else {
+        cargoBuscadoRef.current = { userId: null, promessa: null };
         setUserRole(null); 
       }
     });
 
     return () => subscription.unsubscribe();
+    // Roda uma vez, ao abrir: o fetchUserRole muda a cada render, mas só lê
+    // um ref e o supabase — não precisa recriar a escuta da sessão.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* Um único agendador de recarga.
