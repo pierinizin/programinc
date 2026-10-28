@@ -3507,6 +3507,7 @@ function AppInner() {
           ferias={db.ferias || []}
           quem={session?.user?.id || null}
           nomeUsuario={perfil?.nome || session?.user?.email || ''}
+          cargo={userRole}
           podeVerApp={vePainel}
           podeEditar={podeDocs}
           gaveta={drawerJsx}
@@ -3515,6 +3516,7 @@ function AppInner() {
           onEditar={(p) => openColaboradorModal(p)}
           onVerFicha={(p) => setActiveDrawer({ type: 'colaborador', item: p })}
           onRegistrarFalta={() => openFaltaModal()}
+          onRegistrarAtestado={podeDocs ? () => openAtestadoModal(null) : null}
           onSalvarDocumento={salvarDocumento}
           onRemoverDocumento={removerDocumento}
           onSalvarValidade={salvarValidade}

@@ -1,9 +1,11 @@
 -- =============================================================================
 -- 25 · DIAGNÓSTICO de desempenho (SÓ LEITURA — não muda nada no banco)
 -- -----------------------------------------------------------------------------
--- Rode cada bloco separado no SQL Editor (selecione o bloco e Run) e mande um
--- print do resultado de cada um. Nenhum deles mostra dado de pessoa: só
--- números, nomes de tabelas e o texto das consultas.
+-- Rode cada bloco separado no SQL Editor: selecione só as linhas do bloco
+-- (do "select" até o ";") e clique em Run. Rodando o arquivo inteiro de uma
+-- vez, o editor mostra só o resultado do último. Mande um print de cada um.
+-- Nenhum deles mostra dado de pessoa: só números, nomes de tabelas e o texto
+-- das consultas.
 -- =============================================================================
 
 
@@ -46,11 +48,12 @@ order by pg_total_relation_size(relid) desc
 limit 20;
 
 
--- [4] Tarefas agendadas dentro do banco (pg_cron)
---     Se tiver alguma rodando a cada minuto, ela pode estar pesando.
-select jobid, schedule, active, left(command, 120) as comando
-  from cron.job
- order by jobid;
+-- [4] Extensões ligadas no banco
+--     Se aparecer pg_cron na lista, ele tem tarefas agendadas — me avise que
+--     eu mando a consulta para ver quais são. (Sem pg_cron, tudo certo.)
+select extname as extensao, extversion as versao
+  from pg_extension
+ order by 1;
 
 
 -- [5] Tabelas que o tempo real (realtime) acompanha
