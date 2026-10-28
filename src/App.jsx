@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from './lib/supabase';
 import { buscarTudo } from './lib/buscarTudo';
+import {
+  aplicarEvento, eventoAplicavel, ordenarPendencias, TEMPO_REAL_PADRAO,
+} from './lib/sincronia';
 import { Auth } from './components/Auth';
 import { Avatar } from './components/Avatar';
 import { QuadroDia } from './components/QuadroDia';
@@ -409,82 +412,157 @@ function AppInner() {
   const fetchSeqRef = useRef(0);
   const avancarVersaoEstado = () => { fetchSeqRef.current += 1; };
 
+  /* ------------------------------------------------------------------------
+     Carga e sincronia
+     ------------------------------------------------------------------------
+     • Abre com UM pedido (carga_inicial, 26-carga-unica.sql). Sem a função no
+       banco, cai no jeito antigo: uma busca por tabela.
+     • Se a carga falha, a tela NÃO é apagada: fica o que já estava, aparece o
+       aviso e o app tenta de novo sozinho (2 s, 5 s, 10 s, 20 s, 30 s…).
+     • Depois de aberto, quem mantém a tela em dia é o tempo real: cada aviso
+       do banco traz a linha que mudou e ela é encaixada direto, sem baixar a
+       tabela de novo (lib/sincronia.js).
+     • Uma carga que saiu ANTES de um aviso do tempo real e chegou DEPOIS
+       traria a linha velha: os avisos dos últimos 60 s ficam guardados e são
+       reaplicados por cima de qualquer carga que chegue. */
+  const cargaRpcRef = useRef('desconhecido');          // 'ok' | 'indisponivel'
+  const tempoRealTabelasRef = useRef(new Set(TEMPO_REAL_PADRAO));
+  const tempoRealOkRef = useRef(false);
+  const eventosRef = useRef([]);                        // { quando, tabela, payload }
+  const docsNaCargaRef = useRef(false);
+  const ultimaCargaRef = useRef(0);
+  const tentativaRef = useRef(0);
+  const retryTimerRef = useRef(null);
+  const [falhaCarga, setFalhaCarga] = useState(null);  // { segundos } enquanto tenta de novo
+  const [primeiraCarga, setPrimeiraCarga] = useState(false);
+
+  const funcaoInexistente = (erro) => erro && (erro.code === 'PGRST202' || erro.code === '42883'
+    || /could not find the function|function .* does not exist/i.test(erro.message || ''));
+
+  // Preserva a foto já assinada quando o aviso do tempo real traz o colaborador.
+  const manterFoto = (antiga, nova) => ({
+    ...nova,
+    fotoUrl: antiga && antiga.foto_path === nova.foto_path ? antiga.fotoUrl : null,
+  });
+
+  /* Reaplica, sobre listas recém-chegadas do banco, os avisos do tempo real
+     que vieram depois de `desde`. `brutas` usa o nome das TABELAS. */
+  function reaplicarEventos(brutas, desde) {
+    eventosRef.current.forEach((ev) => {
+      if (ev.quando <= desde || !(ev.tabela in brutas)) return;
+      brutas[ev.tabela] = aplicarEvento(brutas[ev.tabela], ev.payload,
+        ev.tabela === 'colaboradores' ? manterFoto : null);
+    });
+    return brutas;
+  }
+
+  async function buscarCargaCompleta() {
+    if (cargaRpcRef.current !== 'indisponivel') {
+      const r = await supabase.rpc('carga_inicial');
+      if (!r.error && r.data) {
+        cargaRpcRef.current = 'ok';
+        return { ok: true, dados: r.data };
+      }
+      if (!funcaoInexistente(r.error)) return { ok: false, erro: r.error || new Error('Resposta vazia') };
+      cargaRpcRef.current = 'indisponivel';   // banco sem o 26: jeito antigo daqui pra frente
+    }
+    const nomes = ['colaboradores', 'veiculos', 'programacoes', 'faltas', 'ferias',
+      'colaboradores_status_historico', 'patio', 'perfis', 'concessionarias', 'contratos',
+      'grupos_integracao', 'grupos_integracao_contratos', 'integracoes'];
+    // Estas duas podem não existir num banco antigo (13 e 15 não rodados):
+    // viram lista vazia em vez de travar a carga inteira.
+    const opcionais = new Set(['ferias', 'colaboradores_status_historico']);
+    const res = await Promise.all(nomes.map((t) => buscarTudo(supabase, t)));
+    const dados = {};
+    for (let i = 0; i < nomes.length; i += 1) {
+      if (res[i]?.error && !opcionais.has(nomes[i])) return { ok: false, erro: res[i].error };
+      dados[nomes[i]] = res[i]?.data || [];
+    }
+    return { ok: true, dados };
+  }
+
+  function agendarNovaTentativa(erro) {
+    console.error('Erro ao carregar dados:', erro?.message || erro);
+    const espera = [2, 5, 10, 20, 30][Math.min(tentativaRef.current, 4)];
+    tentativaRef.current += 1;
+    setFalhaCarga({ segundos: espera });
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      fetchDatabaseRef.current();
+    }, espera * 1000);
+  }
+
   const fetchDatabase = async () => {
     const minhaVez = ++fetchSeqRef.current;
     const t0 = performance.now();
-    const [resCols, resVeics, resProgs, resFaltas, resFerias, resHistorico, resPatio, resPerfis,
-           resConcs, resCtrs, resGrupos, resGruposCtrs, resIntegracoes] = await Promise.all([
-      buscarTudo(supabase, 'colaboradores'),
-      buscarTudo(supabase, 'veiculos'),
-      buscarTudo(supabase, 'programacoes'),
-      buscarTudo(supabase, 'faltas'),
-      buscarTudo(supabase, 'ferias'),
-      buscarTudo(supabase, 'colaboradores_status_historico'),
-      buscarTudo(supabase, 'patio'),
-      buscarTudo(supabase, 'perfis'),
-      buscarTudo(supabase, 'concessionarias'),
-      buscarTudo(supabase, 'contratos'),
-      buscarTudo(supabase, 'grupos_integracao'),
-      buscarTudo(supabase, 'grupos_integracao_contratos'),
-      buscarTudo(supabase, 'integracoes')
-    ]);
+    const carga = await buscarCargaCompleta();
 
-    // Com RLS ligada, uma tabela sem permissão volta com error e data null.
-    // Registramos no console em vez de silenciar tudo como lista vazia.
-    // 'ferias' e 'colaboradores_status_historico' podem ainda não existir se
-    // o 13-atestados-ferias.sql / 15-colaboradores-historico-status.sql não
-    // tiverem sido rodados — viram lista vazia em vez de quebrar a tela
-    // inteira. Sem histórico, disponivelEm() (lib/dia.js) cai de volta no
-    // status simples de agora, então a Programação continua funcionando.
-    [resCols, resVeics, resProgs, resFaltas, resFerias, resHistorico, resPatio, resPerfis,
-     resConcs, resCtrs, resGrupos, resGruposCtrs, resIntegracoes].forEach((res) => {
-      if (res?.error) console.error('Erro ao carregar dados:', res.error.message);
-    });
+    // Falhou: NADA de apagar a tela. Fica o que estava, avisa e tenta de novo.
+    if (!carga.ok) {
+      if (minhaVez === fetchSeqRef.current) agendarNovaTentativa(carga.erro);
+      return;
+    }
+    tentativaRef.current = 0;
+    if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+    setFalhaCarga(null);
 
-    // Bucket privado: a imagem só abre com URL assinada. Assinamos todas de
-    // uma vez, senão seria uma requisição por pessoa a cada carregamento.
-    const colaboradores = resCols.data || [];
-    /* As fotos NÃO seguram a primeira tela.
-       Antes, assinar as URLs era um await no meio do caminho: a tela ficava
-       vazia esperando uma ida ao Storage que não muda um único número do
-       quadro. Agora os dados entram na hora e os rostos chegam logo depois —
-       o Avatar já sabe desenhar as iniciais enquanto isso. */
+    // Uma busca mais nova já foi disparada (ou houve um clique otimista no
+    // meio): esta está velha. Pede a completa de novo em vez de voltar no tempo.
+    if (minhaVez !== fetchSeqRef.current) {
+      agendarFetchRef.current(null, { completa: true });
+      return;
+    }
+
+    const d = reaplicarEventos({ ...carga.dados }, t0);
+    if (Array.isArray(carga.dados.tempo_real)) {
+      tempoRealTabelasRef.current = new Set(carga.dados.tempo_real);
+    }
+
+    // Bucket privado: a imagem só abre com URL assinada. As fotos NÃO seguram
+    // a primeira tela — os dados entram na hora e os rostos chegam logo depois.
+    const colaboradores = d.colaboradores || [];
     const mapaAgora = assinarFotosEmCache(colaboradores.map((c) => c.foto_path));
     const colaboradoresComFoto = colaboradores.map((c) => ({
       ...c,
       fotoUrl: c.foto_path ? mapaAgora[c.foto_path] || null : null,
     }));
 
-    // Uma busca mais nova já foi disparada (e pode até já ter chegado) —
-    // esta aqui está desatualizada antes mesmo de terminar. Aplicar agora
-    // seria voltar no tempo. Como agora existem buscas PARCIAIS (só uma
-    // tabela), a mais nova pode não ter trazido tudo: pede a completa de novo
-    // em vez de simplesmente desistir.
-    if (minhaVez !== fetchSeqRef.current) {
-      agendarFetchRef.current();
-      return;
-    }
-
-    // Medição discreta (só no console do navegador, F12): quando esse número
-    // começar a pesar, é a hora de carregar só os meses recentes.
+    // Medição discreta (só no console do navegador, F12).
     console.info(`[Incovia] carga completa em ${Math.round(performance.now() - t0)} ms · `
-      + `${(resProgs.data || []).length} programações`);
+      + `${(d.programacoes || []).length} programações · `
+      + `${cargaRpcRef.current === 'ok' ? '1 pedido' : 'um pedido por tabela'}`);
 
+    ultimaCargaRef.current = Date.now();
     setDb(normalizeDb({
       colaboradores: colaboradoresComFoto,
-      veiculos: resVeics.data || [],
-      programacoes: resProgs.data || [],
-      faltas: resFaltas.data || [],
-      ferias: resFerias?.data || [],
-      historicoStatus: resHistorico?.data || [],
-      patio: resPatio?.data || [],
-      perfis: resPerfis?.data || [],
-      concessionarias: resConcs?.data || [],
-      contratos: resCtrs?.data || [],
-      gruposIntegracao: resGrupos?.data || [],
-      gruposIntegracaoContratos: resGruposCtrs?.data || [],
-      integracoes: resIntegracoes?.data || []
+      veiculos: d.veiculos || [],
+      programacoes: d.programacoes || [],
+      faltas: d.faltas || [],
+      ferias: d.ferias || [],
+      historicoStatus: d.colaboradores_status_historico || [],
+      patio: d.patio || [],
+      perfis: d.perfis || [],
+      concessionarias: d.concessionarias || [],
+      contratos: d.contratos || [],
+      gruposIntegracao: d.grupos_integracao || [],
+      gruposIntegracaoContratos: d.grupos_integracao_contratos || [],
+      integracoes: d.integracoes || [],
     }));
+    setPrimeiraCarga(true);
+
+    // Documentos: vieram no mesmo pacote (admin e RH) — ou, no jeito antigo,
+    // busca à parte para quem pode.
+    if (Array.isArray(carga.dados.documentos)) {
+      docsNaCargaRef.current = true;
+      setDocs({
+        tipos: carga.dados.tipos_documento || [],
+        documentos: carga.dados.documentos || [],
+        pendencias: ordenarPendencias(carga.dados.painel_prazos),
+      });
+    } else if (cargaRpcRef.current === 'indisponivel' && podeDocsRef.current) {
+      fetchDocumentosRef.current();
+    }
 
     // segunda etapa, sem bloquear: assina o que ainda não estava em cache
     const faltando = colaboradores
@@ -493,7 +571,6 @@ function AppInner() {
     if (faltando.length) {
       assinarFotos(faltando).then((novas) => {
         if (!Object.keys(novas).length) return;
-        if (minhaVez !== fetchSeqRef.current) return;
         setDb((atual) => ({
           ...atual,
           colaboradores: atual.colaboradores.map((c) => (
@@ -528,11 +605,7 @@ function AppInner() {
     setDocs({
       tipos: resTipos?.data || [],
       documentos: resDocs?.data || [],
-      pendencias: (resPend?.data || []).slice().sort((a, b) => (
-        (a.urgencia - b.urgencia)
-        || ((a.dias_restantes ?? 9999) - (b.dias_restantes ?? 9999))
-        || String(a.colaborador).localeCompare(String(b.colaborador), 'pt-BR')
-      )),
+      pendencias: ordenarPendencias(resPend?.data),
     });
   };
 
@@ -579,11 +652,28 @@ function AppInner() {
      nada continua sendo a recarga completa; agendarFetch(['faltas']) recarrega
      só aquela. Pedidos próximos se juntam no mesmo temporizador — se algum
      deles pediu tudo, vai tudo. */
+  /* Com o tempo real ligado, uma gravação NÃO recarrega as tabelas que ele
+     acompanha — o aviso do banco já traz a linha nova. Só as que ele não
+     acompanha (contratantes e contratos) são buscadas, e são pequenas. Com o
+     tempo real fora do ar, volta o jeito seguro: recarregar.
+     `completa: true` força a carga inteira (ex.: reconexão do tempo real). */
   const pendentesRef = useRef(new Set());
-  function agendarFetch(tabelas) {
+  function agendarFetch(tabelas, { completa = false } = {}) {
     const pend = pendentesRef.current;
-    if (!tabelas || tabelas.some((t) => !TABELA_PARA_CHAVE[t])) pend.add('*');
-    else tabelas.forEach((t) => pend.add(t));
+    const cobertas = tempoRealOkRef.current ? tempoRealTabelasRef.current : new Set();
+    if (completa || (!tempoRealOkRef.current && !tabelas)) {
+      pend.add('*');
+    } else if (!tabelas) {
+      if (!cobertas.has('colaboradores')) pend.add('*');
+      Object.keys(TABELA_PARA_CHAVE).forEach((t) => { if (!cobertas.has(t)) pend.add(t); });
+    } else {
+      tabelas.forEach((t) => {
+        if (cobertas.has(t)) return;
+        if (!TABELA_PARA_CHAVE[t]) pend.add('*');
+        else pend.add(t);
+      });
+    }
+    if (!pend.size) return;
     if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current);
     fetchTimerRef.current = setTimeout(() => {
       fetchTimerRef.current = null;
@@ -603,14 +693,16 @@ function AppInner() {
       // Algo mais novo aconteceu no meio (outra busca ou um clique otimista).
       // Tenta de novo estas mesmas tabelas; se insistir, faz a completa.
       if (tentativa < 2) setTimeout(() => fetchTabelasRef.current(tabelas, tentativa + 1), 250);
-      else agendarFetchRef.current();
+      else agendarFetchRef.current(null, { completa: true });
       return;
     }
-    if (res.some((r) => r?.error)) { agendarFetchRef.current(); return; }
+    // Falhou: a tela fica como está e a carga completa tenta de novo (com aviso).
+    if (res.some((r) => r?.error)) { agendarFetchRef.current(null, { completa: true }); return; }
     console.info(`[Incovia] recarregou ${tabelas.join(', ')} em ${Math.round(performance.now() - t0)} ms`);
+    const brutas = reaplicarEventos(Object.fromEntries(tabelas.map((t, i) => [t, res[i].data || []])), t0);
     setDb((atual) => {
       const novo = { ...atual };
-      tabelas.forEach((t, i) => { novo[TABELA_PARA_CHAVE[t]] = res[i].data || []; });
+      tabelas.forEach((t) => { novo[TABELA_PARA_CHAVE[t]] = brutas[t]; });
       return normalizeDb(novo);
     });
   }
@@ -619,24 +711,76 @@ function AppInner() {
   const agendarFetchRef = useRef(agendarFetch);
   agendarFetchRef.current = agendarFetch;
 
-  // Realtime: antes escutava schema inteiro e refazia as 5 queries a cada evento,
-  // o que virava cascata com várias pessoas editando. Agora escuta só as tabelas
-  // que interessam e agrupa eventos próximos num único refetch.
+  // Tempo real: escuta só as tabelas que interessam e encaixa a linha que
+  // mudou direto na tela (sem baixar a tabela de novo).
   const userId = session?.user?.id;
+
+  function aoEventoTempoReal(tabela, payload) {
+    if (!eventoAplicavel(payload)) {
+      agendarFetchRef.current([tabela], { completa: tabela === 'colaboradores' });
+      return;
+    }
+    const agora = performance.now();
+    eventosRef.current = eventosRef.current.filter((e) => agora - e.quando < 60000);
+    eventosRef.current.push({ quando: agora, tabela, payload });
+
+    const chave = tabela === 'colaboradores' ? 'colaboradores' : TABELA_PARA_CHAVE[tabela];
+    if (!chave) return;
+    setDb((atual) => normalizeDb({
+      ...atual,
+      [chave]: aplicarEvento(atual[chave], payload, tabela === 'colaboradores' ? manterFoto : null),
+    }));
+
+    // Colaborador com foto nova: assina só ela.
+    const caminho = tabela === 'colaboradores' ? payload.new?.foto_path : null;
+    if (caminho) {
+      assinarFotos([caminho]).then((novas) => {
+        if (!novas[caminho]) return;
+        setDb((atual) => ({
+          ...atual,
+          colaboradores: atual.colaboradores.map((c) => (
+            c.foto_path === caminho && !c.fotoUrl ? { ...c, fotoUrl: novas[caminho] } : c
+          )),
+        }));
+      });
+    }
+  }
+  const aoEventoRef = useRef(aoEventoTempoReal);
+  aoEventoRef.current = aoEventoTempoReal;
 
   useEffect(() => {
     if (!userId) return undefined;
     fetchDatabaseRef.current();
 
+    let jaConectou = false;
     const canal = supabase.channel('mudancas-incovia');
     ['colaboradores', 'veiculos', 'programacoes', 'faltas', 'ferias', 'colaboradores_status_historico', 'patio', 'perfis', 'grupos_integracao', 'grupos_integracao_contratos', 'integracoes'].forEach((table) => {
-      // Só a tabela que mudou. Colaboradores continua completo (TABELA_PARA_CHAVE
-      // não tem ele): as fotos assinadas vêm junto da carga completa.
-      canal.on('postgres_changes', { event: '*', schema: 'public', table }, () => agendarFetchRef.current([table]));
+      canal.on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => aoEventoRef.current(table, payload));
     });
-    canal.subscribe();
+    canal.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        const voltou = jaConectou && !tempoRealOkRef.current;
+        tempoRealOkRef.current = true;
+        // Reconectou depois de cair: o que mudou nesse meio-tempo não chegou
+        // como aviso — uma carga completa (1 pedido) põe tudo em dia.
+        if (voltou) agendarFetchRef.current(null, { completa: true });
+        jaConectou = true;
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        tempoRealOkRef.current = false;
+      }
+    });
+
+    // Rede de segurança: voltou para a aba depois de 3 min fora, confere tudo.
+    const aoVoltar = () => {
+      if (document.visibilityState === 'visible' && Date.now() - ultimaCargaRef.current > 180000) {
+        agendarFetchRef.current(null, { completa: true });
+      }
+    };
+    document.addEventListener('visibilitychange', aoVoltar);
 
     return () => {
+      document.removeEventListener('visibilitychange', aoVoltar);
+      tempoRealOkRef.current = false;
       supabase.removeChannel(canal);
     };
   }, [userId]);
@@ -652,10 +796,16 @@ function AppInner() {
   const ehRH = userRole === 'rh';
   const podeDocs = ehAdmin || ehRH;
   const vePainel = ehAdmin || userRole === 'editor' || ehRH;
+  const podeDocsRef = useRef(false);
+  podeDocsRef.current = podeDocs;
   const fetchDocumentosRef = useRef(fetchDocumentos);
   fetchDocumentosRef.current = fetchDocumentos;
   useEffect(() => {
     if (!userId || !podeDocs) return;
+    // A carga única já traz os documentos; enquanto ela não respondeu, quem
+    // decide é ela (fetchDatabase busca à parte se a função não existir).
+    if (cargaRpcRef.current === 'desconhecido') return;
+    if (cargaRpcRef.current === 'ok' && docsNaCargaRef.current) return;
     fetchDocumentosRef.current();
   }, [userId, podeDocs]);
 
@@ -2318,8 +2468,13 @@ function AppInner() {
     // troca a provisória pela linha real, com o id que veio do banco
     const real = res.data[0];
     avancarVersaoEstado();
+    // O aviso do tempo real pode ter chegado antes e já posto a linha real na
+    // lista: aí a provisória só sai, para não ficar duplicada.
     setDb((atual) => ({
-      ...atual, [tabela]: atual[tabela].map((r) => (r.id === provisorio.id ? real : r)),
+      ...atual,
+      [tabela]: atual[tabela].some((r) => r.id === real.id)
+        ? atual[tabela].filter((r) => r.id !== provisorio.id)
+        : atual[tabela].map((r) => (r.id === provisorio.id ? real : r)),
     }));
     return true;
   }
@@ -2693,6 +2848,17 @@ function AppInner() {
       </div>
     );
   }
+
+  /* Aviso de carga: "Carregando…" até a primeira carga chegar, e o aviso de
+     falha com nova tentativa automática — a tela nunca fica vazia por erro. */
+  const avisoCargaJsx = falhaCarga ? (
+    <div className="aviso-carga erro" role="status">
+      <span>Não consegui atualizar os dados. Tentando de novo em {falhaCarga.segundos} s…</span>
+      <button type="button" onClick={() => fetchDatabaseRef.current()}>Tentar agora</button>
+    </div>
+  ) : !primeiraCarga ? (
+    <div className="aviso-carga" role="status"><span className="giro" aria-hidden="true" />Carregando dados…</div>
+  ) : null;
 
   /* Gaveta e janelas são as mesmas nas duas áreas (app do trecho e
      /administrativo): ficam numa variável e cada layout as coloca no lugar. */
@@ -3357,6 +3523,7 @@ function AppInner() {
           onSair={() => supabase.auth.signOut()}
         />
         {modalJsx}
+        {avisoCargaJsx}
       </>
     );
   }
@@ -4361,6 +4528,7 @@ function AppInner() {
       </main>
 
       {modalJsx}
+      {avisoCargaJsx}
     </div>
   );
 }
