@@ -5,7 +5,8 @@ import { contratoAutomatico, contratosVigentes } from '../lib/contratos';
 import { dataBRcurta, foraDaVigencia } from '../lib/vigencia';
 import { derivarDia, disponivelEm } from '../lib/dia';
 import { notificar } from '../lib/dialogos';
-import { MOTIVOS_FALTA, rotuloMotivo } from '../lib/motivos';
+import { MOTIVOS_FALTA, rotuloMotivo, corMotivo } from '../lib/motivos';
+import { agruparAusencias, foraNoDia, diaDaVolta, DIAS_SEMANA, curta, diasEntre } from '../lib/ausencias';
 import {
   duracaoTexto, horaCurta, intervalosFaltados, jornadaDe, paraHora, resumoParcial, somaMinutos,
 } from '../lib/faltaParcial';
@@ -179,6 +180,8 @@ export function QuadroDia({
   const [parcialAberta, setParcialAberta] = useState(null);
   // Cartão de hover da falta parcial — mesmo esquema de posição fixa do de férias.
   const [dicaParcial, setDicaParcial] = useState(null);
+  // Cartão de hover de quem está na zona de Ausências (dia inteiro) — mesmo esquema.
+  const [dicaAus, setDicaAus] = useState(null);
   // Cartão de hover da etiqueta de contrato fora da vigência — mesmo esquema do de férias.
   const [dicaVig, setDicaVig] = useState(null);
   /* Clique simples abre a falta parcial; clique duplo continua tirando da
@@ -217,6 +220,19 @@ export function QuadroDia({
     equipes, faltosos, parciais, noPatio, atestados, feriasHoje, equipesDaPessoa, equipesDoVeiculo,
     pessoasLivres, veiculosLivres, primeiraAtividade,
   } = useMemo(() => derivarDia(db, selectedDate), [db, selectedDate]);
+  /* Período de cada ausente do dia ("dia 9 de 26 · volta seg 16/11"): as
+     faltas viram afastamentos em lib/ausencias.js. Só de quem está na zona,
+     e sem as de meio período, que têm cartão próprio. */
+  const periodoDoAusente = useMemo(() => {
+    const ids = faltosos;
+    const lista = agruparAusencias(
+      (db.faltas || []).filter((f) => ids.has(f.colaboradorId) && !f.programacao_id),
+      (db.ferias || []).filter((f) => ids.has(f.colaboradorId)),
+    );
+    const m = new Map();
+    lista.forEach((p) => { if (foraNoDia(p, selectedDate) && (!m.has(p.pessoaId) || p.feriasId == null)) m.set(p.pessoaId, p); });
+    return m;
+  }, [db.faltas, db.ferias, faltosos, selectedDate]);
 
   /* A falta parcial desta pessoa NESTA equipe (se estiver em duas equipes no
      dia, o anel vermelho só vai na equipe em que a meia falta foi lançada). */
@@ -1173,7 +1189,7 @@ export function QuadroDia({
         </div>
 
         <div className="zona zona-falta" data-zona="falta">
-          <ZonaGente icone="falta" rotulo="Faltas" sub="não veio" n={faltosos.size}>
+          <ZonaGente icone="falta" rotulo="Ausências" sub="não veio: falta, atestado, férias, folga…" n={faltosos.size}>
             {[...faltosos].map((id) => maps.colaboradores[id]).filter(Boolean).map((p) => {
               const reg = (db.faltas || []).find(
                 (f) => f.data === selectedDate && f.colaboradorId === p.id
@@ -1187,18 +1203,16 @@ export function QuadroDia({
                 <button
                   type="button"
                   key={p.id}
-                  className={`membro-chip${parcial ? ' parcial travado' : ''}`}
-                  title={parcial ? undefined
-                    : `${p.nome}${reg?.motivo ? ` — ${rotuloMotivo(reg.motivo)}` : ''}`
-                      + (podeEditar ? ' — clique duplo para tirar' : '')}
+                  className={`membro-chip aus${parcial ? ' parcial travado' : ''}`}
+                  style={{ '--ac': corMotivo((parcial || reg)?.motivo) }}
+                  aria-label={`${p.nome} — ${rotuloMotivo((parcial || reg)?.motivo)}${parcial ? ' (meio período)' : ''}`}
                   onDoubleClick={() => podeEditar && !parcial && onRemoverFalta(p.id)}
-                  onMouseEnter={parcial && eqParcial
-                    ? (e) => setDicaParcial({
-                      falta: parcial, eq: eqParcial, nome: p.nome, naZona: true,
-                      rect: e.currentTarget.getBoundingClientRect(),
-                    })
-                    : undefined}
-                  onMouseLeave={parcial ? () => setDicaParcial(null) : undefined}
+                  onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    if (parcial && eqParcial) setDicaParcial({ falta: parcial, eq: eqParcial, nome: p.nome, naZona: true, rect });
+                    else if (reg) setDicaAus({ falta: reg, periodo: periodoDoAusente.get(p.id) || null, rect });
+                  }}
+                  onMouseLeave={() => { setDicaParcial(null); setDicaAus(null); }}
                 >
                   <Avatar nome={p.nome} url={p.fotoUrl} tamanho="small" />
                   <span className="membro-nome">{nomeCurto(p.nome)}</span>
@@ -1241,6 +1255,49 @@ export function QuadroDia({
           </p>
         </div>
       ) : null}
+
+      {dicaAus ? (() => {
+        const { falta, periodo } = dicaAus;
+        const longo = periodo && periodo.inicio !== periodo.fim;
+        const diaN = longo
+          ? (periodo.datas ? periodo.datas.filter((d) => d <= selectedDate).length : diasEntre(periodo.inicio, selectedDate) + 1)
+          : 1;
+        const volta = longo && periodo.fim >= selectedDate ? diaDaVolta(periodo.fim) : null;
+        return (
+          <div
+            className="tooltip-ferias tooltip-aus"
+            role="tooltip"
+            style={{
+              position: 'fixed',
+              left: dicaAus.rect.left,
+              top: dicaAus.rect.top - 8,
+              transform: 'translateY(-100%)',
+              '--ac': corMotivo(falta.motivo),
+            }}
+          >
+            <div className="tt-topo">
+              <span className="tt-icone tt-icone-aus" aria-hidden="true" />
+              <span className="tt-titulo">{rotuloMotivo(falta.motivo)}</span>
+            </div>
+            {longo ? (
+              <p className="tt-linha">
+                De <b>{curta(periodo.inicio)}</b> a <b>{curta(periodo.fim)}</b> · dia <b>{diaN}</b> de {periodo.dias}
+              </p>
+            ) : (
+              <p className="tt-linha">Só neste dia</p>
+            )}
+            {volta && (
+              <p className="tt-linha">Volta <b>{DIAS_SEMANA[new Date(`${volta}T12:00:00`).getDay()]} {curta(volta)}</b></p>
+            )}
+            {falta.observacao && <p className="tt-linha">Obs.: <b>{falta.observacao}</b></p>}
+            {falta.origem_documento_id ? (
+              <p className="tt-linha tt-fraca">Lançada pelo atestado — o período se ajusta na ficha.</p>
+            ) : podeEditar && (
+              <p className="tt-linha tt-fraca">Clique duplo para tirar da zona.</p>
+            )}
+          </div>
+        );
+      })() : null}
 
       {dicaParcial ? (() => {
         const r = resumoParcial(dicaParcial.eq, dicaParcial.falta);

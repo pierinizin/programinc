@@ -2142,6 +2142,17 @@ button.eq-lider:hover { border-right-color: var(--borda-forte); }
   box-shadow: 0 1px 2px rgba(16, 24, 32, .08);
 }
 .zona .membro-chip.parcial { background: var(--superficie); }
+/* Ausências: o contorno tem a cor do motivo (COR_MOTIVO, em lib/motivos.js).
+   Meio período fica tracejado na mesma cor — é falta, mas só de parte do dia. */
+.zona .membro-chip.aus { border: 2px solid var(--ac); box-shadow: 0 1px 2px rgba(16, 24, 32, .08); }
+/* Com o contorno contando o motivo, o fundo vermelho cheio da zona engolia o
+   vermelho do atestado e o laranja da falta injustificada: fica só um tom. */
+.zona-falta { --zf: color-mix(in srgb, var(--erro) 6%, var(--superficie-2)); }
+.zona .membro-chip.aus.parcial { border-style: dashed; }
+.tt-icone.tt-icone-aus { background: var(--ac); width: 10px; height: 10px; margin: 0 3px; }
+.tooltip-aus .tt-titulo { color: var(--tinta); }
+.tooltip-aus { max-width: 280px; }
+.tooltip-aus .tt-linha + .tt-linha { margin-top: 2px; }
 
 @media (max-width: 900px) {
   .zonas { grid-template-columns: 1fr; }

@@ -81,19 +81,22 @@ export function agruparAusencias(faltas = [], ferias = []) {
   const dentroDeFerias = (pessoaId, dia) => (feriasPorPessoa[pessoaId] || [])
     .some((f) => f.data_inicio <= dia && dia <= f.data_fim);
 
+  const chaveDe = (f) => (f.origem_documento_id ? `doc:${f.origem_documento_id}` : `m:${f.motivo}`);
   const ordenadas = faltas
     .filter((f) => f?.data && f.colaboradorId)
     .filter((f) => !(f.motivo === 'ferias' && dentroDeFerias(f.colaboradorId, f.data)))
     .slice()
-    .sort((a, b) => (a.colaboradorId === b.colaboradorId
-      ? a.data.localeCompare(b.data)
-      : String(a.colaboradorId).localeCompare(String(b.colaboradorId))));
+    // Pessoa → origem (o atestado, ou o motivo) → data. Assim uma falta de
+    // outro motivo no meio de um atestado não parte o atestado em dois.
+    .sort((a, b) => String(a.colaboradorId).localeCompare(String(b.colaboradorId))
+      || chaveDe(a).localeCompare(chaveDe(b))
+      || a.data.localeCompare(b.data));
 
   let atual = null;
   const fechar = () => { if (atual) periodos.push(atual); atual = null; };
   ordenadas.forEach((f) => {
     const doc = f.origem_documento_id || null;
-    const chave = doc ? `doc:${doc}` : `m:${f.motivo}`;
+    const chave = chaveDe(f);
     const continua = atual
       && atual.pessoaId === f.colaboradorId
       && atual.chave === chave

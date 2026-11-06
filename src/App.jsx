@@ -4077,7 +4077,11 @@ function AppInner() {
                     <Pastilha n={resumoDia.pessoasLivres.length} rotulo="livres" tom="destaque" />
                     <Pastilha n={resumoDia.veiculosLivres.length} rotulo="veíc. parados" />
                     {resumoDia.faltosos.size - resumoDia.parciais.size > 0 && (
-                      <Pastilha n={resumoDia.faltosos.size - resumoDia.parciais.size} rotulo="faltas" tom="alerta" />
+                      <Pastilha
+                        n={resumoDia.faltosos.size - resumoDia.parciais.size}
+                        rotulo={resumoDia.faltosos.size - resumoDia.parciais.size === 1 ? 'ausência' : 'ausências'}
+                        tom="alerta"
+                      />
                     )}
                     {resumoDia.parciais.size > 0 && (
                       <Pastilha n={resumoDia.parciais.size} rotulo="meio período" tom="alerta" />

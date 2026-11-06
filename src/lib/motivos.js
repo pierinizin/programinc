@@ -34,3 +34,18 @@ export function rotuloMotivo(valor) {
   const achado = MOTIVOS_FALTA.find(([v]) => v === valor);
   return achado ? achado[1] : String(valor || '').replace(/_/g, ' ');
 }
+
+/* Cor de cada motivo — o contorno da pessoa na zona de Ausências do quadro.
+   Atestado no vermelho de sempre; falta injustificada (a que mais pesa) em
+   laranja, a justificada em dourado; férias azul, folga cinza. */
+export const COR_MOTIVO = {
+  atestado_medico: '#E5484D',
+  falta_injustificada: '#F76B15',
+  falta_justificada: '#D6A30A',
+  licenca: '#8E5BD0',
+  acidente_trabalho: '#C2298A',
+  ferias: '#2F81F7',
+  folga: '#7C8790',
+  outro: '#12A594',
+};
+export const corMotivo = (valor) => COR_MOTIVO[valor] || COR_MOTIVO.outro;
