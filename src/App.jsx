@@ -7,11 +7,11 @@ import {
 import { Auth } from './components/Auth';
 import { Avatar } from './components/Avatar';
 import { QuadroDia } from './components/QuadroDia';
+import { PainelEquipe } from './components/PainelEquipe';
 import { Documentos } from './components/Documentos';
 import { Administrativo } from './components/Administrativo';
 import { Contratos } from './components/Contratos';
 import { contratosVigentes, contratoAutomatico } from './lib/contratos';
-import { foraDaVigencia } from './lib/vigencia';
 import { Integracoes } from './components/Integracoes';
 import { mesclarIntegrados, validadePadrao } from './lib/integracoes';
 import { Apontamentos } from './components/Apontamentos';
@@ -49,7 +49,6 @@ const TEAM_TYPE_OPTIONS = [
   'Implantação de Defensa',
 ];
 
-const STATUS_OPTIONS = ['EXECUTANDO', 'CONCLUÍDO', 'NÃO FOI POSSÍVEL REALIZAR'];
 const DIAS_SEM_BAIXA = 30;   // a faixa de "falta dar baixa" olha só este tanto pra trás
 const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'VIAGEM', 'INTEGRAÇÃO', 'OUTROS'];
 const ROLE_OPTIONS = FUNCOES_TRECHO;
@@ -81,55 +80,6 @@ function shiftDate(dateStr, days) {
 }
 
 // CÁLCULO DE HORAS (SEPARANDO IN ITINERE E OBRA)
-function calculateWorkedHours(saidaBase, inicioObra, saidaAlmoco, retornoAlmoco, fimObra, chegadaBase) {
-  // Sem os seis horários não dá para calcular. Devolvemos incompleto = true em vez
-  // de "00:00h", que parecia um valor válido e mascarava registro faltando.
-  if (!saidaBase || !inicioObra || !saidaAlmoco || !retornoAlmoco || !fimObra || !chegadaBase) {
-    return { incompleto: true, obra: '—', inItinere: '—', total: '—' };
-  }
-
-  const parseTime = (timeStr) => {
-    const [h, m] = timeStr.split(':').map(Number);
-    return h * 60 + m;
-  };
-
-  const tSaidaBase = parseTime(saidaBase);
-  const tInicioObra = parseTime(inicioObra);
-  const tSaidaAlmoco = parseTime(saidaAlmoco);
-  const tRetornoAlmoco = parseTime(retornoAlmoco);
-  const tFimObra = parseTime(fimObra);
-  const tChegadaBase = parseTime(chegadaBase);
-
-  // Evita bugs se a equipe trabalhar além da meia-noite
-  const adjustTime = (t1, t2) => t2 < t1 ? t2 + (24 * 60) : t2;
-  
-  const tInicioObraAdj = adjustTime(tSaidaBase, tInicioObra);
-  const tSaidaAlmocoAdj = adjustTime(tInicioObraAdj, tSaidaAlmoco);
-  const tRetornoAlmocoAdj = adjustTime(tSaidaAlmocoAdj, tRetornoAlmoco);
-  const tFimObraAdj = adjustTime(tRetornoAlmocoAdj, tFimObra);
-  const tChegadaBaseAdj = adjustTime(tFimObraAdj, tChegadaBase);
-
-  // Cálculo In Itinere (Deslocamento Ida + Volta)
-  const inItinereIda = Math.max(0, tInicioObraAdj - tSaidaBase);
-  const inItinereVolta = Math.max(0, tChegadaBaseAdj - tFimObraAdj);
-  const totalInItinere = inItinereIda + inItinereVolta;
-
-  // Cálculo Tempo Efetivo de Obra
-  const obraManha = Math.max(0, tSaidaAlmocoAdj - tInicioObraAdj);
-  const obraTarde = Math.max(0, tFimObraAdj - tRetornoAlmocoAdj);
-  const totalObra = obraManha + obraTarde;
-
-  const totalGeral = totalInItinere + totalObra;
-
-  const format = (mins) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}h`;
-
-  return {
-    incompleto: false,
-    obra: format(totalObra),
-    inItinere: format(totalInItinere),
-    total: format(totalGeral)
-  };
-}
 
 /* Tabelas que podem ser recarregadas sozinhas -> chave em `db`. Colaboradores
    fica de fora de propósito: a carga dele assina as fotos (ver fetchDatabase). */
@@ -307,17 +257,7 @@ function avisarSqlVia() {
   });
 }
 
-function toggle(list, value) {
-  return list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
-}
 
-function toggleLimited(list, value, encarregadoId) {
-  if (list.includes(value)) return list.filter((x) => x !== value);
-  const ids = [encarregadoId, ...list, value].filter(Boolean);
-  const uniqueIds = Array.from(new Set(ids));
-  if (uniqueIds.length > MAX_TEAM_MEMBERS) return list;
-  return [...list, value];
-}
 
 // Todo o app fica em AppInner; App só acrescenta o host de diálogos por cima,
 // para ele existir em QUALQUER tela — login, aprovação pendente, quadro do
@@ -342,7 +282,8 @@ function AppInner() {
   const [feriasForm, setFeriasForm] = useState(emptyFerias());
   const [salvandoAtestadoFerias, setSalvandoAtestadoFerias] = useState(false);
   const [erroAtestadoFerias, setErroAtestadoFerias] = useState('');
-  const [expandedProgramacaoId, setExpandedProgramacaoId] = useState(null);
+  const [programacaoOriginal, setProgramacaoOriginal] = useState(null);
+  const [programacaoSoLeitura, setProgramacaoSoLeitura] = useState(false);
   const [focoEquipeId, setFocoEquipeId] = useState(null);   // Calendário -> equipe no quadro
   const [colabsSel, setColabsSel] = useState({});
   const [veicsSel, setVeicsSel] = useState({});
@@ -1420,7 +1361,6 @@ function AppInner() {
 
   function irParaDia(iso) {
     setSelectedDate(iso);
-    setExpandedProgramacaoId(null);
   }
 
   /* Atalhos na Programação: ← → trocam o dia, H volta pra hoje. Não valem
@@ -1587,7 +1527,6 @@ function AppInner() {
     if (nextPage !== 'documentos') setDocPessoa(null);
     setSearch('');
     setActiveDrawer(null);
-    setExpandedProgramacaoId(null);
 
     setTimeout(() => {
       if (window.innerWidth <= 768) {
@@ -1927,28 +1866,6 @@ function AppInner() {
     agendarFetch(['programacoes']);
   }
 
-  async function updateProgramacaoField(itemId, field, value) {
-    const payload = { [field]: value };
-    if (field === 'statusExecucao' && value !== 'NÃO FOI POSSÍVEL REALIZAR') {
-      payload.motivoNaoExecucao = null;
-    }
-
-    // Update otimista: a interface responde na hora e só volta atrás se o
-    // servidor recusar (útil em conexão ruim de campo).
-    const anterior = db.programacoes;
-    setDb((atual) => ({
-      ...atual,
-      programacoes: atual.programacoes.map((p) => (p.id === itemId ? { ...p, ...payload } : p)),
-    }));
-
-    const res = await supabase.from('programacoes').update(payload).eq('id', itemId);
-    if (res.error) {
-      setDb((atual) => ({ ...atual, programacoes: anterior }));
-      reportarErro('Erro ao atualizar Programação', res.error);
-      return;
-    }
-    agendarFetch(['programacoes']);
-  }
 
   /* Obra antiga gravada antes do contrato existir: ao abrir, já sugere o
      contrato (quando o contratante tem um vigente só). Salvar confirma. */
@@ -1958,14 +1875,28 @@ function AppInner() {
       : item
   );
 
-  function openProgramacaoModal(item = null) {
-    setProgramacaoForm(item ? comContratoSugerido({ ...item }) : emptyProgramacao(selectedDate));
+  /* A equipe abre no painel lateral (PainelEquipe). `original` é o que veio
+     do banco: com ele o painel sabe se algo mudou (Salvar acende, e fechar
+     pergunta antes de jogar fora). Quem só visualiza abre em modo leitura. */
+  function openProgramacaoModal(item = null, { leitura = false } = {}) {
+    const f = item ? comContratoSugerido({ ...item }) : emptyProgramacao(selectedDate);
+    setProgramacaoForm(f);
+    setProgramacaoOriginal(item ? { ...item } : f);
+    setProgramacaoSoLeitura(leitura);
     setModal('programacao');
   }
 
   function duplicateProgramacao(item) {
-   setProgramacaoForm(comContratoSugerido({ ...item, id: '' }));
+   const f = comContratoSugerido({ ...item, id: '' });
+   setProgramacaoForm(f);
+   setProgramacaoOriginal(f);
+   setProgramacaoSoLeitura(false);
    setModal('programacao');
+  }
+
+  async function fecharPainelEquipe(mudou) {
+    if (mudou && !(await confirmar({ titulo: 'Descartar as alterações desta equipe?', textoConfirmar: 'Descartar' }))) return;
+    setModal(null);
   }
 
   function openColaboradorModal(item = null, setorNovo = 'trecho') {
@@ -2338,11 +2269,12 @@ function AppInner() {
   }
 
   async function deleteProgramacao(itemId) {
-    if (!(await confirmar({ titulo: 'Excluir esta programação?', textoConfirmar: 'Excluir' }))) return;
+    if (!(await confirmar({ titulo: 'Excluir esta programação?', textoConfirmar: 'Excluir' }))) return false;
     const res = await supabase.from('programacoes').delete().eq('id', itemId).select();
-    if (res.error) return reportarErro('Erro ao excluir Programação', res.error);
-    if (!res.data?.length) return semPermissao('excluir esta programação');
+    if (res.error) { reportarErro('Erro ao excluir Programação', res.error); return false; }
+    if (!res.data?.length) { semPermissao('excluir esta programação'); return false; }
     agendarFetch();
+    return true;
   }
 
   /* Exclusão em lote a partir da seleção do quadro (a mesma dos checkboxes que
@@ -2897,12 +2829,8 @@ function AppInner() {
                     changePage('programacao');
                   }}
                   onAbrirEquipe={(equipe) => {
-                    // changePage() zera expandedProgramacaoId (é o comportamento certo
-                    // ao trocar de tela) — por isso a equipe só é marcada DEPOIS dele
-                    // rodar, senão a própria troca de página apagava a escolha.
                     changePage('programacao');
                     setSelectedDate(activeDrawer.date);
-                    setExpandedProgramacaoId(equipe.id);
                     setFocoEquipeId(equipe.id);   // o quadro rola até ela e destaca
                   }}
                 />
@@ -2938,12 +2866,32 @@ function AppInner() {
             </aside>
           ));
 
-  const modalJsx = (modal && (
+  const painelEquipeJsx = modal === 'programacao' && (
+    <PainelEquipe
+      form={programacaoForm}
+      setForm={setProgramacaoForm}
+      original={programacaoOriginal}
+      db={db}
+      colaboradores={dbTrecho.colaboradores}
+      veiculos={db.veiculos}
+      tiposEquipe={TEAM_TYPE_OPTIONS}
+      motivos={REASON_OPTIONS}
+      maxMembros={MAX_TEAM_MEMBERS}
+      disponivel={(c) => disponivelEm(db.historicoStatus, c, programacaoForm.data, primeiraAtividade)}
+      somenteLeitura={programacaoSoLeitura}
+      podeExcluir={userRole === 'admin'}
+      onSalvar={saveProgramacao}
+      onFechar={fecharPainelEquipe}
+      onDuplicar={() => duplicateProgramacao(programacaoForm)}
+      onExcluir={async () => { if (await deleteProgramacao(programacaoForm.id)) setModal(null); }}
+    />
+  );
+
+  const modalJsx = (modal && modal !== 'programacao' && (
         <div className="modal-backdrop">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="drawer-head between">
               <strong>
-                {modal === 'programacao' && (programacaoForm.id ? 'Editar Programação' : 'Nova Programação')}
                 {modal === 'colaborador' && (area === 'administrativo'
                   ? (colaboradorForm.id ? 'Editar pessoa' : 'Nova pessoa')
                   : (colaboradorForm.id ? 'Editar Colaborador' : 'Novo Colaborador'))}
@@ -2955,203 +2903,6 @@ function AppInner() {
               </strong>
               <button className="icon-btn" onClick={() => setModal(null)}>×</button>
             </div>
-
-            {modal === 'programacao' && (
-              <div className="form-grid two">
-                <Select
-                  label="Tipo de equipe"
-                  value={programacaoForm.tipoEquipe}
-                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, tipoEquipe: v })}
-                  options={TEAM_TYPE_OPTIONS.map((x) => ({ value: x, label: x }))}
-                  placeholder="Selecione"
-                />
-                <Input
-                  label="Data"
-                  type="date"
-                  value={programacaoForm.data}
-                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, data: v })}
-                />
-                <Input
-                  label="Local de Obra"
-                  value={programacaoForm.cidade}
-                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, cidade: v })}
-                />
-                <Select
-                  label="Contratante"
-                  value={programacaoForm.concessionaria_id || ''}
-                  onChange={(v) => {
-                    const c = db.concessionarias.find((x) => x.id === v);
-                    setProgramacaoForm({
-                      ...programacaoForm,
-                      concessionaria_id: v || null,
-                      // o texto acompanha a escolha: é ele que sai nas
-                      // exportações e é por ele que o Kartado casa
-                      contratante: c ? c.sigla : '',
-                      contrato_id: contratoAutomatico(db.contratos, v),
-                    });
-                  }}
-                  placeholder="Selecione"
-                  options={db.concessionarias.map((c) => ({ value: c.id, label: c.sigla }))}
-                />
-
-                {/* Aparece sempre que o contratante tem contrato vigente.
-                    Antes sumia quando havia um só (ele entrava sozinho), mas
-                    aí não dava pra ver nem conferir qual contrato a obra tinha. */}
-                {contratosVigentes(db.contratos, programacaoForm.concessionaria_id).length > 0 && (
-                  <Select
-                    label="Contrato"
-                    value={programacaoForm.contrato_id || ''}
-                    /* Sem esta opção vazia o <select> mostraria o primeiro
-                       contrato da lista com o valor ainda em branco: parece
-                       escolhido, salva sem contrato. */
-                    placeholder="Escolha o contrato"
-                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, contrato_id: v || null })}
-                    options={contratosVigentes(db.contratos, programacaoForm.concessionaria_id)
-                      .map((k) => ({ value: k.id, label: k.numero }))}
-                  />
-                )}
-                {(() => {
-                  // Data da obra fora do período do contrato escolhido: avisa,
-                  // não bloqueia (pode ser aditivo ainda não cadastrado).
-                  const k = db.contratos.find((x) => x.id === programacaoForm.contrato_id);
-                  const fora = foraDaVigencia(k, programacaoForm.data);
-                  return fora ? (
-                    <p className="aviso-vigencia full">
-                      <b>Atenção:</b> esta data está {fora.texto}. Confira se é o contrato certo
-                      ou atualize a vigência em Contratantes.
-                    </p>
-                  ) : null;
-                })()}
-                <Input
-                label="Engenheiro Responsável"
-                value={programacaoForm.engenheiro}
-                onChange={(v) => setProgramacaoForm({ ...programacaoForm, engenheiro: v })}
-                full
-              />
-                
-                <Select
-                  label="Encarregado"
-                  value={programacaoForm.encarregadoId || ''}
-                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, encarregadoId: v })}
-                  options={dbTrecho.colaboradores
-                    .filter((x) => x.funcao === 'Encarregado'
-                      // Disponível na data desta programação (não a de hoje) —
-                      // e nunca esconde quem já está escolhido, mesmo que a
-                      // data do formulário tenha mudado depois da escolha.
-                      && (disponivelEm(db.historicoStatus, x, programacaoForm.data, primeiraAtividade)
-                        || x.id === programacaoForm.encarregadoId))
-                    .map((x) => ({ value: x.id, label: x.nome }))}
-                  placeholder="Selecione"
-                />
-                <Select
-                  label="Status"
-                  value={programacaoForm.statusExecucao}
-                  onChange={(v) =>
-                    setProgramacaoForm({
-                      ...programacaoForm,
-                      statusExecucao: v,
-                      motivoNaoExecucao: v === 'NÃO FOI POSSÍVEL REALIZAR' ? programacaoForm.motivoNaoExecucao : '',
-                    })
-                  }
-                  options={STATUS_OPTIONS.map((x) => ({ value: x, label: x }))}
-                />
-
-                {/* PAINEL DE EDIÇÃO DOS 6 HORÁRIOS */}
-                <div className="full modal-time-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-                  <Input
-                    label="Saída (Base)"
-                    type="time"
-                    value={programacaoForm.horarioInicio}
-                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioInicio: v })}
-                  />
-                  <Input
-                    label="Início Obra"
-                    type="time"
-                    value={programacaoForm.horarioInicioObra}
-                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioInicioObra: v })}
-                  />
-                  <Input
-                    label="Saída Almoço"
-                    type="time"
-                    value={programacaoForm.horarioSaidaAlmoco}
-                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioSaidaAlmoco: v })}
-                  />
-                  <Input
-                    label="Retorno Almoço"
-                    type="time"
-                    value={programacaoForm.horarioRetornoAlmoco}
-                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioRetornoAlmoco: v })}
-                  />
-                  <Input
-                    label="Fim Obra"
-                    type="time"
-                    value={programacaoForm.horarioFimObra}
-                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioFimObra: v })}
-                  />
-                  <Input
-                    label="Saída (Retorno)"
-                    type="time"
-                    value={programacaoForm.horarioSaida}
-                    onChange={(v) => setProgramacaoForm({ ...programacaoForm, horarioSaida: v })}
-                  />
-                </div>
-
-                <Select
-                  label="Motivo"
-                  value={programacaoForm.motivoNaoExecucao || ''}
-                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, motivoNaoExecucao: v })}
-                  options={REASON_OPTIONS.map((x) => ({ value: x, label: x }))}
-                  placeholder="Selecione"
-                  disabled={programacaoForm.statusExecucao !== 'NÃO FOI POSSÍVEL REALIZAR'}
-                  full
-                />
-
-                <MultiSelect
-                  label={`Membros da equipe (máx. ${MAX_TEAM_MEMBERS})`}
-                  items={dbTrecho.colaboradores.filter((x) => (
-                    disponivelEm(db.historicoStatus, x, programacaoForm.data, primeiraAtividade)
-                    || programacaoForm.membroIds.includes(x.id)
-                  ))}
-                  selectedIds={programacaoForm.membroIds}
-                  labelKey="nome"
-                  subtitleKey="funcao"
-                  onToggle={(itemId) =>
-                    setProgramacaoForm({
-                      ...programacaoForm,
-                      membroIds: toggleLimited(programacaoForm.membroIds, itemId, programacaoForm.encarregadoId),
-                    })
-                  }
-                  full
-                />
-
-                <MultiSelect
-                  label="Veículos"
-                  items={db.veiculos}
-                  selectedIds={programacaoForm.veiculoIds}
-                  labelKey="placa"
-                  subtitleBuilder={(item) => `${item.modelo} · ${item.ano}`}
-                  onToggle={(itemId) =>
-                    setProgramacaoForm({
-                      ...programacaoForm,
-                      veiculoIds: toggle(programacaoForm.veiculoIds, itemId),
-                    })
-                  }
-                  full
-                />
-
-                <TextArea
-                  label="Observações"
-                  value={programacaoForm.observacoes}
-                  onChange={(v) => setProgramacaoForm({ ...programacaoForm, observacoes: v })}
-                  full
-                />
-
-                <div className="modal-actions full">
-                  <button className="ghost-btn" onClick={() => setModal(null)}>Cancelar</button>
-                  <button className="primary-btn" onClick={saveProgramacao}>Salvar</button>
-                </div>
-              </div>
-            )}
 
             {modal === 'colaborador' && (
               <div className="form-grid two">
@@ -3536,6 +3287,7 @@ function AppInner() {
           onSair={() => supabase.auth.signOut()}
         />
         {modalJsx}
+        {painelEquipeJsx}
         {avisoCargaJsx}
       </>
     );
@@ -3751,7 +3503,6 @@ function AppInner() {
                     // dia certo e o quadro rola até a equipe e destaca
                     changePage('programacao');
                     setSelectedDate(equipe.data);
-                    setExpandedProgramacaoId(equipe.id);
                     setFocoEquipeId(equipe.id);
                   }}
                   colaboradores={dbTrecho.colaboradores}
@@ -4041,7 +3792,7 @@ function AppInner() {
                           type="button"
                           key={dia}
                           className={`sb-dia${dia === selectedDate ? ' on' : ''}`}
-                          onClick={() => { setSelectedDate(dia); setExpandedProgramacaoId(null); }}
+                          onClick={() => { setSelectedDate(dia); }}
                           title={`Abrir o quadro de ${dia.slice(8, 10)}/${dia.slice(5, 7)}`}
                         >
                           {dia.slice(8, 10)}/{dia.slice(5, 7)} <i>{n}</i>
@@ -4094,7 +3845,7 @@ function AppInner() {
                   {selectedDate !== today() && (
                     <button
                       className="fd-hoje"
-                      onClick={() => { setSelectedDate(today()); setExpandedProgramacaoId(null); }}
+                      onClick={() => { setSelectedDate(today()); }}
                     >
                       Hoje
                     </button>
@@ -4119,9 +3870,7 @@ function AppInner() {
                   onAdicionarVeiculo={adicionarVeiculo}
                   onRemoverVeiculo={removerVeiculo}
                   onCriarRapida={criarProgramacaoRapida}
-                  onAbrirEquipe={(eq) =>
-                    setExpandedProgramacaoId((atual) => (atual === eq.id ? null : eq.id))
-                  }
+                  onAbrirEquipe={(eq) => openProgramacaoModal(eq, { leitura: !(userRole === 'admin' || userRole === 'editor') })}
                   onEditarEquipe={openProgramacaoModal}
                   onNovaEquipe={() => openProgramacaoModal()}
                   onCopiar={copiarProgramacoes}
@@ -4139,224 +3888,6 @@ function AppInner() {
                   onExcluir={excluirProgramacoes}
                 />
 
-                {programacoesDoDia.some((p) => p.id === expandedProgramacaoId) && (
-                  <div className="cards-grid programacao-cards-grid">
-                    {programacoesDoDia.filter((p) => p.id === expandedProgramacaoId).map((item) => {
-                      const isExpanded = expandedProgramacaoId === item.id;
-                     const members = item.membroIds
-                      .map((memberId) => maps.colaboradores[memberId])
-                      .filter(Boolean);
-                      const vehicles = item.veiculoIds
-                        .map((vehicleId) => maps.veiculos[vehicleId])
-                        .filter(Boolean);
-
-                      return (
-                        <div
-                          key={item.id}
-                          className={`card team-card compact-program-card ${isExpanded ? 'expanded' : 'collapsed'} ${
-                            item.statusExecucao === 'CONCLUÍDO' ? 'st-ok'
-                              : item.statusExecucao === 'EXECUTANDO' ? 'st-campo'
-                              : item.statusExecucao === 'NÃO FOI POSSÍVEL REALIZAR' ? 'st-parado'
-                              : ''
-                          }`}
-                          onClick={() => setExpandedProgramacaoId(isExpanded ? null : item.id)}
-                        >
-                          <div className="card-header between start compact-program-head">
-                            <div>
-                              <h3>{item.tipoEquipe}</h3>
-                              <div className="meta-row">📍 {item.cidade.toUpperCase()} · 🏢 {item.contratante}</div>
-                            </div>
-                            <StatusBadge status={item.statusExecucao} motivo={item.motivoNaoExecucao} />
-                          </div>
-
-                          <div className="compact-summary-grid">
-                            <div className="compact-summary-block">
-                              <span className="section-label">Membros</span>
-                              <div className="compact-summary-text">
-                                {members.length
-                                  ? members.map((person) => (person.apelido && person.apelido.trim() !== '') ? person.apelido : person.nome.split(' ')[0]).join(' · ')
-                                  : 'Sem equipe'}
-                              </div>
-                            </div>
-
-                            <div className="compact-summary-block">
-                              <span className="section-label">Veículos</span>
-                              <div className="chips-row compact-chips-row">
-                                {vehicles.length ? (
-                                  vehicles.map((vehicle) => (
-                                    <button
-                                      key={vehicle.id}
-                                      className="chip-btn"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setActiveDrawer({ type: 'veiculo', item: vehicle });
-                                      }}
-                                    >
-                                      {vehicle.placa}
-                                    </button>
-                                  ))
-                                ) : (
-                                  <span className="small-muted">Sem veículo</span>
-                                )}
-                              </div>
-                            </div>
-
-                            {item.statusExecucao === 'CONCLUÍDO' && (() => {
-                              const hours = calculateWorkedHours(
-                                item.horarioInicio, 
-                                item.horarioInicioObra, 
-                                item.horarioSaidaAlmoco, 
-                                item.horarioRetornoAlmoco, 
-                                item.horarioFimObra, 
-                                item.horarioSaida
-                              );
-                              return (
-                                <div className="compact-summary-block full-row">
-                                  <span className="section-label">Registro de Tempos</span>
-                                  <div
-                                    className="service-line compact-service-line"
-                                    style={{
-                                      display: 'flex',
-                                      flexWrap: 'wrap',
-                                      gap: '15px',
-                                      color: hours.incompleto ? 'var(--faixa-texto)' : 'var(--ok-texto)',
-                                      fontWeight: 'bold',
-                                    }}
-                                  >
-                                    <span>🚗 In Itinere: {hours.inItinere}</span>
-                                    <span>🚧 Na Obra: {hours.obra}</span>
-                                    <span>⏱ Total: {hours.total}</span>
-                                  </div>
-                                  {hours.incompleto && (
-                                    <div className="small-muted" style={{ color: 'var(--faixa-texto)' }}>
-                                      Horários incompletos — preencha os seis registros para calcular.
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                          </div>
-
-                          <div className="compact-expand-hint">
-                            {isExpanded ? 'Clique para recolher' : 'Clique para ver detalhes'}
-                          </div>
-
-                          {isExpanded && (
-                            <>
-                              <div className="section-line" />
-                              <div className="section-label">Equipe ({item.membroIds.length}/{MAX_TEAM_MEMBERS})</div>
-                              <div className="person-list fixed-ten">
-                                {Array.from({ length: MAX_TEAM_MEMBERS }).map((_, idx) => {
-                                  const memberId = item.membroIds[idx];
-                                  const person = memberId ? maps.colaboradores[memberId] : null;
-                                  if (!person) {
-                                    return (
-                                      <div key={`slot-${item.id}-${idx}`} className="list-row empty-slot" aria-hidden="true">
-                                        <div className="list-row-main">
-                                          <span className="avatar small placeholder-avatar">•</span>
-                                          <span className="placeholder-text">Vaga disponível</span>
-                                        </div>
-                                        <span className="tag placeholder-tag">—</span>
-                                      </div>
-                                    );
-                                  }
-                                  return (
-                                    <button
-                                      key={memberId}
-                                      className={`list-row ${memberId === item.encarregadoId ? 'highlight' : ''}`}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setActiveDrawer({ type: 'colaborador', item: maps.colaboradores[memberId] });
-                                      }}
-                                    >
-                                      <div className="list-row-main">
-                                        <Avatar nome={person.nome} url={person.fotoUrl} tamanho="small" />
-                                        <span>{(person.apelido && person.apelido.trim() !== '') ? person.apelido : person.nome}</span>
-                                      </div>
-                                      <span className="tag">
-                                        {memberId === item.encarregadoId ? 'Encarregado' : person.funcao}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-
-                              {(userRole === 'admin' || userRole === 'editor') && (
-                                <>
-                                  <div className="section-line" />
-                                  
-                                  <div className="time-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-                                    <FieldPair label="Saída (Base)" value={item.horarioInicio} />
-                                    <FieldPair label="Início Obra" value={item.horarioInicioObra} />
-                                    <FieldPair label="Saída Almoço" value={item.horarioSaidaAlmoco} />
-                                    <FieldPair label="Retorno Almoço" value={item.horarioRetornoAlmoco} />
-                                    <FieldPair label="Fim Obra" value={item.horarioFimObra} />
-                                    <FieldPair label="Saída (Retorno)" value={item.horarioSaida} />
-                                  </div>
-
-                                  <div className="section-line" />
-                                  <div className="programacao-edit-grid">
-                                    <label>
-                                      <span>Status</span>
-                                      <select
-                                        disabled={userRole !== 'admin'}
-                                        value={item.statusExecucao}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onChange={(e) => updateProgramacaoField(item.id, 'statusExecucao', e.target.value)}
-                                      >
-                                        {STATUS_OPTIONS.map((x) => (
-                                          <option key={x}>{x}</option>
-                                        ))}
-                                      </select>
-                                    </label>
-
-                                    <label className="full-row">
-                                      <span>Motivo</span>
-                                      <select
-                                        disabled={userRole !== 'admin' || item.statusExecucao !== 'NÃO FOI POSSÍVEL REALIZAR'}
-                                        value={item.motivoNaoExecucao || ''}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onChange={(e) => updateProgramacaoField(item.id, 'motivoNaoExecucao', e.target.value)}
-                                      >
-                                        <option value="">Selecione</option>
-                                        {REASON_OPTIONS.map((x) => (
-                                          <option key={x}>{x}</option>
-                                        ))}
-                                      </select>
-                                    </label>
-
-                                    <label className="full-row">
-                                      <span>Observações</span>
-                                      <textarea
-                                        disabled={userRole !== 'admin'}
-                                        rows="3"
-                                        defaultValue={item.observacoes}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onBlur={(e) => {
-                                          if (e.target.value !== item.observacoes) {
-                                            updateProgramacaoField(item.id, 'observacoes', e.target.value);
-                                          }
-                                        }}
-                                      />
-                                    </label>
-                                  </div>
-                                </>
-                              )}
-
-                              {userRole === 'admin' && (
-                                <div className="card-actions right">
-                                  <button className="ghost-btn" onClick={(e) => { e.stopPropagation(); duplicateProgramacao(item); }}>Duplicar</button>
-                                  <button className="ghost-btn" onClick={(e) => { e.stopPropagation(); openProgramacaoModal(item); }}>Editar</button>
-                                  <button className="danger-btn" onClick={(e) => { e.stopPropagation(); deleteProgramacao(item.id); }}>Excluir</button>
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
               </>
             )}
 
@@ -4545,6 +4076,7 @@ function AppInner() {
       </main>
 
       {modalJsx}
+        {painelEquipeJsx}
       {avisoCargaJsx}
     </div>
   );
@@ -4601,14 +4133,6 @@ function StatusBadge({ status, motivo }) {
   return <span className={`status-badge ${cls}`}>{textoExibido}</span>;
 }
 
-function FieldPair({ label, value }) {
-  return (
-    <div className="field-pair">
-      <span>{label}</span>
-      <strong>{value || '-'}</strong>
-    </div>
-  );
-}
 
 function Input({ label, value, onChange, type = 'text', full = false }) {
   return (
@@ -4648,60 +4172,6 @@ function TextArea({ label, value, onChange, full = false, disabled = false, defa
   );
 }
 
-function MultiSelect({ label, items, selectedIds, labelKey, subtitleKey, subtitleBuilder, onToggle, full = false }) {
-  const [busca, setBusca] = useState('');
-  
-  const filtrados = items.filter(item => {
-    const texto = `${item[labelKey]} ${subtitleBuilder ? subtitleBuilder(item) : item[subtitleKey]}`.toLowerCase();
-    return texto.includes(busca.toLowerCase());
-  });
-
-  return (
-    <div className={full ? 'full' : ''}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-        <span className="input-label" style={{ margin: 0, fontWeight: 'bold' }}>{label}</span>
-        
-        <input 
-          type="text" 
-          placeholder="🔍 Buscar..." 
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          style={{ 
-            padding: '8px 15px', 
-            borderRadius: '50px', 
-            border: '1px solid var(--borda)', 
-            fontSize: '13px', 
-            width: '180px', 
-            outline: 'none',
-            backgroundColor: 'var(--superficie-2)'
-          }}
-        />
-      </div>
-      
-      <div className="multi-box" style={{ maxHeight: '250px', overflowY: 'auto' }}>
-        {filtrados.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={`multi-row ${selectedIds.includes(item.id) ? 'selected' : ''}`}
-            onClick={() => onToggle(item.id)}
-          >
-            <div>
-              <strong>{item[labelKey]}</strong>
-              <small>{subtitleBuilder ? subtitleBuilder(item) : item[subtitleKey]}</small>
-            </div>
-            <span>{selectedIds.includes(item.id) ? '✓' : '+'}</span>
-          </button>
-        ))}
-        {filtrados.length === 0 && (
-          <div style={{ padding: '15px', textAlign: 'center', color: 'var(--tinta-media)' }}>
-            Nenhum resultado para &quot;{busca}&quot;
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 /* " · meio período, faltou 13:00–17:00 (4h)" — ou nada, se for dia inteiro. */
 function textoParcial(f, db) {
