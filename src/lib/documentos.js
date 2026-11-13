@@ -9,6 +9,8 @@
    mexer numa lembra da outra.
    ============================================================================= */
 
+import { funcaoDirige, funcaoLidera } from './parametros';
+
 /** O tipo se aplica a esta pessoa? Espelha o `where` da view.
     Quem não é do trecho (escritório, oficina…) segue só a marca
     `vale_fora_trecho` do tipo — a regra por função (motorista, encarregado)
@@ -17,9 +19,11 @@
 export function seAplica(tipo, colaborador) {
   if (colaborador?.setor && colaborador.setor !== 'trecho') return tipo.vale_fora_trecho === true;
   if (tipo.vale_trecho === false) return false;
-  const f = String(colaborador?.funcao || '').toLowerCase();
-  const motorista = f.includes('motorista');
-  const encarregado = f.includes('encarregado');
+  // Pelas marcações da função em Parâmetros ("dirige", "pode ser encarregado");
+  // função fora da lista cai na regra antiga, pelo nome. Espelha
+  // public.funcao_dirige / funcao_lidera (28-parametros.sql).
+  const motorista = funcaoDirige(colaborador?.funcao);
+  const encarregado = funcaoLidera(colaborador?.funcao);
   switch (tipo.aplica_a) {
     case 'motorista': return motorista;
     case 'encarregado': return encarregado;

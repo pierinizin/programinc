@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
 import { contratosDe, contratoAutomatico, dataBR } from '../lib/contratos';
 import { foraDaVigencia } from '../lib/vigencia';
+import { funcaoLidera, regra } from '../lib/parametros';
 
 /* =============================================================================
    Painel da equipe — abre ao lado, por cima do quadro
@@ -25,10 +26,6 @@ const HORARIOS = [
   ['horarioFimObra', 'Fim obra'],
   ['horarioSaida', 'Retorno'],
 ];
-const PADRAO = {
-  horarioInicio: '06:30', horarioInicioObra: '07:30', horarioSaidaAlmoco: '11:30',
-  horarioRetornoAlmoco: '13:00', horarioFimObra: '17:00', horarioSaida: '18:00',
-};
 const STATUS = [
   ['EXECUTANDO', 'Em campo', 'campo'],
   ['CONCLUÍDO', 'Concluído', 'ok'],
@@ -119,7 +116,8 @@ export function PainelEquipe({
   const vPorId = useMemo(() => Object.fromEntries(veiculos.map((v) => [v.id, v])), [veiculos]);
   const membros = form.membroIds.filter((id) => id !== form.encarregadoId).map((id) => porId[id]).filter(Boolean);
   const total = new Set([form.encarregadoId, ...form.membroIds].filter(Boolean)).size;
-  const encarregados = colaboradores.filter((c) => c.funcao === 'Encarregado' && (disponivel(c) || c.id === form.encarregadoId));
+  const encarregados = colaboradores.filter((c) => funcaoLidera(c.funcao) && (disponivel(c) || c.id === form.encarregadoId));
+  const PADRAO = regra('horario_padrao');
 
   // Quem já está em outra equipe neste dia, ou faltou o dia inteiro, não entra
   // na lista — o mesmo que o quadro recusa ao arrastar.
@@ -167,7 +165,7 @@ export function PainelEquipe({
               <label className="pe-f pe-full"><span>Tipo de serviço</span>
                 <select disabled={ro} value={form.tipoEquipe} onChange={(e) => set({ tipoEquipe: e.target.value })}>
                   <option value="">Selecione</option>
-                  {tiposEquipe.map((x) => <option key={x}>{x}</option>)}
+                  {[...new Set([...tiposEquipe, form.tipoEquipe].filter(Boolean))].map((x) => <option key={x}>{x}</option>)}
                 </select>
               </label>
               <label className="pe-f"><span>Data</span>
@@ -248,7 +246,7 @@ export function PainelEquipe({
               <label className="pe-f pe-motivo"><span>Motivo</span>
                 <select disabled={ro} value={form.motivoNaoExecucao || ''} onChange={(e) => set({ motivoNaoExecucao: e.target.value })}>
                   <option value="">Selecione</option>
-                  {motivos.map((x) => <option key={x}>{x}</option>)}
+                  {[...new Set([...motivos, form.motivoNaoExecucao].filter(Boolean))].map((x) => <option key={x}>{x}</option>)}
                 </select>
               </label>
             )}

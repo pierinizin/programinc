@@ -5,13 +5,13 @@ import { contratoAutomatico, contratosVigentes } from '../lib/contratos';
 import { dataBRcurta, foraDaVigencia } from '../lib/vigencia';
 import { derivarDia, disponivelEm } from '../lib/dia';
 import { notificar } from '../lib/dialogos';
+import { regra, valoresDe } from '../lib/parametros';
 import { MOTIVOS_FALTA, rotuloMotivo, corMotivo } from '../lib/motivos';
 import { agruparAusencias, foraNoDia, diaDaVolta, DIAS_SEMANA, curta, diasEntre } from '../lib/ausencias';
 import {
   duracaoTexto, horaCurta, intervalosFaltados, jornadaDe, paraHora, resumoParcial, somaMinutos,
 } from '../lib/faltaParcial';
 
-const MAX_EQUIPE = 10;
 
 /* O texto do tooltip diz de onde veio a marcação — reconhecida no boletim ou
    posta na mão. Numa divergência de medição essa diferença é o que importa. */
@@ -26,15 +26,12 @@ function rotuloApontamento(eq) {
 
 /* Opções do menu de status. 'Não realizado' aparece já desdobrado por motivo:
    um clique grava status e motivo juntos, em vez de deixar o registro num
-   estado que o formulário completo recusaria. */
-const OPCOES_STATUS = [
+   estado que o formulário completo recusaria. Os motivos vêm de
+   Parâmetros → Motivos de "não realizado". */
+const opcoesStatus = () => [
   ['EXECUTANDO', null, 'Em campo', 'selo-campo'],
   ['CONCLUÍDO', null, 'Concluído', 'selo-ok'],
-  ['NÃO FOI POSSÍVEL REALIZAR', 'CHUVA', 'Não realizado · chuva', 'selo-parado'],
-  ['NÃO FOI POSSÍVEL REALIZAR', 'MANUTENÇÃO', 'Não realizado · manutenção', 'selo-parado'],
-  ['NÃO FOI POSSÍVEL REALIZAR', 'VIAGEM', 'Não realizado · viagem', 'selo-parado'],
-  ['NÃO FOI POSSÍVEL REALIZAR', 'INTEGRAÇÃO', 'Não realizado · integração', 'selo-parado'],
-  ['NÃO FOI POSSÍVEL REALIZAR', 'OUTROS', 'Não realizado · outros', 'selo-parado'],
+  ...valoresDe('motivo_nao_realizado').map((m) => ['NÃO FOI POSSÍVEL REALIZAR', m, `Não realizado · ${m.toLowerCase()}`, 'selo-parado']),
 ];
 
 /* Primeiro + último nome. "José Carlos da Silva Souza" vira "José Souza":
@@ -334,7 +331,7 @@ export function QuadroDia({
     if (equipe) {
       const dentro = new Set([equipe.encarregadoId, ...(equipe.membroIds || [])].filter(Boolean));
       if (dentro.has(item.id)) return { ok: 'nao', msg: 'já está nesta equipe' };
-      if (dentro.size >= MAX_EQUIPE) return { ok: 'nao', msg: `equipe cheia (${MAX_EQUIPE})` };
+      if (dentro.size >= regra('max_equipe')) return { ok: 'nao', msg: `equipe cheia (${regra('max_equipe')})` };
       // A primeira pessoa a entrar numa equipe sem encarregado vira o
       // encarregado. É o que evita ter que abrir formulário só para isso.
       if (!equipe.encarregadoId) return { ok: 'sim', msg: 'vira encarregado' };
@@ -946,7 +943,7 @@ export function QuadroDia({
                   )}
 
                   <span className="contagem">
-                    <b>{total}</b>/{MAX_EQUIPE}
+                    <b>{total}</b>/{regra('max_equipe')}
                   </span>
                 </span>
 
@@ -1035,7 +1032,7 @@ export function QuadroDia({
 
                       {menuStatus === eq.id && (
                         <span className="selo-lista" role="menu">
-                          {OPCOES_STATUS.map(([st, motivo, rotulo, cls]) => {
+                          {opcoesStatus().map(([st, motivo, rotulo, cls]) => {
                             const atual = eq.statusExecucao === st
                               && (eq.motivoNaoExecucao || null) === motivo;
                             return (

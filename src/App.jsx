@@ -24,8 +24,10 @@ import { FichaVeiculo } from './components/FichaVeiculo';
 import { iconeVeiculo } from './components/IconeVeiculo';
 import { derivarDia, disponivelEm, primeirasAtividades } from './lib/dia';
 import {
-  SETORES, FUNCOES_TRECHO, FUNCOES_SUGERIDAS, ehTrecho, setorDe, soTrecho,
+  SETORES, ehTrecho, setorDe, soTrecho,
 } from './lib/setor';
+import { definirParametros, valoresDe, regra, funcoesDoSetor, funcaoLidera, itensDe } from './lib/parametros';
+import { Parametros } from './components/Parametros';
 import { duracaoTexto, resumoParcial } from './lib/faltaParcial';
 import { MOTIVOS_FALTA, rotuloMotivo } from './lib/motivos';
 import { prepararFoto, enviarFoto, assinarFotos, assinarFotosEmCache } from './lib/fotos';
@@ -43,18 +45,12 @@ import {
 } from './exportProgramacaoXlsx';
 import { exportProgramacaoPdfModelo03 } from './exportProgramacaoPdf';
 
-const TEAM_TYPE_OPTIONS = [
-  'Pintura - Mecânica e Manual',
-  'Implantação de Tachas',
-  'Implantação de Defensa',
-];
-
-const DIAS_SEM_BAIXA = 30;   // a faixa de "falta dar baixa" olha só este tanto pra trás
-const REASON_OPTIONS = ['CHUVA', 'MANUTENÇÃO', 'VIAGEM', 'INTEGRAÇÃO', 'OUTROS'];
-const ROLE_OPTIONS = FUNCOES_TRECHO;
-const VEHICLE_TYPES = ['Caminhão', 'Caminhonete', 'Carro', 'Outro'];
+/* Tipos de serviço, motivos de "não realizado", funções, tipos de veículo,
+   horário padrão, máximo por equipe e os dias do aviso de "falta dar baixa"
+   saíram daqui: agora são Parâmetros (lib/parametros.js), editáveis na tela
+   Sistema → Parâmetros. A situação do veículo continua fixa — o banco trava
+   estes quatro valores e a tela de veículos depende deles. */
 const VEHICLE_STATUS = ['Disponível', 'Em uso', 'Manutenção', 'Inativo'];
-const MAX_TEAM_MEMBERS = 10;
 
 function pad(v) {
   return String(v).padStart(2, '0');
@@ -158,13 +154,16 @@ function emptyProgramacao(date = today()) {
     statusExecucao: 'EXECUTANDO',
     motivoNaoExecucao: '',
     observacoes: '',
-    horarioInicio: '06:30',
-    horarioInicioObra: '07:30',
-    horarioSaidaAlmoco: '11:30',
-    horarioRetornoAlmoco: '13:00',
-    horarioFimObra: '17:00',
-    horarioSaida: '18:00',
+    ...regra('horario_padrao'),
   };
+}
+
+/* Função que um cadastro novo do trecho já traz: "Ajudante de produção" se
+   ainda existir; senão a primeira que não lidera equipe; senão a primeira. */
+function funcaoPadraoTrecho() {
+  const lista = funcoesDoSetor('trecho');
+  if (lista.includes('Ajudante de produção')) return 'Ajudante de produção';
+  return lista.find((f) => !funcaoLidera(f)) || lista[0] || '';
 }
 
 function statusVeiculoClasse(status) {
@@ -275,6 +274,9 @@ function AppInner() {
   const [activeDrawer, setActiveDrawer] = useState(null);
   const [modal, setModal] = useState(null);
   const [programacaoForm, setProgramacaoForm] = useState(emptyProgramacao(today()));
+  // Parâmetros (28-parametros.sql). 'sem-tabela' = o SQL ainda não foi rodado:
+  // vale o padrão de lib/parametros.js e a tela avisa.
+  const [parametros, setParametros] = useState({ status: 'carregando', itens: [], regras: [] });
   const [colaboradorForm, setColaboradorForm] = useState(emptyColaborador());
   const [veiculoForm, setVeiculoForm] = useState(emptyVeiculo());
   const [faltaForm, setFaltaForm] = useState(emptyFalta());
@@ -688,6 +690,53 @@ function AppInner() {
   }
   const aoEventoRef = useRef(aoEventoTempoReal);
   aoEventoRef.current = aoEventoTempoReal;
+
+  /* Parâmetros: duas tabelas pequenas, buscadas à parte da carga do dia —
+     sem o 28 rodado elas não existem, e isso não pode derrubar a carga. */
+  async function carregarParametros() {
+    const [a, b] = await Promise.all([
+      supabase.from('parametros_itens').select('*'),
+      supabase.from('parametros_regras').select('*'),
+    ]);
+    const erro = a.error || b.error;
+    if (erro) {
+      definirParametros(null);
+      const semTabela = /PGRST205|42P01|does not exist|schema cache/i.test(`${erro.code} ${erro.message}`);
+      setParametros({ status: semTabela ? 'sem-tabela' : 'erro', itens: [], regras: [] });
+      return;
+    }
+    definirParametros({ itens: a.data || [], regras: b.data || [] });
+    setParametros({ status: 'ok', itens: a.data || [], regras: b.data || [] });
+  }
+  const carregarParametrosRef = useRef(carregarParametros);
+  carregarParametrosRef.current = carregarParametros;
+  useEffect(() => {
+    if (!userId) return undefined;
+    carregarParametrosRef.current();
+    // Canal próprio: se as tabelas não existirem, o canal das outras não sofre.
+    const canal = supabase.channel('mudancas-parametros');
+    ['parametros_itens', 'parametros_regras'].forEach((table) => {
+      canal.on('postgres_changes', { event: '*', schema: 'public', table }, () => carregarParametrosRef.current());
+    });
+    canal.subscribe();
+    return () => { supabase.removeChannel(canal); };
+  }, [userId]);
+
+  /* "+ Nova função" direto no cadastro do colaborador (só admin). */
+  async function criarFuncaoRapida(nome, setor) {
+    const valor = String(nome || '').trim();
+    if (!valor) return null;
+    const lista = itensDe('funcao', { inativos: true });
+    const ja = lista.find((x) => x.valor.toLowerCase() === valor.toLowerCase());
+    if (ja) return ja.valor;
+    const ordem = Math.max(0, ...lista.map((x) => x.ordem || 0)) + 10;
+    const res = await supabase.from('parametros_itens')
+      .insert([{ lista: 'funcao', valor, ordem, dados: { setor } }]).select();
+    if (res.error) { reportarErro('Erro ao criar a função', res.error); return null; }
+    await carregarParametros();
+    notificar({ mensagem: `Função "${valor}" criada. Ajuste as marcações em Parâmetros, se precisar.`, variante: 'sucesso' });
+    return valor;
+  }
 
   useEffect(() => {
     if (!userId) return undefined;
@@ -1385,12 +1434,12 @@ function AppInner() {
   );
 
   /* Equipes de dias ANTERIORES que continuam "Em campo": ninguém marcou
-     Concluído nem Não realizado. Olha só os últimos DIAS_SEM_BAIXA dias — o
+     Concluído nem Não realizado. Olha só os últimos dias definidos em Parâmetros (dias_sem_baixa) — o
      histórico mais antigo fica em Relatórios › Status, senão a faixa nasceria
      com um número enorme de coisa velha e ninguém mais olharia pra ela. */
   const semBaixa = useMemo(() => {
     const hoje = today();
-    const limite = shiftDate(hoje, -DIAS_SEM_BAIXA);
+    const limite = shiftDate(hoje, -regra('dias_sem_baixa'));
     const porDia = new Map();
     for (const p of db.programacoes) {
       if (!p.data || p.data >= hoje || p.data < limite) continue;
@@ -1900,7 +1949,7 @@ function AppInner() {
   }
 
   function openColaboradorModal(item = null, setorNovo = 'trecho') {
-    setColaboradorForm(item ? { ...item, setor: setorDe(item) } : { ...emptyColaborador(), setor: setorNovo, funcao: setorNovo === 'trecho' ? 'Ajudante de produção' : '' });
+    setColaboradorForm(item ? { ...item, setor: setorDe(item) } : { ...emptyColaborador(), setor: setorNovo, funcao: setorNovo === 'trecho' ? funcaoPadraoTrecho() : '' });
     setModal('colaborador');
   }
 
@@ -1996,8 +2045,8 @@ function AppInner() {
     }
 
     const mergedMemberIds = Array.from(new Set([programacaoForm.encarregadoId, ...programacaoForm.membroIds])).filter(Boolean);
-    if (mergedMemberIds.length > MAX_TEAM_MEMBERS) {
-      notificar({ mensagem: `Cada equipe pode ter no máximo ${MAX_TEAM_MEMBERS} pessoas.`, variante: 'atencao' });
+    if (mergedMemberIds.length > regra('max_equipe')) {
+      notificar({ mensagem: `Cada equipe pode ter no máximo ${regra('max_equipe')} pessoas.`, variante: 'atencao' });
       return;
     }
 
@@ -2874,9 +2923,9 @@ function AppInner() {
       db={db}
       colaboradores={dbTrecho.colaboradores}
       veiculos={db.veiculos}
-      tiposEquipe={TEAM_TYPE_OPTIONS}
-      motivos={REASON_OPTIONS}
-      maxMembros={MAX_TEAM_MEMBERS}
+      tiposEquipe={valoresDe('tipo_servico')}
+      motivos={valoresDe('motivo_nao_realizado')}
+      maxMembros={regra('max_equipe')}
       disponivel={(c) => disponivelEm(db.historicoStatus, c, programacaoForm.data, primeiraAtividade)}
       somenteLeitura={programacaoSoLeitura}
       podeExcluir={userRole === 'admin'}
@@ -2918,19 +2967,20 @@ function AppInner() {
                     ...f,
                     setor: v,
                     funcao: v === 'trecho'
-                      ? (ROLE_OPTIONS.includes(f.funcao) ? f.funcao : 'Ajudante de produção')
-                      : (ROLE_OPTIONS.includes(f.funcao) ? '' : f.funcao),
+                      ? (funcoesDoSetor('trecho').includes(f.funcao) ? f.funcao : funcaoPadraoTrecho())
+                      : (funcoesDoSetor('trecho').includes(f.funcao) ? '' : f.funcao),
                   }))}
                   // RH não cadastra nem move ninguém para o trecho (o banco recusa).
                   options={SETORES.filter((x) => !(ehRH && x.valor === 'trecho'))
                     .map((x) => ({ value: x.valor, label: x.rotulo }))}
                 />
                 {ehTrecho(colaboradorForm) ? (
-                  <Select
-                    label="Função"
-                    value={colaboradorForm.funcao}
-                    onChange={(v) => setColaboradorForm({ ...colaboradorForm, funcao: v })}
-                    options={ROLE_OPTIONS.map((x) => ({ value: x, label: x }))}
+                  <CampoFuncao
+                    valor={colaboradorForm.funcao}
+                    opcoes={funcoesDoSetor('trecho')}
+                    podeCriar={userRole === 'admin' && parametros.status === 'ok'}
+                    onMudar={(v) => setColaboradorForm((f) => ({ ...f, funcao: v }))}
+                    onCriar={(nome) => criarFuncaoRapida(nome, 'trecho')}
                   />
                 ) : (
                   <label>
@@ -2943,8 +2993,8 @@ function AppInner() {
                     />
                     <datalist id="funcoes-fora-trecho">
                       {[...new Set([
+                        ...funcoesDoSetor('fora'),
                         ...db.colaboradores.filter((c) => !ehTrecho(c)).map((c) => c.funcao),
-                        ...FUNCOES_SUGERIDAS,
                       ])].filter(Boolean).map((f) => <option key={f} value={f} />)}
                     </datalist>
                   </label>
@@ -3036,7 +3086,7 @@ function AppInner() {
                   label="Tipo"
                   value={veiculoForm.tipo}
                   onChange={(v) => setVeiculoForm({ ...veiculoForm, tipo: v })}
-                  options={VEHICLE_TYPES.map((x) => ({ value: x, label: x }))}
+                  options={[...new Set([...valoresDe('tipo_veiculo'), veiculoForm.tipo].filter(Boolean))].map((x) => ({ value: x, label: x }))}
                 />
                 <Select
                   label="Status"
@@ -3304,77 +3354,81 @@ function AppInner() {
           </div>
         </div>
 
-        <nav className="menu">
-         <NavButton active={page === 'programacao'} onClick={() => changePage('programacao')}>
-           Programação
-         </NavButton>
+        {/* Menu em grupos que recolhem pela setinha (GrupoMenu, no fim do
+            arquivo). Fechado, o grupo mostra a soma dos alertas de dentro;
+            o grupo da tela aberta abre sozinho. */}
+        <nav className="menu menu-grupos">
+          <GrupoMenu
+            id="sinalizacao"
+            titulo="Sinalização"
+            ativo={['programacao', 'calendario', 'apontamentos', 'conferencia', 'relatorios', 'historico'].includes(page)}
+            selo={userRole === 'admin' ? nRepetidas : 0}
+          >
+            <NavButton active={page === 'programacao'} onClick={() => changePage('programacao')}>Programação</NavButton>
+            <NavButton active={page === 'calendario'} onClick={() => changePage('calendario')}>Calendários</NavButton>
+            {vePainel && <NavButton active={page === 'apontamentos'} onClick={() => changePage('apontamentos')}>Apontamentos</NavButton>}
+            {userRole === 'admin' && (
+              <NavButton active={page === 'conferencia'} onClick={() => changePage('conferencia')}>
+                Conferência
+                {nRepetidas > 0 && <span className="nav-selo">{nRepetidas}</span>}
+              </NavButton>
+            )}
+            {vePainel && <NavButton active={page === 'relatorios'} onClick={() => changePage('relatorios')}>Relatórios</NavButton>}
+            {vePainel && <NavButton active={page === 'historico'} onClick={() => changePage('historico')}>Histórico</NavButton>}
+          </GrupoMenu>
 
-         <NavButton active={page === 'calendario'} onClick={() => changePage('calendario')}>
-           Calendários
-         </NavButton>
+          {vePainel && (
+            <GrupoMenu
+              id="pessoas"
+              titulo="Pessoas"
+              ativo={['colaboradores', 'documentos', 'integracoes'].includes(page)}
+              selo={podeDocs ? pendenciasGraves + pendenciasFora.filter((p) => p.urgencia <= 2).length : 0}
+            >
+              <NavButton active={page === 'colaboradores'} onClick={() => changePage('colaboradores')}>Colaboradores</NavButton>
+              {podeDocs && (
+                <NavButton active={page === 'documentos'} onClick={() => changePage('documentos')}>
+                  Documentos
+                  {/* O número no menu é o ponto do desenho: o prazo cobra
+                      sozinho, sem depender de alguém lembrar de abrir a aba. */}
+                  {pendenciasGraves > 0 && <span className="nav-selo">{pendenciasGraves}</span>}
+                </NavButton>
+              )}
+              <NavButton active={page === 'integracoes'} onClick={() => changePage('integracoes')}>Integrações</NavButton>
+              {/* A área do escritório tem endereço e layout próprios. */}
+              {podeDocs && (
+                <NavButton active={false} onClick={() => irParaArea('administrativo')}>
+                  Administrativo ↗
+                  {pendenciasFora.filter((p) => p.urgencia <= 2).length > 0 && (
+                    <span className="nav-selo">{pendenciasFora.filter((p) => p.urgencia <= 2).length}</span>
+                  )}
+                </NavButton>
+              )}
+            </GrupoMenu>
+          )}
 
-        <div className="section-line" style={{ margin: '10px 0', opacity: 0.3 }} />
+          {vePainel && (
+            <GrupoMenu id="cadastros" titulo="Cadastros" ativo={['contratos', 'veiculos'].includes(page)}>
+              {(userRole === 'admin' || ehRH) && (
+                <NavButton active={page === 'contratos'} onClick={() => changePage('contratos')}>Contratantes</NavButton>
+              )}
+              <NavButton active={page === 'veiculos'} onClick={() => changePage('veiculos')}>Veículos</NavButton>
+            </GrupoMenu>
+          )}
 
-         {vePainel && (
-           <div className="menu-group-title">Painel do Administrador</div>
-         )}
-
-         {vePainel && (
-           <>
-             <NavButton active={page === 'colaboradores'} onClick={() => changePage('colaboradores')}>
-               Colaboradores
-             </NavButton>
-             {podeDocs && (
-               <>
-               <NavButton active={page === 'documentos'} onClick={() => changePage('documentos')}>
-                 Documentos
-                 {/* O número no menu é o ponto do desenho: o prazo cobra
-                     sozinho, sem depender de alguém lembrar de abrir a aba. */}
-                 {pendenciasGraves > 0 && <span className="nav-selo">{pendenciasGraves}</span>}
-               </NavButton>
-               {/* A área do escritório tem endereço e layout próprios. */}
-               <NavButton active={false} onClick={() => irParaArea('administrativo')}>
-                 Administrativo ↗
-                 {pendenciasFora.filter((p) => p.urgencia <= 2).length > 0 && (
-                   <span className="nav-selo">{pendenciasFora.filter((p) => p.urgencia <= 2).length}</span>
-                 )}
-               </NavButton>
-               </>
-             )}
-             {(userRole === 'admin' || ehRH) && (
-               <NavButton active={page === 'contratos'} onClick={() => changePage('contratos')}>
-                 Contratantes
-               </NavButton>
-             )}
-             <NavButton active={page === 'veiculos'} onClick={() => changePage('veiculos')}>
-               Veículos
-             </NavButton>
-             <NavButton active={page === 'integracoes'} onClick={() => changePage('integracoes')}>
-               Integrações
-             </NavButton>
-             <NavButton active={page === 'apontamentos'} onClick={() => changePage('apontamentos')}>
-               Apontamentos
-             </NavButton>
-             <NavButton active={page === 'historico'} onClick={() => changePage('historico')}>
-               Histórico
-             </NavButton>
-             <NavButton active={page === 'relatorios'} onClick={() => changePage('relatorios')}>
-               Relatórios
-             </NavButton>
-             {userRole === 'admin' && (
-               <NavButton active={page === 'conferencia'} onClick={() => changePage('conferencia')}>
-                 Conferência
-                 {nRepetidas > 0 && <span className="nav-selo">{nRepetidas}</span>}
-               </NavButton>
-             )}
-           </>
-         )}
-
-         {userRole === 'admin' && (
-           <NavButton active={page === 'acessos'} onClick={() => changePage('acessos')}>
-              Aprovações
-           </NavButton>
-         )}
+          {userRole === 'admin' && (
+            <GrupoMenu
+              id="sistema"
+              titulo="Sistema"
+              ativo={['parametros', 'acessos'].includes(page)}
+              selo={parametros.status === 'sem-tabela' ? 1 : 0}
+            >
+              <NavButton active={page === 'parametros'} onClick={() => changePage('parametros')}>
+                Parâmetros
+                {parametros.status === 'sem-tabela' && <span className="nav-selo" title="Falta rodar o 28-parametros.sql">!</span>}
+              </NavButton>
+              <NavButton active={page === 'acessos'} onClick={() => changePage('acessos')}>Aprovações</NavButton>
+            </GrupoMenu>
+          )}
         </nav>
 
         <div className="sidebar-bottom">
@@ -3667,6 +3721,15 @@ function AppInner() {
                 </div>
               </>
             )}
+              {page === 'parametros' && userRole === 'admin' && (
+                <Parametros
+                  status={parametros.status}
+                  linhas={parametros}
+                  db={db}
+                  onRecarregar={carregarParametros}
+                  onDadosMudaram={() => { agendarFetch(null, { completa: true }); if (podeDocs) agendarFetchDocs(); }}
+                />
+              )}
               {page === 'acessos' && userRole === 'admin' && (
               <>
               <div className="page-head" style={{ marginTop: '40px' }}>
@@ -3862,7 +3925,7 @@ function AppInner() {
                   focoEquipeId={focoEquipeId}
                   onFocoFeito={() => setFocoEquipeId(null)}
                   podeEditar={userRole === 'admin' || userRole === 'editor'}
-                  tiposEquipe={TEAM_TYPE_OPTIONS}
+                  tiposEquipe={valoresDe('tipo_servico')}
                   onAdicionarMembro={adicionarMembro}
                   onDefinirEncarregado={definirEncarregado}
                   onRemoverMembro={removerMembro}
@@ -4079,6 +4142,89 @@ function AppInner() {
         {painelEquipeJsx}
       {avisoCargaJsx}
     </div>
+  );
+}
+
+/* Grupo do menu lateral, com setinha. Lembra aberto/fechado neste navegador;
+   abre sozinho quando a tela atual é de dentro dele. Sem item visível (cargo
+   sem acesso a nenhum), não aparece. */
+function GrupoMenu({ id, titulo, ativo = false, selo = 0, children }) {
+  const chave = `incovia:menu:${id}`;
+  const [aberto, setAberto] = useState(() => {
+    try {
+      const v = localStorage.getItem(chave);
+      return v == null ? true : v === '1';
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => { if (ativo) setAberto(true); }, [ativo]);
+  const itens = (Array.isArray(children) ? children : [children]).flat().filter(Boolean);
+  if (!itens.length) return null;
+  const alternar = () => setAberto((a) => {
+    try { localStorage.setItem(chave, a ? '0' : '1'); } catch { /* sem problema */ }
+    return !a;
+  });
+  return (
+    <div className={`menu-grupo${aberto ? ' aberto' : ''}`}>
+      <button type="button" className="menu-grupo-cab" onClick={alternar} aria-expanded={aberto}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+        {titulo}
+        {!aberto && selo > 0 && <span className="nav-selo">{selo}</span>}
+      </button>
+      {aberto && <div className="menu-grupo-itens">{itens}</div>}
+    </div>
+  );
+}
+
+/* Função do trecho no cadastro: escolhe da lista de Parâmetros, ou — para o
+   admin — "+ Nova função…" cria ali mesmo, sem sair do cadastro. */
+function CampoFuncao({ valor, opcoes, podeCriar, onMudar, onCriar }) {
+  const [criando, setCriando] = useState(false);
+  const [nome, setNome] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const lista = [...new Set([...opcoes, valor].filter(Boolean))];
+  async function criar() {
+    setSalvando(true);
+    const v = await onCriar(nome);
+    setSalvando(false);
+    if (v) { onMudar(v); setCriando(false); setNome(''); }
+  }
+  if (criando) {
+    return (
+      <label>
+        <span>Nova função</span>
+        <span className="campo-funcao-novo">
+          <input
+            autoFocus
+            value={nome}
+            placeholder="Ex.: Operador de munck"
+            onChange={(e) => setNome(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); criar(); }
+              if (e.key === 'Escape') { e.stopPropagation(); setCriando(false); }
+            }}
+          />
+          <button type="button" className="ghost-btn" onClick={() => setCriando(false)} disabled={salvando}>Cancelar</button>
+          <button type="button" className="primary-btn" onClick={criar} disabled={salvando || !nome.trim()}>
+            {salvando ? 'Criando…' : 'Criar'}
+          </button>
+        </span>
+      </label>
+    );
+  }
+  return (
+    <label>
+      <span>Função</span>
+      <select
+        value={valor || ''}
+        onChange={(e) => { if (e.target.value === '__nova__') setCriando(true); else onMudar(e.target.value); }}
+      >
+        {!valor && <option value="">Selecione</option>}
+        {lista.map((x) => <option key={x} value={x}>{x}</option>)}
+        {podeCriar && <option value="__nova__">+ Nova função…</option>}
+      </select>
+    </label>
   );
 }
 
