@@ -32,11 +32,11 @@ export function seAplica(tipo, colaborador) {
   }
 }
 
-/** Os tipos que uma pessoa precisa ter, na ordem da agenda. Atestado fora:
-    ele é cobrado pela falta, não pela conferência de pasta. */
+/** Os tipos que uma pessoa precisa ter, na ordem da agenda. Atestado e licença
+    fora: são cobrados pela falta, não pela conferência de pasta. */
 export function tiposDaPessoa(tipos, colaborador) {
   return (tipos || [])
-    .filter((t) => t.codigo !== 'atestado' && seAplica(t, colaborador))
+    .filter((t) => t.codigo !== 'atestado' && t.codigo !== 'licenca' && seAplica(t, colaborador))
     .sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
 }
 

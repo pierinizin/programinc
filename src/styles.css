@@ -4645,3 +4645,36 @@ button.adm-nome:hover b { text-decoration: underline; }
 .par .par-ck input { width: auto; flex: none; min-height: 0; padding: 0; }
 .par .par-ck > span { text-transform: none; letter-spacing: 0; font: inherit; color: var(--tinta); }
 .par-edit .par-f select { width: 100%; }
+/* Parâmetros: arrastar para ordenar */
+.par-ordem { display: flex !important; align-items: center; gap: 2px; }
+.par-alca {
+  cursor: grab; touch-action: none; user-select: none; color: var(--tinta-fraca);
+  font-size: 13px; letter-spacing: -2px; padding: 4px 3px; border-radius: 4px; line-height: 1;
+}
+.par-alca:hover { color: var(--tinta); background: var(--superficie-2); }
+.par-alca.off { cursor: default; opacity: .3; }
+.par-setas { display: grid; gap: 1px; }
+.par-th, .par-row { grid-template-columns: 44px minmax(0, 1fr) minmax(0, 240px) 70px 70px; }
+.par-row.arrastado { opacity: .45; background: var(--superficie-2); }
+.par-row.alvo-antes { box-shadow: inset 0 3px 0 var(--faixa); }
+.par-row.alvo-depois { box-shadow: inset 0 -3px 0 var(--faixa); }
+body.par-arrastando, body.par-arrastando * { cursor: grabbing !important; user-select: none; }
+@media (max-width: 900px) { .par-row { grid-template-columns: 44px minmax(0, 1fr) auto; } }
+
+/* Atestado ou licença (janela de registro e lista da ficha) */
+.at-seg { display: flex; border: 1px solid var(--borda); border-radius: 8px; overflow: hidden; }
+.at-seg button { flex: 1; border: 0; border-right: 1px solid var(--borda); background: var(--superficie); padding: 8px 6px; font-size: 13px; color: var(--tinta-media); cursor: pointer; }
+.at-seg button:last-child { border-right: 0; }
+.at-seg button.on { background: var(--tinta); color: var(--superficie); font-weight: 700; }
+.at-rot { display: block; font: 700 10px var(--fonte-display); letter-spacing: .11em; text-transform: uppercase; color: var(--tinta-fraca); margin-bottom: 6px; }
+.at-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.at-horas { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 10px; }
+.at-resumo { margin: 0; }
+.at-item { display: grid; gap: 1px; }
+.at-tipo { font: 700 10px var(--fonte-display); letter-spacing: .08em; text-transform: uppercase; color: var(--erro-texto); }
+.at-tipo.lic { color: #8E5BD0; }
+
+/* Pátio: quem ficou fora parte do dia (ausência de horas) */
+.patio-horas { font: 700 10px var(--fonte-dado); color: var(--ac, var(--tinta-media)); margin-left: -2px; }
+.fp-arquivo { display: grid; gap: 4px; margin-top: 10px; font-size: 12px; color: var(--tinta-media); }
+.fp-arquivo input { font-size: 12px; }

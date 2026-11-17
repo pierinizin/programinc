@@ -21,6 +21,10 @@ export const LISTAS = [
     comSetor: true, comMarcas: true,
   },
   {
+    chave: 'tipo_licenca', grupo: 'Pessoas', titulo: 'Tipos de licença', singular: 'tipo de licença',
+    texto: 'Aparecem ao registrar uma licença (atestado ou licença → Licença).',
+  },
+  {
     chave: 'tipo_servico', grupo: 'Programação', titulo: 'Tipos de serviço', singular: 'tipo de serviço',
     texto: 'O tipo de cada equipe na programação. Renomear muda também nas programações já lançadas.',
   },
@@ -52,6 +56,8 @@ export const PADRAO_ITENS = {
   tipo_servico: [it('Pintura - Mecânica e Manual'), it('Implantação de Tachas'), it('Implantação de Defensa')],
   motivo_nao_realizado: [it('CHUVA'), it('MANUTENÇÃO'), it('VIAGEM'), it('INTEGRAÇÃO'), it('OUTROS')],
   tipo_veiculo: [it('Caminhão'), it('Caminhonete'), it('Carro'), it('Outro')],
+  tipo_licenca: [it('Maternidade'), it('Paternidade'), it('Casamento'), it('Falecimento na família'),
+    it('Doação de sangue'), it('Serviço militar / Justiça'), it('Outra')],
 };
 
 export const REGRAS = [

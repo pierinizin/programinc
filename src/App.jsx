@@ -28,7 +28,9 @@ import {
 } from './lib/setor';
 import { definirParametros, valoresDe, regra, funcoesDoSetor, funcaoLidera, itensDe } from './lib/parametros';
 import { Parametros } from './components/Parametros';
-import { duracaoTexto, resumoParcial } from './lib/faltaParcial';
+import {
+  duracaoTexto, resumoParcial, ehParcial, ehHoras, resumoDaFalta, resumoHoras, horaCurta,
+} from './lib/faltaParcial';
 import { MOTIVOS_FALTA, rotuloMotivo } from './lib/motivos';
 import { prepararFoto, enviarFoto, assinarFotos, assinarFotosEmCache } from './lib/fotos';
 import { salvarAtestado, abrirArquivo as abrirArquivoDoc } from './lib/arquivosDoc';
@@ -203,7 +205,11 @@ function emptyFalta() {
 // "registrar outro". Arquivo é opcional, por isso vive solto no form, fora
 // do payload que vai para o banco (ver saveAtestado).
 function emptyAtestado() {
-  return { colaboradorId: null, emitido_em: today(), valido_ate: today(), observacao: '', arquivo: null };
+  return {
+    colaboradorId: null, emitido_em: today(), valido_ate: today(), observacao: '', arquivo: null,
+    // 29: atestado ou licença; dias inteiros ou algumas horas; tipo de licença
+    tipo: 'atestado', duracao: 'dias', hora_de: '07:30', hora_ate: '11:30', subtipo: '',
+  };
 }
 
 function emptyFerias() {
@@ -1487,10 +1493,10 @@ function AppInner() {
       const escalas = db.programacoes.filter((p) => p.membroIds.includes(c.id));
       const faltas = db.faltas.filter((f) => f.colaboradorId === c.id);
       // Meio período não conta como "uma falta" — vira horas, à parte.
-      const inteiras = faltas.filter((f) => !f.programacao_id);
+      const inteiras = faltas.filter((f) => !ehParcial(f));
       const minutosParciais = faltas
-        .filter((f) => f.programacao_id && progPorId.has(f.programacao_id))
-        .reduce((s, f) => s + resumoParcial(progPorId.get(f.programacao_id), f).minutosFaltados, 0);
+        .filter(ehParcial)
+        .reduce((s, f) => s + (resumoDaFalta(f, progPorId)?.minutosFaltados || 0), 0);
       return {
         ...c,
         escalas: escalas.length,
@@ -1977,14 +1983,20 @@ function AppInner() {
      janela, e "Atestado médico" saiu dos motivos de falta avulsa.
      `existente` = um atestado já lançado, para anexar o arquivo que faltava
      ou corrigir o período. */
-  function openAtestadoModal(colaboradorId, { dia = null, existente = null } = {}) {
+  function openAtestadoModal(colaboradorId, { dia = null, existente = null, tipo = 'atestado' } = {}) {
     setErroAtestadoFerias('');
+    const codigoExistente = existente ? (docs.tipos.find((t) => t.id === existente.tipo_id)?.codigo || 'atestado') : null;
     setAtestadoForm(existente
       ? {
         ...emptyAtestado(), colaboradorId: existente.colaboradorId, existente,
         emitido_em: existente.emitido_em, valido_ate: existente.valido_ate, observacao: existente.observacao || '',
+        tipo: codigoExistente === 'licenca' ? 'licenca' : 'atestado',
+        duracao: existente.hora_de ? 'horas' : 'dias',
+        hora_de: horaCurta(existente.hora_de) || '07:30',
+        hora_ate: horaCurta(existente.hora_ate) || '11:30',
+        subtipo: existente.subtipo || '',
       }
-      : { ...emptyAtestado(), colaboradorId, ...(dia ? { emitido_em: dia, valido_ate: dia } : {}) });
+      : { ...emptyAtestado(), tipo, colaboradorId, ...(dia ? { emitido_em: dia, valido_ate: dia } : {}) });
     setModal('atestado');
   }
 
@@ -2239,11 +2251,21 @@ function AppInner() {
       return;
     }
     const colaborador = maps.colaboradores[atestadoForm.colaboradorId];
-    const tipoAtestado = docs.tipos.find((t) => t.codigo === 'atestado');
+    const ehLicenca = atestadoForm.tipo === 'licenca';
+    const tipoAtestado = docs.tipos.find((t) => t.codigo === (ehLicenca ? 'licenca' : 'atestado'));
     if (!colaborador || !tipoAtestado) {
-      setErroAtestadoFerias(
-        'Não encontrei o tipo "Atestado médico" no catálogo — rode o 13-atestados-ferias.sql (e o 10-atestados.sql) no Supabase.'
-      );
+      setErroAtestadoFerias(ehLicenca
+        ? 'Não encontrei o tipo "Licença" no catálogo — rode o 29-ausencia-horas-licencas.sql no Supabase.'
+        : 'Não encontrei o tipo "Atestado médico" no catálogo — rode o 13-atestados-ferias.sql (e o 10-atestados.sql) no Supabase.');
+      return;
+    }
+    if (ehLicenca && !atestadoForm.subtipo) {
+      setErroAtestadoFerias('Escolha o tipo de licença.');
+      return;
+    }
+    const horas = atestadoForm.duracao === 'horas';
+    if (horas && !(atestadoForm.hora_de && atestadoForm.hora_ate && atestadoForm.hora_de < atestadoForm.hora_ate)) {
+      setErroAtestadoFerias('O fim precisa ser depois do início.');
       return;
     }
     setErroAtestadoFerias('');
@@ -2253,7 +2275,10 @@ function AppInner() {
         colaborador,
         tipoAtestado,
         emitidoEm: atestadoForm.emitido_em,
-        validoAte: atestadoForm.valido_ate,
+        validoAte: horas ? atestadoForm.emitido_em : atestadoForm.valido_ate,
+        horaDe: horas ? atestadoForm.hora_de : null,
+        horaAte: horas ? atestadoForm.hora_ate : null,
+        subtipo: ehLicenca ? atestadoForm.subtipo : null,
         observacao: atestadoForm.observacao,
         arquivo: atestadoForm.arquivo,
         existente: atestadoForm.existente || null,
@@ -2263,7 +2288,7 @@ function AppInner() {
       agendarFetch();   // a falta gerada pelo gatilho entra em 'db.faltas'
       setModal(null);
     } catch (e) {
-      setErroAtestadoFerias(e.message || 'Não consegui registrar o atestado.');
+      setErroAtestadoFerias(e.message || (ehLicenca ? 'Não consegui registrar a licença.' : 'Não consegui registrar o atestado.'));
     }
     setSalvandoAtestadoFerias(false);
   }
@@ -2505,7 +2530,7 @@ function AppInner() {
     if (!reg) return;
     // Falta parcial é travada na zona de Faltas de propósito: ela se desfaz
     // pela própria equipe (clique na pessoa → "Trabalhou o dia todo").
-    if (reg.programacao_id) return;
+    if (ehParcial(reg)) return;
     // Apagar falta é só de admin no security.sql — se voltar vazio, o aviso
     // explica em vez de o botão parecer quebrado.
     return removerOtimista('faltas', reg.id, 'remover faltas');
@@ -2521,20 +2546,83 @@ function AppInner() {
     const reg = db.faltas.find(
       (f) => f.data === selectedDate && f.colaboradorId === colaboradorId
     );
-    if (reg && !reg.programacao_id) {
+    if (reg && !ehParcial(reg)) {
       notificar({
         mensagem: 'Essa pessoa já tem falta de dia inteiro hoje. Tire da zona de Faltas antes de lançar meio período.',
         variante: 'atencao',
       });
       return false;
     }
-    const campos = { motivo, programacao_id: equipe.id, trabalhou_de, trabalhou_ate };
+    if (reg && ehHoras(reg) && reg.origem_documento_id) {
+      notificar({ mensagem: 'Essa pessoa tem atestado/licença de horas hoje. Ajuste pela ficha dela.', variante: 'atencao' });
+      return false;
+    }
+    // Uma ausência de horas lançada no pátio vira o meio período desta equipe.
+    const campos = { motivo, programacao_id: equipe.id, trabalhou_de, trabalhou_ate, ausente_de: null, ausente_ate: null };
     if (reg) return atualizarOtimista('faltas', reg.id, campos, 'alterar a falta parcial');
     return inserirOtimista(
       'faltas',
       { colaboradorId, data: selectedDate, observacao: '', ...campos },
       'registrar a falta parcial'
     );
+  }
+
+  /* ------------------------------------------------------------------
+     Ausência de HORAS sem equipe (pátio, consulta) — faltas.ausente_de/ate
+     (29-ausencia-horas-licencas.sql). Atestado ou licença de horas vão como
+     DOCUMENTO (o banco gera a falta, igual ao atestado de dias); o resto é
+     uma falta comum com o intervalo.
+     ------------------------------------------------------------------ */
+  async function salvarAusenciaHoras(colaboradorId, { motivo, ausente_de, ausente_ate, arquivo, subtipo, observacao }) {
+    const reg = db.faltas.find((f) => f.data === selectedDate && f.colaboradorId === colaboradorId);
+    if (reg && !ehParcial(reg)) {
+      notificar({ mensagem: 'Essa pessoa já tem falta de dia inteiro hoje.', variante: 'atencao' });
+      return false;
+    }
+    if (reg?.origem_documento_id) {
+      notificar({ mensagem: 'Essa ausência veio de um atestado/licença — ajuste pela ficha da pessoa.', variante: 'atencao' });
+      return false;
+    }
+    if (motivo === 'atestado_medico' || motivo === 'licenca') {
+      const codigo = motivo === 'licenca' ? 'licenca' : 'atestado';
+      const tipo = docs.tipos.find((t) => t.codigo === codigo);
+      const colaborador = maps.colaboradores[colaboradorId];
+      if (!tipo || !colaborador) {
+        notificar({ mensagem: 'Falta um passo no banco: rode o 29-ausencia-horas-licencas.sql no Supabase.', variante: 'erro' });
+        return false;
+      }
+      try {
+        // A falta de horas que estava aí dá lugar à do documento.
+        if (reg) {
+          const r = await supabase.from('faltas').delete().eq('id', reg.id).select();
+          if (r.error) throw r.error;
+        }
+        await salvarAtestado({
+          colaborador, tipoAtestado: tipo, emitidoEm: selectedDate, validoAte: selectedDate,
+          horaDe: ausente_de, horaAte: ausente_ate, subtipo: motivo === 'licenca' ? subtipo : null,
+          observacao, arquivo, existente: null, quem: session?.user?.id,
+        });
+        agendarFetchDocs();
+        agendarFetch(['faltas']);
+        return true;
+      } catch (e) {
+        reportarErro('Erro ao salvar', e);
+        return false;
+      }
+    }
+    const campos = { motivo, ausente_de, ausente_ate, programacao_id: null, trabalhou_de: null, trabalhou_ate: null };
+    if (reg) return atualizarOtimista('faltas', reg.id, campos, 'alterar a ausência');
+    return inserirOtimista(
+      'faltas',
+      { colaboradorId, data: selectedDate, observacao: observacao || '', ...campos },
+      'registrar a ausência'
+    );
+  }
+
+  async function removerAusenciaHoras(colaboradorId) {
+    const reg = db.faltas.find((f) => f.data === selectedDate && f.colaboradorId === colaboradorId && ehHoras(f));
+    if (!reg || reg.origem_documento_id) return;
+    return removerOtimista('faltas', reg.id, 'remover a ausência');
   }
 
   async function removerFaltaParcial(colaboradorId) {
@@ -2946,7 +3034,9 @@ function AppInner() {
                   : (colaboradorForm.id ? 'Editar Colaborador' : 'Novo Colaborador'))}
                 {modal === 'veiculo' && (veiculoForm.id ? 'Editar Veículo' : 'Novo Veículo')}
                 {modal === 'falta' && (faltaForm.id ? 'Editar Falta' : 'Registrar Falta')}
-                {modal === 'atestado' && 'Registrar Atestado'}
+                {modal === 'atestado' && (atestadoForm.existente
+                  ? (atestadoForm.tipo === 'licenca' ? 'Licença' : 'Atestado')
+                  : 'Registrar atestado ou licença')}
                 {modal === 'ferias' && (feriasForm.id ? 'Editar Férias' : 'Registrar Férias')}
                 {modal === 'exportarModelo02' && 'Exportar Modelo 02'}
               </strong>
@@ -3159,63 +3249,95 @@ function AppInner() {
               </div>
             )}
 
-            {modal === 'atestado' && (
-              <div className="form-grid two">
-                <p className="small-muted full">
-                  {atestadoForm.existente
-                    ? 'Anexe o arquivo que faltava ou corrija o período. As faltas acompanham sozinhas.'
-                    : 'Um atestado por afastamento: coloque o primeiro e o último dia. Ao salvar, a pessoa fica indisponível para equipes no período todo — a falta de cada dia é lançada sozinha.'}
-                </p>
-                <Select
-                  label="Colaborador"
-                  value={atestadoForm.colaboradorId || ''}
-                  onChange={(v) => setAtestadoForm({ ...atestadoForm, colaboradorId: v })}
-                  options={db.colaboradores
-                    .filter((x) => x.status !== 'inativo' || x.id === atestadoForm.colaboradorId)
-                    .map((x) => ({ value: x.id, label: x.nome }))}
-                  placeholder="Selecione"
-                  disabled={Boolean(atestadoForm.existente)}
-                  full
-                />
-                <Input
-                  label="Início"
-                  type="date"
-                  value={atestadoForm.emitido_em}
-                  onChange={(v) => setAtestadoForm({ ...atestadoForm, emitido_em: v })}
-                />
-                <Input
-                  label="Fim"
-                  type="date"
-                  value={atestadoForm.valido_ate}
-                  onChange={(v) => setAtestadoForm({ ...atestadoForm, valido_ate: v })}
-                />
-                <TextArea
-                  label="Observação"
-                  value={atestadoForm.observacao}
-                  onChange={(v) => setAtestadoForm({ ...atestadoForm, observacao: v })}
-                  full
-                />
-                <label className="full">
-                  <span>
-                    {atestadoForm.existente?.caminho
-                      ? 'Trocar o arquivo (opcional) — PDF, JPG, PNG ou WEBP, até 15 MB'
-                      : 'Arquivo do atestado — PDF, JPG, PNG ou WEBP, até 15 MB. Sem ele agora, fica a pendência "atestado sem o arquivo" para anexar depois.'}
-                  </span>
-                  <input
-                    type="file"
-                    accept="application/pdf,image/jpeg,image/png,image/webp"
-                    onChange={(e) => setAtestadoForm({ ...atestadoForm, arquivo: e.target.files?.[0] || null })}
+            {modal === 'atestado' && (() => {
+              const f = atestadoForm;
+              const set = (patch) => setAtestadoForm((a) => ({ ...a, ...patch }));
+              const ehLic = f.tipo === 'licenca';
+              const horas = f.duracao === 'horas';
+              const fora = horas && f.hora_de && f.hora_ate && f.hora_de < f.hora_ate
+                ? resumoHoras({ ausente_de: f.hora_de, ausente_ate: f.hora_ate }) : null;
+              const nDias = !horas && f.emitido_em && f.valido_ate && f.valido_ate >= f.emitido_em
+                ? Math.round((new Date(`${f.valido_ate}T12:00:00`) - new Date(`${f.emitido_em}T12:00:00`)) / 86400000) + 1 : null;
+              return (
+                <div className="form-grid two at-form">
+                  {/* Atestado ou licença: o mesmo jeito de lançar — período (dias
+                      ou horas) e o arquivo, na hora ou depois. As faltas o banco
+                      gera sozinho (29-ausencia-horas-licencas.sql). */}
+                  {!f.existente && (
+                    <div className="at-seg full" role="radiogroup" aria-label="Tipo">
+                      <button type="button" className={!ehLic ? 'on' : ''} onClick={() => set({ tipo: 'atestado' })}>Atestado médico</button>
+                      <button type="button" className={ehLic ? 'on' : ''} onClick={() => set({ tipo: 'licenca' })}>Licença</button>
+                    </div>
+                  )}
+                  <Select
+                    label="Colaborador"
+                    value={f.colaboradorId || ''}
+                    onChange={(v) => set({ colaboradorId: v })}
+                    options={db.colaboradores
+                      .filter((x) => x.status !== 'inativo' || x.id === f.colaboradorId)
+                      .map((x) => ({ value: x.id, label: x.nome }))}
+                    placeholder="Selecione"
+                    disabled={Boolean(f.existente)}
+                    full
                   />
-                </label>
-                {erroAtestadoFerias && <div className="mut-erro full">{erroAtestadoFerias}</div>}
-                <div className="modal-actions full">
-                  <button className="ghost-btn" onClick={() => setModal(null)} disabled={salvandoAtestadoFerias}>Cancelar</button>
-                  <button className="primary-btn" onClick={saveAtestado} disabled={salvandoAtestadoFerias}>
-                    {salvandoAtestadoFerias ? 'Salvando…' : 'Salvar'}
-                  </button>
+                  {ehLic && (
+                    <div className="full">
+                      <span className="at-rot">Tipo de licença</span>
+                      <div className="at-chips">
+                        {[...new Set([...valoresDe('tipo_licenca'), f.subtipo].filter(Boolean))].map((t) => (
+                          <button key={t} type="button" className={`chip-btn${f.subtipo === t ? ' ativo' : ''}`} aria-pressed={f.subtipo === t}
+                            onClick={() => set({ subtipo: t })}>{t}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="full">
+                    <span className="at-rot">Duração</span>
+                    <div className="at-seg" role="radiogroup" aria-label="Duração">
+                      <button type="button" className={!horas ? 'on' : ''} onClick={() => set({ duracao: 'dias' })}>Dias inteiros</button>
+                      <button type="button" className={horas ? 'on' : ''} onClick={() => set({ duracao: 'horas', valido_ate: f.emitido_em })}>Algumas horas</button>
+                    </div>
+                  </div>
+                  {horas ? (
+                    <div className="full at-horas">
+                      <Input label="Dia" type="date" value={f.emitido_em} onChange={(v) => set({ emitido_em: v, valido_ate: v })} />
+                      <Input label="Das" type="time" value={f.hora_de} onChange={(v) => set({ hora_de: v })} />
+                      <Input label="Às" type="time" value={f.hora_ate} onChange={(v) => set({ hora_ate: v })} />
+                    </div>
+                  ) : (
+                    <>
+                      <Input label="Primeiro dia" type="date" value={f.emitido_em} onChange={(v) => set({ emitido_em: v })} />
+                      <Input label="Último dia" type="date" value={f.valido_ate} onChange={(v) => set({ valido_ate: v })} />
+                    </>
+                  )}
+                  <p className="small-muted full at-resumo">
+                    {horas
+                      ? (fora ? <>Fora <b>{fora.fora}</b> · <b>{fora.duracao}</b> do horário padrão — vira uma ausência de horas no dia, e a pessoa continua podendo ser escalada.</> : 'O fim precisa ser depois do início.')
+                      : (nDias ? <><b>{nDias} {nDias === 1 ? 'dia' : 'dias'}</b> · a pessoa fica indisponível para equipes no período e cada dia entra como {ehLic ? '“Licença”' : '“Atestado”'} nas Ausências.</> : 'O último dia não pode vir antes do primeiro.')}
+                  </p>
+                  <TextArea label="Observação" value={f.observacao} onChange={(v) => set({ observacao: v })} full />
+                  <label className="full">
+                    <span>
+                      {f.existente?.caminho
+                        ? 'Trocar o arquivo (opcional) — PDF, JPG, PNG ou WEBP, até 15 MB'
+                        : `Arquivo ${ehLic ? 'da licença (certidão, declaração…)' : 'do atestado'} — PDF, JPG, PNG ou WEBP, até 15 MB. Pode anexar depois.`}
+                    </span>
+                    <input
+                      type="file"
+                      accept="application/pdf,image/jpeg,image/png,image/webp"
+                      onChange={(e) => set({ arquivo: e.target.files?.[0] || null })}
+                    />
+                  </label>
+                  {erroAtestadoFerias && <div className="mut-erro full">{erroAtestadoFerias}</div>}
+                  <div className="modal-actions full">
+                    <button className="ghost-btn" onClick={() => setModal(null)} disabled={salvandoAtestadoFerias}>Cancelar</button>
+                    <button className="primary-btn" onClick={saveAtestado} disabled={salvandoAtestadoFerias}>
+                      {salvandoAtestadoFerias ? 'Salvando…' : 'Salvar'}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {modal === 'ferias' && (
               <div className="form-grid two">
@@ -3726,6 +3848,7 @@ function AppInner() {
                   status={parametros.status}
                   linhas={parametros}
                   db={db}
+                  documentos={docs.documentos}
                   onRecarregar={carregarParametros}
                   onDadosMudaram={() => { agendarFetch(null, { completa: true }); if (podeDocs) agendarFetchDocs(); }}
                 />
@@ -3944,6 +4067,9 @@ function AppInner() {
                   onRegistrarAtestado={podeDocs ? (pessoaId) => openAtestadoModal(pessoaId, { dia: selectedDate }) : null}
                   onRemoverFalta={removerFalta}
                   onSalvarFaltaParcial={salvarFaltaParcial}
+                  onSalvarAusenciaHoras={salvarAusenciaHoras}
+                  onRemoverAusenciaHoras={removerAusenciaHoras}
+                  podeAtestado={podeDocs}
                   onRemoverFaltaParcial={removerFaltaParcial}
                   onMudarStatus={mudarStatusEquipe}
                   podeMudarStatus={userRole === 'admin'}
@@ -4321,6 +4447,10 @@ function TextArea({ label, value, onChange, full = false, disabled = false, defa
 
 /* " · meio período, faltou 13:00–17:00 (4h)" — ou nada, se for dia inteiro. */
 function textoParcial(f, db) {
+  if (ehHoras(f)) {
+    const r = resumoHoras(f);
+    return ` · ${r.duracao}, fora ${r.fora}`;
+  }
   if (!f.programacao_id) return '';
   const eq = db.programacoes.find((p) => p.id === f.programacao_id);
   if (!eq) return ' · meio período';
@@ -4495,6 +4625,8 @@ function ColaboradorDrawer({
   // 'documentos' só chega preenchido para admin (fetchDocumentos), então esta
   // lista naturalmente fica vazia para os outros cargos — mesma régua que já
   // vale para o resto da tela de Documentos.
+  const codigoPorTipo = new Map((docs?.tipos || []).map((t) => [t.id, t.codigo]));
+  const codigoDoc = (d) => codigoPorTipo.get(d.tipo_id) || 'atestado';
   const atestados = (docs?.documentos || [])
     .filter((d) => d.colaboradorId === item.id && d.repetivel)
     .sort((a, b) => String(b.emitido_em || '').localeCompare(String(a.emitido_em || '')));
@@ -4533,7 +4665,7 @@ function ColaboradorDrawer({
         <div className="card-actions">
           {podeCadastro && <button className="ghost-btn" onClick={openEdit}>Editar</button>}
           {podeCadastro && <button className="ghost-btn" onClick={openFalta}>Nova falta</button>}
-          {podeDocs && <button className="ghost-btn perigo-borda" onClick={() => openAtestado()}>Registrar atestado</button>}
+          {podeDocs && <button className="ghost-btn perigo-borda" onClick={() => openAtestado()}>Atestado ou licença</button>}
           {podeDocs && <button className="ghost-btn atencao-borda" onClick={() => openFerias()}>Registrar férias</button>}
         </div>
       )}
@@ -4612,21 +4744,27 @@ function ColaboradorDrawer({
       {podeDocs && (
         <SecaoFicha
           chave="atestados"
-          titulo="Registro de Atestados"
+          titulo="Atestados e licenças"
           n={atestados.length}
           alerta={atestados.some((a) => !a.caminho) ? `${atestados.filter((a) => !a.caminho).length} sem arquivo` : null}
         >
           {atestados.length === 0 ? (
-            <p className="small-muted">Nenhum atestado registrado.</p>
+            <p className="small-muted">Nenhum atestado nem licença registrado.</p>
           ) : (
             atestados.map((a) => (
               <div key={a.id} className="mini-card">
                 <div className="between">
-                  <strong>
-                    {new Date(`${a.emitido_em}T12:00:00`).toLocaleDateString('pt-BR')}
-                    {' até '}
-                    {new Date(`${a.valido_ate}T12:00:00`).toLocaleDateString('pt-BR')}
-                  </strong>
+                  <span className="at-item">
+                    <small className={`at-tipo${codigoDoc(a) === 'licenca' ? ' lic' : ''}`}>
+                      {codigoDoc(a) === 'licenca' ? `Licença${a.subtipo ? ` · ${a.subtipo}` : ''}` : 'Atestado'}
+                    </small>
+                    <strong>
+                      {new Date(`${a.emitido_em}T12:00:00`).toLocaleDateString('pt-BR')}
+                      {a.hora_de
+                        ? ` · ${horaCurta(a.hora_de)}–${horaCurta(a.hora_ate)}`
+                        : a.valido_ate !== a.emitido_em && <>{' até '}{new Date(`${a.valido_ate}T12:00:00`).toLocaleDateString('pt-BR')}</>}
+                    </strong>
+                  </span>
                   <span className="chips-row tight">
                     {a.caminho ? (
                       <button className="chip-btn" onClick={() => abrirAtestadoArquivo(a)}>Abrir</button>

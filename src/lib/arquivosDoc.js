@@ -218,9 +218,15 @@ export async function marcarDispensado({
    ============================================================================= */
 export async function salvarAtestado({
   colaborador, tipoAtestado, emitidoEm, validoAte, observacao, arquivo, existente, quem,
+  horaDe = null, horaAte = null, subtipo = null,
 }) {
   if (!emitidoEm || !validoAte) throw new Error('Informe o início e o fim do período.');
   if (validoAte < emitidoEm) throw new Error('O fim não pode vir antes do início.');
+  // Atestado/licença de HORAS (29-ausencia-horas-licencas.sql): um dia só, com intervalo.
+  if (horaDe || horaAte) {
+    if (!horaDe || !horaAte || horaDe >= horaAte) throw new Error('O fim precisa ser depois do início.');
+    if (emitidoEm !== validoAte) throw new Error('Atestado de horas é de um dia só.');
+  }
 
   let caminho = null;
   let arquivoCampos = {};
@@ -250,6 +256,10 @@ export async function salvarAtestado({
     ...arquivoCampos,
   };
   if (!existente) payload.enviado_por = quem || null;
+  // As colunas novas só vão quando têm o que dizer (ou para limpar o que havia):
+  // assim, sem o 29 rodado, o atestado de dias inteiros continua salvando.
+  if (horaDe || existente?.hora_de) { payload.hora_de = horaDe || null; payload.hora_ate = horaAte || null; }
+  if (subtipo || existente?.subtipo) payload.subtipo = subtipo || null;
 
   const res = existente
     ? await supabase.from('documentos').update(payload).eq('id', existente.id).select()
@@ -259,7 +269,7 @@ export async function salvarAtestado({
   // arquivo não pode ficar órfão no bucket.
   if (res.error || !res.data?.length) {
     if (caminho) await supabase.storage.from(BUCKET).remove([caminho]);
-    throw res.error || new Error('Não consegui salvar o atestado.');
+    throw res.error || new Error('Não consegui salvar.');
   }
 
   const linha = res.data[0];

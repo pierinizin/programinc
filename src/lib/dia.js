@@ -83,7 +83,8 @@ export function derivarDia(db, data) {
   (db.faltas || []).forEach((f) => {
     if (f.data !== data) return;
     faltosos.add(f.colaboradorId);
-    if (f.programacao_id) parciais.set(f.colaboradorId, f);
+    // meio período na equipe, ou horas fora sem equipe (pátio, consulta)
+    if (f.programacao_id || f.ausente_de) parciais.set(f.colaboradorId, f);
   });
 
   const noPatio = new Set();
@@ -106,7 +107,8 @@ export function derivarDia(db, data) {
       if (!atual || f.data > atual) fimPorDocumento.set(f.origem_documento_id, f.data);
     });
     (db.faltas || []).forEach((f) => {
-      if (f.data !== data || !f.origem_documento_id) return;
+      // Atestado de HORAS não bloqueia: a pessoa trabalha o resto do dia.
+      if (f.data !== data || !f.origem_documento_id || f.ausente_de) return;
       const ate = fimPorDocumento.get(f.origem_documento_id);
       if (ate) atestados.set(f.colaboradorId, { ate });
     });

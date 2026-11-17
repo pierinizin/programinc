@@ -10,6 +10,7 @@ import { MOTIVOS_FALTA, rotuloMotivo, corMotivo } from '../lib/motivos';
 import { agruparAusencias, foraNoDia, diaDaVolta, DIAS_SEMANA, curta, diasEntre } from '../lib/ausencias';
 import {
   duracaoTexto, horaCurta, intervalosFaltados, jornadaDe, paraHora, resumoParcial, somaMinutos,
+  ehParcial, ehHoras, resumoHoras, jornadaPadrao, paraMinutos,
 } from '../lib/faltaParcial';
 
 
@@ -147,6 +148,9 @@ export function QuadroDia({
   onRemoverFalta,
   onSalvarFaltaParcial,
   onRemoverFaltaParcial,
+  onSalvarAusenciaHoras,        // pátio / sem equipe: horas fora (29-…sql)
+  onRemoverAusenciaHoras,
+  podeAtestado = false,         // admin/RH: oferece atestado e licença de horas
   onMudarStatus,
   podeMudarStatus,
   podeExcluir,
@@ -177,6 +181,8 @@ export function QuadroDia({
   const [parcialAberta, setParcialAberta] = useState(null);
   // Cartão de hover da falta parcial — mesmo esquema de posição fixa do de férias.
   const [dicaParcial, setDicaParcial] = useState(null);
+  // Ausência de horas sem equipe (quem está no pátio): { pessoa }.
+  const [horasAberta, setHorasAberta] = useState(null);
   // Cartão de hover de quem está na zona de Ausências (dia inteiro) — mesmo esquema.
   const [dicaAus, setDicaAus] = useState(null);
   // Cartão de hover da etiqueta de contrato fora da vigência — mesmo esquema do de férias.
@@ -223,7 +229,7 @@ export function QuadroDia({
   const periodoDoAusente = useMemo(() => {
     const ids = faltosos;
     const lista = agruparAusencias(
-      (db.faltas || []).filter((f) => ids.has(f.colaboradorId) && !f.programacao_id),
+      (db.faltas || []).filter((f) => ids.has(f.colaboradorId) && !ehParcial(f)),
       (db.ferias || []).filter((f) => ids.has(f.colaboradorId)),
     );
     const m = new Map();
@@ -304,7 +310,8 @@ export function QuadroDia({
       if (tipo !== 'pessoa') return { ok: 'nao', msg: 'só pessoas' };
       if (zona === 'patio') {
         if (noPatio.has(item.id)) return { ok: 'nao', msg: 'já está no pátio' };
-        if (faltosos.has(item.id)) return { ok: 'nao', msg: 'tem falta hoje' };
+        // Ausência só de horas não impede: ele trabalhou o resto do dia.
+        if (faltosos.has(item.id) && !parciais.has(item.id)) return { ok: 'nao', msg: 'tem falta hoje' };
       } else {
         if (faltosos.has(item.id)) return { ok: 'nao', msg: 'já tem falta hoje' };
         if (noPatio.has(item.id)) return { ok: 'nao', msg: 'está no pátio' };
@@ -1169,18 +1176,29 @@ export function QuadroDia({
       <div className="zonas">
         <div className="zona zona-patio" data-zona="patio">
           <ZonaGente icone="patio" rotulo="Pátio" sub="veio e ficou na base" n={noPatio.size}>
-            {[...noPatio].map((id) => maps.colaboradores[id]).filter(Boolean).map((p) => (
-              <button
-                type="button"
-                key={p.id}
-                className="membro-chip"
-                title={podeEditar ? `${p.nome} — clique duplo para tirar` : p.nome}
-                onDoubleClick={() => podeEditar && onTirarDoPatio(p.id)}
-              >
-                <Avatar nome={p.nome} url={p.fotoUrl} tamanho="small" />
-                <span className="membro-nome">{nomeCurto(p.nome)}</span>
-              </button>
-            ))}
+            {[...noPatio].map((id) => maps.colaboradores[id]).filter(Boolean).map((p) => {
+              /* Clique simples: ausência de parte do dia (consulta, atestado de
+                 horas). Clique duplo continua tirando do pátio. */
+              const horas = parciais.get(p.id);
+              const r = horas && ehHoras(horas) ? resumoHoras(horas) : null;
+              return (
+                <button
+                  type="button"
+                  key={p.id}
+                  className={`membro-chip${r ? ' aus parcial' : ''}`}
+                  style={r ? { '--ac': corMotivo(horas.motivo) } : undefined}
+                  title={podeEditar
+                    ? `${p.nome}${r ? ` — ${rotuloMotivo(horas.motivo)}, fora ${r.fora}` : ''} — clique para ausência de horas · clique duplo para tirar do pátio`
+                    : p.nome}
+                  onClick={podeEditar && onSalvarAusenciaHoras ? (ev) => cliqueSimples(ev, () => setHorasAberta({ pessoa: p })) : undefined}
+                  onDoubleClick={() => podeEditar && cliqueDuplo(() => onTirarDoPatio(p.id))}
+                >
+                  <Avatar nome={p.nome} url={p.fotoUrl} tamanho="small" />
+                  <span className="membro-nome">{nomeCurto(p.nome)}</span>
+                  {r && <span className="patio-horas">{r.duracao}</span>}
+                </button>
+              );
+            })}
             {noPatio.size === 0 && <span className="zona-vazia">arraste alguém aqui</span>}
           </ZonaGente>
         </div>
@@ -1203,11 +1221,13 @@ export function QuadroDia({
                   className={`membro-chip aus${parcial ? ' parcial travado' : ''}`}
                   style={{ '--ac': corMotivo((parcial || reg)?.motivo) }}
                   aria-label={`${p.nome} — ${rotuloMotivo((parcial || reg)?.motivo)}${parcial ? ' (meio período)' : ''}`}
+                  onClick={parcial && ehHoras(parcial) && podeEditar && onSalvarAusenciaHoras
+                    ? () => { setDicaAus(null); setHorasAberta({ pessoa: p }); } : undefined}
                   onDoubleClick={() => podeEditar && !parcial && onRemoverFalta(p.id)}
                   onMouseEnter={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     if (parcial && eqParcial) setDicaParcial({ falta: parcial, eq: eqParcial, nome: p.nome, naZona: true, rect });
-                    else if (reg) setDicaAus({ falta: reg, periodo: periodoDoAusente.get(p.id) || null, rect });
+                    else if (reg) setDicaAus({ falta: reg, periodo: ehHoras(reg) ? null : periodoDoAusente.get(p.id) || null, rect });
                   }}
                   onMouseLeave={() => { setDicaParcial(null); setDicaAus(null); }}
                 >
@@ -1276,7 +1296,9 @@ export function QuadroDia({
               <span className="tt-icone tt-icone-aus" aria-hidden="true" />
               <span className="tt-titulo">{rotuloMotivo(falta.motivo)}</span>
             </div>
-            {longo ? (
+            {ehHoras(falta) ? (
+              <p className="tt-linha">Fora <b>{resumoHoras(falta).fora}</b> ({resumoHoras(falta).duracao}) · trabalhou o resto do dia</p>
+            ) : longo ? (
               <p className="tt-linha">
                 De <b>{curta(periodo.inicio)}</b> a <b>{curta(periodo.fim)}</b> · dia <b>{diaN}</b> de {periodo.dias}
               </p>
@@ -1288,7 +1310,9 @@ export function QuadroDia({
             )}
             {falta.observacao && <p className="tt-linha">Obs.: <b>{falta.observacao}</b></p>}
             {falta.origem_documento_id ? (
-              <p className="tt-linha tt-fraca">Lançada pelo atestado — o período se ajusta na ficha.</p>
+              <p className="tt-linha tt-fraca">Lançada {falta.motivo === 'licenca' ? 'pela licença' : 'pelo atestado'} — o período se ajusta na ficha.</p>
+            ) : ehHoras(falta) ? (
+              podeEditar && <p className="tt-linha tt-fraca">Clique para mudar o horário ou desfazer.</p>
             ) : podeEditar && (
               <p className="tt-linha tt-fraca">Clique duplo para tirar da zona.</p>
             )}
@@ -1324,6 +1348,23 @@ export function QuadroDia({
           </div>
         );
       })() : null}
+
+      {horasAberta && (
+        <ModalAusenciaHoras
+          pessoa={horasAberta.pessoa}
+          data={selectedDate}
+          existente={(() => { const f = parciais.get(horasAberta.pessoa.id); return f && ehHoras(f) ? f : null; })()}
+          emEquipe={(() => { const f = parciais.get(horasAberta.pessoa.id); return f && f.programacao_id ? equipes.find((e) => e.id === f.programacao_id) || null : null; })()}
+          faltaDiaInteiro={faltosos.has(horasAberta.pessoa.id) && !parciais.has(horasAberta.pessoa.id)}
+          podeAtestado={podeAtestado}
+          aoFechar={() => setHorasAberta(null)}
+          aoSalvar={async (dados) => {
+            const ok = await onSalvarAusenciaHoras(horasAberta.pessoa.id, dados);
+            if (ok !== false) setHorasAberta(null);
+          }}
+          aoRemover={() => { const id = horasAberta.pessoa.id; setHorasAberta(null); onRemoverAusenciaHoras(id); }}
+        />
+      )}
 
       {parcialAberta && (
         <ModalFaltaParcial
@@ -1616,6 +1657,169 @@ function ModalFaltaParcial({
           >
             {existente ? 'Salvar' : 'Lançar falta'}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* =============================================================================
+   Ausência de horas SEM equipe — quem está no pátio (ou foi à consulta)
+   -----------------------------------------------------------------------------
+   Diferente do meio período de equipe (que guarda o que a pessoa TRABALHOU,
+   comparando com o horário da equipe), aqui guarda o que ela ficou FORA, e a
+   conta usa o horário padrão de Parâmetros. Atestado e licença de horas
+   (admin/RH) viram documento, com o arquivo — o banco gera a falta.
+   ============================================================================= */
+const MOTIVOS_HORAS = [
+  ['falta_justificada', 'Falta justificada'],
+  ['falta_injustificada', 'Falta injustificada'],
+  ['folga', 'Folga'],
+  ['outro', 'Outro'],
+];
+
+function ModalAusenciaHoras({ pessoa, data, existente, emEquipe, faltaDiaInteiro, podeAtestado, aoFechar, aoSalvar, aoRemover }) {
+  const jornada = jornadaDe(jornadaPadrao());
+  const manha = jornada[0];
+  const tarde = jornada.length > 1 ? jornada[1] : null;
+  const [de, setDe] = useState(horaCurta(existente?.ausente_de) || (manha ? paraHora(manha[0]) : '07:30'));
+  const [ate, setAte] = useState(horaCurta(existente?.ausente_ate) || (manha ? paraHora(manha[1]) : '11:30'));
+  const [motivo, setMotivo] = useState(existente?.motivo || '');
+  const [subtipo, setSubtipo] = useState('');
+  const [arquivo, setArquivo] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+  const travada = Boolean(existente?.origem_documento_id);
+
+  useEffect(() => {
+    const tecla = (ev) => { if (ev.key === 'Escape') aoFechar(); };
+    document.addEventListener('keydown', tecla);
+    return () => document.removeEventListener('keydown', tecla);
+  }, [aoFechar]);
+
+  const invalido = !de || !ate || de >= ate;
+  const r = invalido ? null : resumoHoras({ ausente_de: de, ausente_ate: ate });
+  const semHoras = r && r.minutosFaltados === 0;
+  const doc = motivo === 'atestado_medico' || motivo === 'licenca';
+  const motivos = [
+    ...(podeAtestado ? [['atestado_medico', 'Atestado médico'], ['licenca', 'Licença']] : []),
+    ...MOTIVOS_HORAS,
+  ];
+  const podeSalvar = !travada && !faltaDiaInteiro && !emEquipe && !invalido && !semHoras && motivo
+    && (motivo !== 'licenca' || subtipo) && !salvando;
+  const trabalhou = r && jornada.length
+    ? jornada.flatMap(([a, b]) => {
+      const ini = paraMinutos(de); const fim = paraMinutos(ate);
+      return [[a, Math.min(b, ini)], [Math.max(a, fim), b]].filter(([x, y]) => x < y);
+    }) : [];
+
+  return (
+    <div className="modal-backdrop" onClick={aoFechar}>
+      <div className="modal modal-parcial" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={`Ausência de horas — ${pessoa.nome}`}>
+        <div className="card-header between">
+          <div>
+            <strong>{pessoa.nome}</strong>
+            <p className="small-muted" style={{ margin: 0 }}>
+              {data.split('-').reverse().join('/')} · no pátio · ausência de parte do dia
+            </p>
+          </div>
+          <button className="icon-btn" onClick={aoFechar} aria-label="Fechar">×</button>
+        </div>
+
+        {faltaDiaInteiro ? (
+          <p className="fp-aviso">Já tem falta de <b>dia inteiro</b> lançada hoje. Tire da zona de Ausências antes.</p>
+        ) : emEquipe ? (
+          <p className="fp-aviso">Já tem meio período lançado na equipe de <b>{emEquipe.cidade}</b>. Ajuste por lá.</p>
+        ) : travada ? (
+          <p className="fp-aviso">
+            Esta ausência veio {existente.motivo === 'licenca' ? 'de uma licença' : 'de um atestado'} de horas
+            ({horaCurta(existente.ausente_de)}–{horaCurta(existente.ausente_ate)}). Para mudar, abra a ficha da pessoa.
+          </p>
+        ) : (
+          <>
+            <div className="fp-jornada">
+              Horário padrão: <b>{jornada.map(([a, b]) => `${paraHora(a)}–${paraHora(b)}`).join(' · ')}</b> ({duracaoTexto(somaMinutos(jornada))})
+              {' '}— quem está no pátio segue o horário padrão de Parâmetros
+            </div>
+
+            <div className="fp-rot">Ficou fora</div>
+            <div className="fp-atalhos">
+              {manha && (
+                <button type="button" className="chip-btn" onClick={() => { setDe(paraHora(manha[0])); setAte(paraHora(manha[1])); }}>
+                  Manhã ({paraHora(manha[0])}–{paraHora(manha[1])})
+                </button>
+              )}
+              {tarde && (
+                <button type="button" className="chip-btn" onClick={() => { setDe(paraHora(tarde[0])); setAte(paraHora(tarde[1])); }}>
+                  Tarde ({paraHora(tarde[0])}–{paraHora(tarde[1])})
+                </button>
+              )}
+            </div>
+            <div className="fp-horas">
+              <label><span>Saiu às</span><input type="time" value={de} onChange={(e) => setDe(e.target.value)} /></label>
+              <label><span>Voltou às</span><input type="time" value={ate} onChange={(e) => setAte(e.target.value)} /></label>
+            </div>
+            <div className={`fp-resultado${invalido || semHoras ? ' neutro' : ''}`}>
+              {invalido ? 'A volta precisa ser depois da saída.'
+                : semHoras ? 'Esse horário fica fora do expediente — não há ausência.'
+                  : (
+                    <>
+                      Fora <b>{r.faltouTexto}</b> · <b>{r.duracao}</b>
+                      {trabalhou.length > 0 && <> · trabalhou {trabalhou.map(([a, b]) => `${paraHora(a)}–${paraHora(b)}`).join(' e ')}</>}
+                    </>
+                  )}
+            </div>
+
+            <div className="fp-rot">Motivo</div>
+            <div className="fp-motivos">
+              {motivos.map(([valor, rotulo]) => (
+                <button key={valor} type="button" className={`chip-btn${motivo === valor ? ' ativo' : ''}`}
+                  aria-pressed={motivo === valor} onClick={() => setMotivo(valor)}>
+                  {rotulo}
+                </button>
+              ))}
+            </div>
+            {motivo === 'licenca' && (
+              <>
+                <div className="fp-rot">Tipo de licença</div>
+                <div className="fp-motivos">
+                  {valoresDe('tipo_licenca').map((t) => (
+                    <button key={t} type="button" className={`chip-btn${subtipo === t ? ' ativo' : ''}`}
+                      aria-pressed={subtipo === t} onClick={() => setSubtipo(t)}>{t}</button>
+                  ))}
+                </div>
+              </>
+            )}
+            {doc && (
+              <label className="fp-arquivo">
+                <span>Comprovante ({motivo === 'licenca' ? 'declaração' : 'atestado ou declaração de horas'}) — opcional, pode anexar depois pela ficha</span>
+                <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp"
+                  onChange={(e) => setArquivo(e.target.files?.[0] || null)} />
+              </label>
+            )}
+          </>
+        )}
+
+        <div className="fp-acoes">
+          {existente && !travada && (
+            <button type="button" className="ghost-btn fp-desfazer" onClick={aoRemover}>Trabalhou o dia todo</button>
+          )}
+          <span style={{ flex: 1 }} />
+          <button type="button" className="ghost-btn" onClick={aoFechar}>Cancelar</button>
+          {!travada && !faltaDiaInteiro && !emEquipe && (
+            <button
+              type="button"
+              className="primary-btn"
+              disabled={!podeSalvar}
+              onClick={async () => {
+                setSalvando(true);
+                await aoSalvar({ motivo, ausente_de: de, ausente_ate: ate, arquivo, subtipo: motivo === 'licenca' ? subtipo : null });
+                setSalvando(false);
+              }}
+            >
+              {salvando ? 'Salvando…' : existente ? 'Salvar' : 'Lançar ausência'}
+            </button>
+          )}
         </div>
       </div>
     </div>

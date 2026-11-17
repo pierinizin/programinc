@@ -3,6 +3,7 @@ import { Avatar } from './Avatar';
 import { contratosDe, contratoAutomatico, dataBR } from '../lib/contratos';
 import { foraDaVigencia } from '../lib/vigencia';
 import { funcaoLidera, regra } from '../lib/parametros';
+import { ehParcial } from '../lib/faltaParcial';
 
 /* =============================================================================
    Painel da equipe — abre ao lado, por cima do quadro
@@ -124,7 +125,7 @@ export function PainelEquipe({
   const outras = (db.programacoes || []).filter((p) => p.data === form.data && p.id !== form.id);
   const ocupados = new Set([
     ...outras.flatMap((p) => p.membroIds || []),
-    ...(db.faltas || []).filter((x) => x.data === form.data && !x.programacao_id).map((x) => x.colaboradorId),
+    ...(db.faltas || []).filter((x) => x.data === form.data && !ehParcial(x)).map((x) => x.colaboradorId),
   ]);
   const veicOcupados = new Set(outras.flatMap((p) => p.veiculoIds || []));
   const livres = colaboradores

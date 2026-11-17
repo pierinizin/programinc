@@ -22,6 +22,8 @@
    baixarControle() depende do DOM.
    ============================================================================= */
 
+import { ehParcial } from './faltaParcial';
+
 const FOLGA_DIAS = 3;   // mesmo buraco tolerado nos Relatórios (lib/relatorios.js)
 const MS_DIA = 86400000;
 const MESES = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO',
@@ -106,7 +108,7 @@ export function montarLinhasControle({
 
   // Falta de dia inteiro: a pessoa não trabalhou naquele dia, mesmo estando na equipe.
   const faltouDia = new Set(
-    (faltas || []).filter((f) => !f.programacao_id).map((f) => `${f.colaboradorId}|${f.data}`)
+    (faltas || []).filter((f) => !ehParcial(f)).map((f) => `${f.colaboradorId}|${f.data}`)
   );
 
   // 1) Um registro por pessoa por dia.

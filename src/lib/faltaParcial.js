@@ -16,6 +16,8 @@
    Funções puras, sem React: dá pra conferir a conta sem abrir o navegador.
    ============================================================================= */
 
+import { regra } from './parametros';
+
 /** 'HH:MM' ou 'HH:MM:SS' (o Postgres devolve `time` com segundos) -> minutos. */
 export function paraMinutos(hora) {
   const m = /^(\d{1,2}):(\d{2})/.exec(String(hora || ''));
@@ -101,4 +103,47 @@ export function resumoParcial(eq, falta) {
   };
 }
 
-export const ehParcial = (falta) => !!falta?.programacao_id;
+/* -------------------------------------------------------------------------
+   Falta de HORAS sem equipe (29-ausencia-horas-licencas.sql)
+   -------------------------------------------------------------------------
+   Quem está no pátio, ou foi ao médico sem estar escalado, não tem jornada
+   de equipe para comparar. Aí o banco guarda o que ficou FORA
+   (faltas.ausente_de / ausente_ate) e a conta usa o horário padrão de
+   Parâmetros — de novo sem contar o almoço.
+   ------------------------------------------------------------------------- */
+export const ehHoras = (falta) => !!falta?.ausente_de && !falta?.programacao_id;
+
+/** Meio período de qualquer tipo (na equipe ou de horas). Dia inteiro = false. */
+export const ehParcial = (falta) => !!falta?.programacao_id || ehHoras(falta);
+
+/** A "equipe" de mentira com o horário padrão — só para usar jornadaDe(). */
+export const jornadaPadrao = () => ({ ...regra('horario_padrao') });
+
+export function resumoHoras(falta) {
+  const ini = paraMinutos(falta.ausente_de);
+  const fim = paraMinutos(falta.ausente_ate);
+  const jornada = jornadaDe(jornadaPadrao());
+  const fora = ini == null || fim == null || ini >= fim ? []
+    : jornada.length
+      ? jornada.map(([a, b]) => [Math.max(a, ini), Math.min(b, fim)]).filter(([a, b]) => a < b)
+      : [[ini, fim]];
+  const minutosFaltados = somaMinutos(fora);
+  return {
+    trabalhou: '',
+    fora: `${horaCurta(falta.ausente_de)}–${horaCurta(falta.ausente_ate)}`,
+    faltou: fora,
+    faltouTexto: fora.map(([a, b]) => `${paraHora(a)}–${paraHora(b)}`).join(' e '),
+    minutosFaltados,
+    duracao: duracaoTexto(minutosFaltados),
+  };
+}
+
+/** Resumo de qualquer falta parcial; null se for dia inteiro (ou a equipe sumiu). */
+export function resumoDaFalta(falta, progPorId) {
+  if (ehHoras(falta)) return resumoHoras(falta);
+  if (falta?.programacao_id) {
+    const eq = progPorId?.get(falta.programacao_id);
+    return eq ? resumoParcial(eq, falta) : null;
+  }
+  return null;
+}

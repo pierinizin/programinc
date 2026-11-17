@@ -107,7 +107,7 @@ export function agruparAusencias(faltas = [], ferias = []) {
       atual.ultimoDia = f.data;
       atual.faltaIds.push(f.id);
       if (!atual.datas.includes(f.data)) atual.datas.push(f.data);
-      atual.parcial ||= Boolean(f.trabalhou_de);
+      atual.parcial ||= Boolean(f.trabalhou_de || f.ausente_de);
       if (!atual.observacao && f.observacao) atual.observacao = f.observacao;
       return;
     }
@@ -115,7 +115,7 @@ export function agruparAusencias(faltas = [], ferias = []) {
     atual = {
       id: `f:${f.id}`, chave, pessoaId: f.colaboradorId, tipo: tipoDoMotivo(f.motivo), motivo: f.motivo,
       rotulo: rotuloMotivo(f.motivo), inicio: f.data, fim: f.data, ultimoDia: f.data, dias: 1,
-      parcial: Boolean(f.trabalhou_de), observacao: f.observacao || '', documentoId: doc,
+      parcial: Boolean(f.trabalhou_de || f.ausente_de), observacao: f.observacao || '', documentoId: doc,
       faltaIds: [f.id], feriasId: null, datas: [f.data],
     };
   });

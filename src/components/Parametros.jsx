@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { confirmar, notificar } from '../lib/dialogos';
 import { LISTAS, REGRAS, PADRAO_REGRAS, itensDe, regra } from '../lib/parametros';
@@ -18,7 +18,7 @@ import { LISTAS, REGRAS, PADRAO_REGRAS, itensDe, regra } from '../lib/parametros
 const SETOR_ROT = { trecho: 'Trecho', fora: 'Escritório e outros' };
 
 /** Quantos usam cada valor, por lista. */
-function usos(db) {
+function usos(db, documentos) {
   const conta = (lista, campo) => {
     const m = {};
     (lista || []).forEach((x) => { const v = x[campo]; if (v) m[v] = (m[v] || 0) + 1; });
@@ -29,6 +29,7 @@ function usos(db) {
     tipo_servico: conta(db.programacoes, 'tipoEquipe'),
     motivo_nao_realizado: conta(db.programacoes, 'motivoNaoExecucao'),
     tipo_veiculo: conta(db.veiculos, 'tipo'),
+    tipo_licenca: conta(documentos, 'subtipo'),
   };
 }
 
@@ -41,17 +42,27 @@ function erroOuNada(res, titulo) {
 }
 
 /* ------------------------------------------------------------ uma linha */
-function Linha({ item, def, n, primeiro, ultimo, onSubir, onDescer, onSalvar, onApagar, onAtivo, bloqueado }) {
+function Linha({ item, def, n, primeiro, ultimo, onSubir, onDescer, onPegar, classeArrasto = '', onSalvar, onApagar, onAtivo, bloqueado }) {
   const [editando, setEditando] = useState(false);
   const [f, setF] = useState(null);
   const abrir = () => { setF({ valor: item.valor, dados: { ...(item.dados || {}) } }); setEditando(true); };
   const mudou = f && (f.valor.trim() !== item.valor || JSON.stringify(f.dados) !== JSON.stringify(item.dados || {}));
   const d = item.dados || {};
   return (
-    <div className={`par-row${item.ativo === false ? ' off' : ''}${editando ? ' ed' : ''}`}>
+    <div className={`par-row${item.ativo === false ? ' off' : ''}${editando ? ' ed' : ''}${classeArrasto}`}>
       <span className="par-ordem">
-        <button type="button" disabled={primeiro || bloqueado} onClick={onSubir} aria-label="Subir">▲</button>
-        <button type="button" disabled={ultimo || bloqueado} onClick={onDescer} aria-label="Descer">▼</button>
+        {/* Arrastar pela alça (mouse ou dedo). As setas continuam para o
+            ajuste fino e para quem usa o teclado. */}
+        <span
+          className={`par-alca${bloqueado ? ' off' : ''}`}
+          onPointerDown={bloqueado ? undefined : onPegar}
+          title="Arraste para mudar a ordem"
+          aria-hidden="true"
+        >⋮⋮</span>
+        <span className="par-setas">
+          <button type="button" disabled={primeiro || bloqueado} onClick={onSubir} aria-label="Subir">▲</button>
+          <button type="button" disabled={ultimo || bloqueado} onClick={onDescer} aria-label="Descer">▼</button>
+        </span>
       </span>
       <button type="button" className="par-nome" onClick={editando ? () => setEditando(false) : abrir} disabled={bloqueado}>
         <b>{item.valor}</b>
@@ -175,20 +186,65 @@ function EditorLista({ def, linhas, contagem, bloqueado, onRecarregar, onDadosMu
       if (!erroOuNada(r, 'Salvar')) await onRecarregar();
     });
   }
-  async function trocar(lista, i, j) {
-    if (!lista[i] || !lista[j]) return;
-    // Renumera a lista visível (10, 20, 30…) com os dois trocados de lugar e
-    // grava só quem mudou — assim a ordem nunca empata.
+  /* Leva o item da posição `de` para `para` e renumera a lista visível
+     (10, 20, 30…), gravando só quem mudou — a ordem nunca empata. A nova
+     ordem aparece na hora (previa) e o banco confirma em seguida. */
+  const [previa, setPrevia] = useState(null);   // { g, ids }
+  async function mover(g, lista, de, para) {
+    if (de === para || !lista[de] || para < 0 || para >= lista.length) return;
     const nova = lista.slice();
-    [nova[i], nova[j]] = [nova[j], nova[i]];
-    const base = Math.min(...lista.map((x) => x.ordem ?? 0));
-    const mudar = nova.map((x, k) => ({ x, ordem: base + (k + 1) * 10 })).filter(({ x, ordem }) => x.ordem !== ordem);
+    const [x] = nova.splice(de, 1);
+    nova.splice(para, 0, x);
+    setPrevia({ g, ids: nova.map((i) => i.id) });
+    const base = Math.min(...lista.map((i) => i.ordem ?? 0));
+    const mudar = nova.map((i, k) => ({ i, ordem: base + (k + 1) * 10 })).filter(({ i, ordem }) => i.ordem !== ordem);
     await com(async () => {
-      const res = await Promise.all(mudar.map(({ x, ordem }) => supabase.from('parametros_itens').update({ ordem }).eq('id', x.id)));
+      const res = await Promise.all(mudar.map(({ i, ordem }) => supabase.from('parametros_itens').update({ ordem }).eq('id', i.id)));
       if (!res.some((r) => erroOuNada(r, 'Ordem'))) await onRecarregar();
     });
+    setPrevia(null);
   }
 
+  /* Arrastar com o ponteiro (funciona com mouse e no toque — o arrastar
+     nativo do navegador não funciona no celular). Enquanto arrasta, uma
+     linha amarela mostra onde o item vai cair. */
+  const [arrasto, setArrasto] = useState(null);   // { g, de, alvo }
+  const grupoRefs = useRef({});
+  function pegar(e, g, lista, de) {
+    if (e.button != null && e.button !== 0) return;
+    e.preventDefault();
+    const linhasEl = [...(grupoRefs.current[g]?.querySelectorAll('.par-row') || [])];
+    const meios = linhasEl.map((el) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; });
+    let alvo = de;
+    setArrasto({ g, de, alvo });
+    const andar = (ev) => {
+      let p = meios.findIndex((m) => ev.clientY < m);
+      if (p === -1) p = meios.length;
+      if (p !== alvo) { alvo = p; setArrasto({ g, de, alvo: p }); }
+    };
+    const soltar = () => {
+      window.removeEventListener('pointermove', andar);
+      window.removeEventListener('pointerup', soltar);
+      window.removeEventListener('pointercancel', soltar);
+      document.body.classList.remove('par-arrastando');
+      setArrasto(null);
+      // alvo = posição de inserção (0…n); tirando o item, quem estava depois sobe um.
+      const para = alvo > de ? alvo - 1 : alvo;
+      mover(g, lista, de, para);
+    };
+    document.body.classList.add('par-arrastando');
+    window.addEventListener('pointermove', andar);
+    window.addEventListener('pointerup', soltar);
+    window.addEventListener('pointercancel', soltar);
+  }
+  const classeDe = (g, i, n) => {
+    if (!arrasto || arrasto.g !== g) return '';
+    let c = i === arrasto.de ? ' arrastado' : '';
+    const vazio = arrasto.alvo === arrasto.de || arrasto.alvo === arrasto.de + 1;
+    if (!vazio && arrasto.alvo === i) c += ' alvo-antes';
+    if (!vazio && arrasto.alvo === n && i === n - 1) c += ' alvo-depois';
+    return c;
+  };
 
   return (
     <div className="par-ed">
@@ -206,9 +262,14 @@ function EditorLista({ def, linhas, contagem, bloqueado, onRecarregar, onDadosMu
           <button type="button" className="primary-btn" onClick={adicionar} disabled={ocupado || !novo.trim()}>Adicionar</button>
         </div>
       )}
-      {grupos.map(([g, lista]) => (
-        <div key={g || 'todos'}>
-          {g && <div className="par-grupo">{g === 'trecho' ? 'Trecho' : 'Escritório, oficina e outros'}</div>}
+      {grupos.map(([g0, listaBase]) => {
+        const g = g0 || 'todos';
+        const lista = previa?.g === g
+          ? previa.ids.map((id) => listaBase.find((x) => x.id === id)).filter(Boolean)
+          : listaBase;
+        return (
+        <div key={g} ref={(el) => { grupoRefs.current[g] = el; }}>
+          {g0 && <div className="par-grupo">{g0 === 'trecho' ? 'Trecho' : 'Escritório, oficina e outros'}</div>}
           <div className="par-th"><span /><span>Nome</span><span>{def.comMarcas ? 'Marcações' : ''}</span><span className="dir">Em uso</span><span /></div>
           {!lista.length && <div className="par-vazio">Nada aqui ainda.</div>}
           {lista.map((item, i) => (
@@ -220,16 +281,19 @@ function EditorLista({ def, linhas, contagem, bloqueado, onRecarregar, onDadosMu
               primeiro={i === 0}
               ultimo={i === lista.length - 1}
               bloqueado={bloqueado || ocupado}
-              onSubir={() => trocar(lista, i, i - 1)}
-              onDescer={() => trocar(lista, i, i + 1)}
+              onSubir={() => mover(g, lista, i, i - 1)}
+              onDescer={() => mover(g, lista, i, i + 1)}
+              onPegar={(e) => pegar(e, g, lista, i)}
+              classeArrasto={classeDe(g, i, lista.length)}
               onSalvar={(f) => salvar(item, f)}
               onApagar={() => apagar(item)}
               onAtivo={(v) => ativo(item, v)}
             />
           ))}
         </div>
-      ))}
-      <div className="par-rod">As setas mudam a ordem em que aparece nos menus. Item em uso não se apaga: desativa.</div>
+        );
+      })}
+      <div className="par-rod">Arraste pela alça ⋮⋮ para mudar a ordem em que aparece nos menus. Item em uso não se apaga: desativa.</div>
     </div>
   );
 }
@@ -297,9 +361,9 @@ function EditorRegras({ bloqueado, onRecarregar }) {
 }
 
 /* ------------------------------------------------------------ a tela */
-export function Parametros({ status, linhas, db, onRecarregar, onDadosMudaram }) {
+export function Parametros({ status, linhas, db, documentos = [], onRecarregar, onDadosMudaram }) {
   const [aba, setAba] = useState('funcao');
-  const contagem = useMemo(() => usos(db), [db]);
+  const contagem = useMemo(() => usos(db, documentos), [db, documentos]);
   const bloqueado = status !== 'ok';
   const grupos = [...new Set(LISTAS.map((l) => l.grupo))];
   const nDe = (chave) => (bloqueado ? itensDe(chave) : (linhas.itens || []).filter((x) => x.lista === chave && x.ativo !== false)).length;

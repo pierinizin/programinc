@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
 import { MOTIVOS_FORA_DA_CONTA, rotuloMotivo } from '../lib/motivos';
-import { duracaoTexto, resumoParcial } from '../lib/faltaParcial';
+import { duracaoTexto, ehParcial, resumoDaFalta } from '../lib/faltaParcial';
 import { baixarControle, montarLinhasControle, opcoesControle } from '../lib/controleContratante';
 import {
   ST, calendariosDoMes, hojeISO, letraMotivo, mesesNoIntervalo, semanasDoMes,
@@ -894,14 +894,15 @@ export function Relatorios({
     [faltas, de, ate, incluirFerias],
   );
   const faltasFiltradas = useMemo(
-    () => faltasNoPeriodo.filter((f) => !f.programacao_id),
+    () => faltasNoPeriodo.filter((f) => !ehParcial(f)),
     [faltasNoPeriodo],
   );
   const progPorId = useMemo(() => new Map(programacoes.map((p) => [p.id, p])), [programacoes]);
   const parciaisFiltradas = useMemo(
     () => faltasNoPeriodo
-      .filter((f) => f.programacao_id && progPorId.has(f.programacao_id))
-      .map((f) => ({ ...f, resumo: resumoParcial(progPorId.get(f.programacao_id), f) })),
+      .filter(ehParcial)
+      .map((f) => ({ ...f, resumo: resumoDaFalta(f, progPorId) }))
+      .filter((f) => f.resumo),
     [faltasNoPeriodo, progPorId],
   );
   const parciaisPorPessoa = useMemo(() => {
@@ -979,7 +980,7 @@ export function Relatorios({
   const somaDiasEnc = periodos.reduce((s, p) => s + p.dias, 0);
   const faltasDoEnc = encAtual
     ? faltas.filter((f) => f.colaboradorId === encAtual.id && !MOTIVOS_FORA_DA_CONTA.includes(f.motivo)
-        && !f.programacao_id && f.data >= de && f.data <= ate).length
+        && !ehParcial(f) && f.data >= de && f.data <= ate).length
     : 0;
 
   const porContratante = useMemo(() => {
