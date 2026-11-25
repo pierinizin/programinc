@@ -6,34 +6,22 @@
    falta, atestado e férias — mas não entra em equipe nenhuma. Se aparecesse
    no quadro do dia, viraria um "livre" eterno e bagunçaria os contadores.
 
-   Regra única: setor 'trecho' (ou vazio, de antes da coluna existir) = campo.
-   Qualquer outro = cadastro, documentos, faltas e férias; nada de Programação,
+   Regra única: setor que "entra na programação" (o trecho, ou vazio, de antes
+   da coluna existir) = campo. Qualquer outro = cadastro, documentos, faltas e férias; nada de Programação,
    Integrações, Calendário, Relatórios e exports da programação.
    ============================================================================= */
 
-export const SETORES = [
-  { valor: 'trecho', rotulo: 'Trecho' },
-  { valor: 'escritorio', rotulo: 'Escritório' },
-  { valor: 'oficina', rotulo: 'Oficina' },
-  { valor: 'outros', rotulo: 'Outros' },
-];
+import { setorEhCampo } from './parametros';
 
-const ROTULO = Object.fromEntries(SETORES.map((s) => [s.valor, s.rotulo]));
+/* Os setores moram em Parâmetros (lista 'setor'). Cada um diz se "entra na
+   programação" — o Trecho sempre entra; um setor novo pode entrar também
+   (ex.: um segundo trecho) ou ser só administrativo, como o Escritório.
+   O nome continua `ehTrecho` porque é a palavra que o app inteiro usa para
+   "vai a campo". */
+export { listaSetores, rotuloDoSetor as rotuloSetor, corDoSetor as corSetor, setorEhCampo } from './parametros';
 
 export const setorDe = (c) => c?.setor || 'trecho';
-export const ehTrecho = (c) => setorDe(c) === 'trecho';
-export const rotuloSetor = (valor) => ROTULO[valor || 'trecho'] || valor;
-
-/** Funções que o trecho usa (lista fixa, como sempre foi). */
-export const FUNCOES_TRECHO = [
-  'Encarregado', 'Motorista de Veículos Médios', 'Ajudante de produção', 'Operador de máquina de pintura',
-];
-
-/** Sugestões para quem não é do trecho — a função é livre, isto só ajuda a digitar. */
-export const FUNCOES_SUGERIDAS = [
-  'Auxiliar administrativo', 'Assistente administrativo', 'Mecânico', 'Almoxarife',
-  'Técnico de segurança do trabalho', 'Auxiliar de serviços gerais',
-];
+export const ehTrecho = (c) => setorEhCampo(setorDe(c));
 
 /**
  * O mesmo `db`, só com o pessoal do trecho (e as faltas, pátio, férias,

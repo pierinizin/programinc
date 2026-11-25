@@ -23,7 +23,7 @@
    pra reduzir o estrago, mas variação de escrita real continua separando.
    ============================================================================= */
 
-import { MOTIVOS_FORA_DA_CONTA } from './motivos';
+import { contaNoAbsenteismo } from './motivos';
 
 const FOLGA_DIAS = 3;
 
@@ -291,7 +291,7 @@ export function filtrarFaltas(faltas, { de, ate, incluirFerias }) {
   return faltas.filter((f) => {
     if (de && f.data < de) return false;
     if (ate && f.data > ate) return false;
-    if (!incluirFerias && MOTIVOS_FORA_DA_CONTA.includes(f.motivo)) return false;
+    if (!incluirFerias && !contaNoAbsenteismo(f.motivo)) return false;
     return true;
   });
 }

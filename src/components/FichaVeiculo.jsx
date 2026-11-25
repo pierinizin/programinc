@@ -1,4 +1,5 @@
 import { AcoesFicha } from './AcoesFicha';
+import { veiculoFora } from '../lib/parametros';
 
 /**
  * Ficha do veículo — mesmos controles da ficha do colaborador.
@@ -22,7 +23,7 @@ export function FichaVeiculo({
   classeTag,
   icone,
 }) {
-  const inativo = item.status === 'Inativo';
+  const inativo = veiculoFora(item);
 
   return (
     <div

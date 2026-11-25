@@ -9,19 +9,27 @@
    mexer numa lembra da outra.
    ============================================================================= */
 
-import { funcaoDirige, funcaoLidera } from './parametros';
+import { funcaoDirige, funcaoLidera, setorEhCampo } from './parametros';
 
-/** O tipo se aplica a esta pessoa? Espelha o `where` da view.
-    Quem não é do trecho (escritório, oficina…) segue só a marca
-    `vale_fora_trecho` do tipo — a regra por função (motorista, encarregado)
-    é coisa do trecho. Sem a coluna no banco (antes do 21-setor.sql), todo
-    mundo é trecho e tudo funciona como antes. */
+/** O tipo se aplica a esta pessoa? Espelha public.documento_vale_para
+    (30-setores-motivos-documentos.sql).
+    • Tipo desativado não é cobrado de ninguém.
+    • `setores` (escolhidos em Parâmetros) diz quais setores entregam. Sem a
+      coluna (antes do 30), vale a regra antiga: vale_trecho / vale_fora_trecho.
+    • A regra por função (só quem dirige, só encarregado) vale para quem é de
+      setor que entra na programação — como sempre foi. */
 export function seAplica(tipo, colaborador) {
-  if (colaborador?.setor && colaborador.setor !== 'trecho') return tipo.vale_fora_trecho === true;
-  if (tipo.vale_trecho === false) return false;
+  if (tipo.ativo === false) return false;
+  const setor = colaborador?.setor || 'trecho';
+  const campo = setorEhCampo(setor);
+  if (Array.isArray(tipo.setores)) {
+    if (!tipo.setores.includes(setor)) return false;
+  } else if (campo ? tipo.vale_trecho === false : tipo.vale_fora_trecho !== true) {
+    return false;
+  }
+  if (!campo) return true;
   // Pelas marcações da função em Parâmetros ("dirige", "pode ser encarregado");
-  // função fora da lista cai na regra antiga, pelo nome. Espelha
-  // public.funcao_dirige / funcao_lidera (28-parametros.sql).
+  // função fora da lista cai na regra antiga, pelo nome.
   const motorista = funcaoDirige(colaborador?.funcao);
   const encarregado = funcaoLidera(colaborador?.funcao);
   switch (tipo.aplica_a) {

@@ -1,3 +1,5 @@
+import { rotuloDoSetor as rotuloSetor } from './lib/parametros';
+
 
 function esc(value) {
   return String(value ?? '')
@@ -597,7 +599,6 @@ export async function exportProgramacaoModeloAntigoIntervalo(db, deISO, ateISO, 
 }
 
 export function exportPessoasXlsx(db) {
- const SETOR = { trecho: 'Trecho', escritorio: 'Escritório', oficina: 'Oficina', outros: 'Outros' };
  const pessoas = [...(db.colaboradores || [])].sort((a, b) =>
    (a.nome || '').localeCompare(b.nome || '', 'pt-BR')
  );
@@ -642,7 +643,7 @@ export function exportPessoasXlsx(db) {
    rows.push(row([
      { value: pessoa.nome || '', style: 'cell' },
      { value: pessoa.funcao || '', style: 'cell' },
-     { value: SETOR[pessoa.setor || 'trecho'] || pessoa.setor, style: 'cellCenter' },
+     { value: rotuloSetor(pessoa.setor), style: 'cellCenter' },
      { value: pessoa.telefone || '', style: 'cell' },
      { value: pessoa.status || '', style: 'cellCenter' },
      { value: qtdFaltas, type: 'Number', style: 'cellCenter' },

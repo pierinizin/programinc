@@ -4,7 +4,7 @@ import { FichaDocumentos } from './FichaDocumentos';
 import { ImportacaoEmMassa } from './ImportacaoEmMassa';
 import { BarraFiltros, FiltroMenu, FiltroSim, Segmentos } from './FiltrosAdm';
 import { tiposDaPessoa, statusPasta, dataBR } from '../lib/documentos';
-import { SETORES, setorDe, rotuloSetor, ehTrecho } from '../lib/setor';
+import { listaSetores, setorDe, rotuloSetor, corSetor, ehTrecho, setorEhCampo } from '../lib/setor';
 import {
   agruparAusencias, cruza, foraNoDia, diaDaVolta, segundaDa, gradeDoMes, mesVizinho, DIAS_SEMANA, MESES,
   TIPOS_AUSENCIA, TIPO_AUSENCIA, isoLocal, somaDias, diasEntre, curta, fimDeSemana, diaDaSemana,
@@ -24,7 +24,6 @@ import { FILTROS_PADRAO, lerFiltros, escreverFiltros } from '../lib/filtrosUrl';
    janelas de sempre. Faltas viram períodos em lib/ausencias.js.
    ============================================================================= */
 
-const COR_SETOR = { escritorio: '#6E56CF', oficina: '#0E9F8F', outros: '#8A8F98', trecho: '#E8A317' };
 const ROTULO_CARGO = { admin: 'Administrador', rh: 'RH', editor: 'Editor', visualizador: 'Visualizador' };
 const ROTULO_CATEGORIA = {
   identificacao: 'Identificação', contrato: 'Contrato', ctps: 'CTPS', saude: 'Saúde', treinamento: 'Treinamentos', outro: 'Outros',
@@ -96,7 +95,7 @@ function PilulaSetor({ pessoa, compacta = false }) {
   const s = setorDe(pessoa);
   return (
     <span className={`adm-pill${compacta ? ' mini' : ''}`}>
-      <span className="ponto" style={{ background: COR_SETOR[s] || COR_SETOR.outros }} />{rotuloSetor(s)}
+      <span className="ponto" style={{ background: corSetor(s) }} />{rotuloSetor(s)}
     </span>
   );
 }
@@ -195,7 +194,7 @@ function AbaPessoas({ pessoas, resumos, situacoes, ausenciaDe, pendencias, f, mu
           <h1>Pessoas</h1>
           <p>{plural(ativos.length, 'ativo', 'ativos')} · documentos, situação e ausências de cada um num lugar só</p>
         </div>
-        {podeEditar && setor !== 'trecho' && (
+        {podeEditar && (!setor || !setorEhCampo(setor)) && (
           <div className="acoes"><button type="button" className="primary-btn" onClick={onNova}>+ Nova pessoa</button></div>
         )}
       </div>
@@ -749,7 +748,10 @@ export function Administrativo({
   function irPara(aba) { mudar({ aba }); setPastaDe(null); setImportando(false); }
   function irParaSetor(setor) { mudar({ setor }); setPastaDe(null); setImportando(false); }
 
-  const setores = [{ valor: '', rotulo: 'Todos' }, ...SETORES.filter((s) => s.valor !== 'trecho'), SETORES.find((s) => s.valor === 'trecho')]
+  // Os de Parâmetros: primeiro os administrativos, depois os que vão a campo.
+  // Só aparece setor com gente (ou o que está escolhido).
+  const todosSetores = listaSetores({ inativos: true });
+  const setores = [{ valor: '', rotulo: 'Todos' }, ...todosSetores.filter((s) => !s.campo), ...todosSetores.filter((s) => s.campo)]
     .filter((s) => s.valor === '' || contagem[s.valor] || f.setor === s.valor);
 
   let corpo;
@@ -772,14 +774,14 @@ export function Administrativo({
   } else if (f.aba === 'ausencias') {
     corpo = (
       <AbaAusencias pessoas={noSetor} pessoasPorId={noSetorPorId} periodos={periodos} f={f} mudar={mudar} hoje={hoje}
-        podeLancarFalta={podeEditar && f.setor !== 'trecho'} podeLancarAtestado={podeEditar && Boolean(onRegistrarAtestado)}
+        podeLancarFalta={podeEditar && (!f.setor || !setorEhCampo(f.setor))} podeLancarAtestado={podeEditar && Boolean(onRegistrarAtestado)}
         onRegistrarFalta={onRegistrarFalta} onRegistrarAtestado={onRegistrarAtestado} onVerFicha={onVerFicha} />
     );
   } else {
     corpo = (
       <AbaPessoas pessoas={noSetor} resumos={resumos} situacoes={situacoes} ausenciaDe={ausenciaDe} pendencias={pendencias}
         f={f} mudar={mudar} hoje={hoje} podeEditar={podeEditar} setor={f.setor}
-        onNova={onNovaPessoa} onAbrirPasta={setPastaDe} onVerFicha={onVerFicha} onEditar={onEditar} />
+        onNova={() => onNovaPessoa(f.setor)} onAbrirPasta={setPastaDe} onVerFicha={onVerFicha} onEditar={onEditar} />
     );
   }
 
@@ -822,7 +824,7 @@ export function Administrativo({
           {setores.map((s) => (
             <button key={s.valor || 'todos'} type="button" role="tab" aria-selected={f.setor === s.valor}
               className={f.setor === s.valor ? 'on' : ''} onClick={() => irParaSetor(s.valor)}>
-              {s.valor && <span className="ponto" style={{ background: COR_SETOR[s.valor] }} />}
+              {s.valor && <span className="ponto" style={{ background: s.cor }} />}
               {s.rotulo}<b>{contagem[s.valor] || 0}</b>
             </button>
           ))}

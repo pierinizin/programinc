@@ -12,40 +12,35 @@
    disponível pra escala, então a falta é como o dia fica registrado.
    ============================================================================= */
 
-export const MOTIVOS_FALTA = [
-  ['atestado_medico', 'Atestado médico'],
-  ['falta_justificada', 'Falta justificada'],
-  ['falta_injustificada', 'Falta injustificada'],
-  ['licenca', 'Licença'],
-  ['acidente_trabalho', 'Acidente de trabalho'],
-  ['ferias', 'Férias'],
-  ['folga', 'Folga'],
-  ['outro', 'Outro'],
-];
+import { itensDe, itemMotivo, rotuloItem } from './parametros';
 
-/* Motivos que NÃO são ausência de verdade — combinados com antecedência.
-   Ficam fora da conta de absenteísmo no relatório por padrão (o interruptor
-   "Incluir férias e folgas" traz de volta). */
-export const MOTIVOS_FORA_DA_CONTA = ['ferias', 'folga'];
+/* A lista mora em Parâmetros → Motivos de ausência (lista 'motivo_falta'):
+   o código (`valor`) é o que fica gravado em faltas.motivo e nunca muda; nome,
+   cor e "conta no absenteísmo" ficam em `dados`. Sem o 30 rodado, vale o
+   padrão de parametros.js — exatamente a lista que existia aqui.
+
+   Alguns códigos o app usa sozinho e não podem sumir: atestado_medico e
+   licenca (gerados pelo documento), ferias (arrastar quem está de férias).
+   Por isso esses vêm marcados como `sistema`. */
+
+/** [[codigo, rotulo], ...] dos motivos ativos, na ordem de Parâmetros. */
+export function motivosFalta() {
+  return itensDe('motivo_falta').map((x) => [x.valor, rotuloItem(x)]);
+}
+
+/** O motivo entra na conta de absenteísmo? Férias e folga, por padrão, não. */
+export function contaNoAbsenteismo(valor) {
+  const i = itemMotivo(valor);
+  if (i) return i.dados?.conta !== false;
+  return valor !== 'ferias' && valor !== 'folga';
+}
 
 /* Rótulo legível de um motivo. Motivo fora da lista (base antiga, ou digitado
    direto no banco) ainda mostra alguma coisa legível, só sem a tradução. */
 export function rotuloMotivo(valor) {
-  const achado = MOTIVOS_FALTA.find(([v]) => v === valor);
-  return achado ? achado[1] : String(valor || '').replace(/_/g, ' ');
+  const i = itemMotivo(valor);
+  return i ? rotuloItem(i) : String(valor || '').replace(/_/g, ' ');
 }
 
-/* Cor de cada motivo — o contorno da pessoa na zona de Ausências do quadro.
-   Atestado no vermelho de sempre; falta injustificada (a que mais pesa) em
-   laranja, a justificada em dourado; férias azul, folga cinza. */
-export const COR_MOTIVO = {
-  atestado_medico: '#E5484D',
-  falta_injustificada: '#F76B15',
-  falta_justificada: '#D6A30A',
-  licenca: '#8E5BD0',
-  acidente_trabalho: '#C2298A',
-  ferias: '#2F81F7',
-  folga: '#7C8790',
-  outro: '#12A594',
-};
-export const corMotivo = (valor) => COR_MOTIVO[valor] || COR_MOTIVO.outro;
+/* Cor de cada motivo — o contorno da pessoa na zona de Ausências do quadro. */
+export const corMotivo = (valor) => itemMotivo(valor)?.dados?.cor || itemMotivo('outro')?.dados?.cor || '#12A594';

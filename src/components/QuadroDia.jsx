@@ -5,8 +5,8 @@ import { contratoAutomatico, contratosVigentes } from '../lib/contratos';
 import { dataBRcurta, foraDaVigencia } from '../lib/vigencia';
 import { derivarDia, disponivelEm } from '../lib/dia';
 import { notificar } from '../lib/dialogos';
-import { regra, valoresDe } from '../lib/parametros';
-import { MOTIVOS_FALTA, rotuloMotivo, corMotivo } from '../lib/motivos';
+import { regra, valoresDe, comportamentoVeiculo, veiculoFora } from '../lib/parametros';
+import { motivosFalta, rotuloMotivo, corMotivo } from '../lib/motivos';
 import { agruparAusencias, foraNoDia, diaDaVolta, DIAS_SEMANA, curta, diasEntre } from '../lib/ausencias';
 import {
   duracaoTexto, horaCurta, intervalosFaltados, jornadaDe, paraHora, resumoParcial, somaMinutos,
@@ -263,7 +263,7 @@ export function QuadroDia({
   const itensVisiveis = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     if (aba === 'veiculos') {
-      const base = soLivres ? veiculosLivres : db.veiculos.filter((v) => v.status !== 'Inativo');
+      const base = soLivres ? veiculosLivres : db.veiculos.filter((v) => !veiculoFora(v));
       return base
         .filter(
           (v) =>
@@ -331,7 +331,7 @@ export function QuadroDia({
       }
       const outras = equipesDoVeiculo[item.id];
       if (outras && outras.length) return { ok: 'aviso', msg: `já em ${outras[0].cidade}` };
-      if (item.status === 'Manutenção') return { ok: 'aviso', msg: 'em manutenção' };
+      if (comportamentoVeiculo(item.status) === 'aviso') return { ok: 'aviso', msg: String(item.status).toLowerCase() };
       return { ok: 'sim', msg: 'disponível' };
     }
 
@@ -804,7 +804,7 @@ export function QuadroDia({
             {aba === 'veiculos' &&
               itensVisiveis.map((v) => {
                 const emUso = equipesDoVeiculo[v.id];
-                const manut = v.status === 'Manutenção';
+                const manut = comportamentoVeiculo(v.status) === 'aviso';
                 return (
                   <div
                     key={v.id}
@@ -823,7 +823,7 @@ export function QuadroDia({
                       <span>{v.modelo}</span>
                     </span>
                     {manut ? (
-                      <span className="marca-falta">Manut.</span>
+                      <span className="marca-falta" title={v.status}>{v.status === 'Manutenção' ? 'Manut.' : String(v.status).length > 9 ? `${String(v.status).slice(0, 7)}.` : v.status}</span>
                     ) : emUso ? (
                       <span className="marca-alocada">{emUso[0].cidade.slice(0, 8)}</span>
                     ) : null}
@@ -1422,7 +1422,7 @@ export function QuadroDia({
                   Atestado médico…
                 </button>
               )}
-              {MOTIVOS_FALTA.filter(([valor]) => valor !== 'atestado_medico').map(([valor, rotulo]) => (
+              {motivosFalta().filter(([valor]) => valor !== 'atestado_medico').map(([valor, rotulo]) => (
                 <button
                   key={valor}
                   type="button"
@@ -1529,7 +1529,7 @@ export function QuadroDia({
    na hora o que ficou de fora e quantas horas isso dá. A conta é sempre contra
    Início obra → Fim obra, com o almoço descontado (lib/faltaParcial.js).
    ============================================================================= */
-const MOTIVOS_PARCIAL = MOTIVOS_FALTA.filter(([v]) => v !== 'ferias');
+const motivosParcial = () => motivosFalta().filter(([v]) => v !== 'ferias');
 
 function ModalFaltaParcial({
   pessoa, eq, data, existente, faltaDiaInteiro, outraEquipe, aoFechar, aoSalvar, aoRemover,
@@ -1626,7 +1626,7 @@ function ModalFaltaParcial({
 
             <div className="fp-rot">Motivo</div>
             <div className="fp-motivos">
-              {MOTIVOS_PARCIAL.map(([valor, rotulo]) => (
+              {motivosParcial().map(([valor, rotulo]) => (
                 <button
                   key={valor}
                   type="button"
@@ -1672,12 +1672,10 @@ function ModalFaltaParcial({
    conta usa o horário padrão de Parâmetros. Atestado e licença de horas
    (admin/RH) viram documento, com o arquivo — o banco gera a falta.
    ============================================================================= */
-const MOTIVOS_HORAS = [
-  ['falta_justificada', 'Falta justificada'],
-  ['falta_injustificada', 'Falta injustificada'],
-  ['folga', 'Folga'],
-  ['outro', 'Outro'],
-];
+/* Os de Parâmetros, menos os que têm caminho próprio: atestado e licença
+   (documento, só admin/RH), férias (cadastro de férias) e acidente. */
+const FORA_DAS_HORAS = ['atestado_medico', 'licenca', 'ferias', 'acidente_trabalho'];
+const motivosHoras = () => motivosFalta().filter(([v]) => !FORA_DAS_HORAS.includes(v));
 
 function ModalAusenciaHoras({ pessoa, data, existente, emEquipe, faltaDiaInteiro, podeAtestado, aoFechar, aoSalvar, aoRemover }) {
   const jornada = jornadaDe(jornadaPadrao());
@@ -1702,8 +1700,8 @@ function ModalAusenciaHoras({ pessoa, data, existente, emEquipe, faltaDiaInteiro
   const semHoras = r && r.minutosFaltados === 0;
   const doc = motivo === 'atestado_medico' || motivo === 'licenca';
   const motivos = [
-    ...(podeAtestado ? [['atestado_medico', 'Atestado médico'], ['licenca', 'Licença']] : []),
-    ...MOTIVOS_HORAS,
+    ...(podeAtestado ? [['atestado_medico', rotuloMotivo('atestado_medico')], ['licenca', rotuloMotivo('licenca')]] : []),
+    ...motivosHoras(),
   ];
   const podeSalvar = !travada && !faltaDiaInteiro && !emEquipe && !invalido && !semHoras && motivo
     && (motivo !== 'licenca' || subtipo) && !salvando;

@@ -17,11 +17,17 @@
    então os números do arquivo são os mesmos da tela.
    ============================================================================= */
 import { ST, semanasDoMes } from './statusContrato';
+import { valoresDe } from './parametros';
 
 const MESES = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO',
   'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
 const SEMANA = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
-const MOTIVOS = ['CHUVA', 'MANUTENÇÃO', 'VIAGEM', 'INTEGRAÇÃO', 'OUTROS'];
+/* Motivos de "não realizado" de Parâmetros (antes era uma cópia fixa aqui, e
+   motivo novo caía em OUTROS). OUTROS sempre existe, para o que não bate. */
+function listaMotivos() {
+  const l = [...new Set(valoresDe('motivo_nao_realizado').map((m) => String(m).toUpperCase()))];
+  return l.includes('OUTROS') ? [...l.filter((m) => m !== 'OUTROS'), 'OUTROS'] : [...l, 'OUTROS'];
+}
 
 // cores claras (fundo) e escuras (texto) — as mesmas do tema claro do app
 const COR = {
@@ -49,11 +55,11 @@ const nomeAba = (txt, usados) => {
 
 /** Motivos de um cartão: { CHUVA: n, ... } (equipes-dia). */
 function motivosDo(cartao) {
-  const m = Object.fromEntries(MOTIVOS.map((k) => [k, 0]));
+  const m = Object.fromEntries(listaMotivos().map((k) => [k, 0]));
   for (const lista of Object.values(cartao.dias)) {
     for (const x of lista) {
       if (x.st !== 'erro') continue;
-      const k = MOTIVOS.includes(String(x.motivo).toUpperCase()) ? String(x.motivo).toUpperCase() : 'OUTROS';
+      const k = listaMotivos().includes(String(x.motivo).toUpperCase()) ? String(x.motivo).toUpperCase() : 'OUTROS';
       m[k] += 1;
     }
   }
@@ -108,7 +114,7 @@ export async function montarStatusXlsx({ cartoes, mes, nomeDe }) {
   /* ---------------- aba Resumo ---------------- */
   const res = wb.addWorksheet('Resumo', { views: [{ state: 'frozen', ySplit: 4 }] });
   const COLS = ['CONTRATO', 'CONTRATANTE', 'DIÁRIAS', 'CONCLUÍDAS', '% CONCL.', 'NÃO REALIZ.',
-    ...MOTIVOS.map((m) => m.charAt(0) + m.slice(1).toLowerCase()), 'SEM BAIXA', 'EM CAMPO'];
+    ...listaMotivos().map((m) => m.charAt(0) + m.slice(1).toLowerCase()), 'SEM BAIXA', 'EM CAMPO'];
   titulo(res, 1, `STATUS POR CONTRATO — ${rotuloMes(mes)}`, COLS.length, 14);
   res.mergeCells(2, 1, 2, COLS.length);
   res.getCell(2, 1).value = 'Diária = uma equipe num dia. "Sem baixa" = dia que passou e ficou como Em campo.';
@@ -121,7 +127,7 @@ export async function montarStatusXlsx({ cartoes, mes, nomeDe }) {
     const t = c.cont.ok + c.cont.campo + c.cont.pend + c.cont.erro;
     const mot = motivosDo(c);
     const vals = [c.contrato.toUpperCase(), c.contratante, t, c.cont.ok, t ? c.cont.ok / t : 0, c.cont.erro,
-      ...MOTIVOS.map((m) => mot[m]), c.cont.pend, c.cont.campo];
+      ...listaMotivos().map((m) => mot[m]), c.cont.pend, c.cont.campo];
     vals.forEach((v, i) => {
       const cell = res.getCell(r, i + 1);
       cell.value = v;
@@ -205,7 +211,7 @@ export async function montarStatusXlsx({ cartoes, mes, nomeDe }) {
     const resumo = [
       ['Diárias', t],
       ['Concluídas', `${c.cont.ok} (${t ? Math.round((c.cont.ok / t) * 100) : 0}%)`],
-      ['Não realizadas', `${c.cont.erro}${c.cont.erro ? ` — ${MOTIVOS.filter((m) => mot[m]).map((m) => `${mot[m]} ${m.toLowerCase()}`).join(', ')}` : ''}`],
+      ['Não realizadas', `${c.cont.erro}${c.cont.erro ? ` — ${listaMotivos().filter((m) => mot[m]).map((m) => `${mot[m]} ${m.toLowerCase()}`).join(', ')}` : ''}`],
       ['Sem baixa', c.cont.pend],
     ];
     for (const [k, v] of resumo) {

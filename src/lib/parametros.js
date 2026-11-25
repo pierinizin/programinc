@@ -16,9 +16,17 @@
 
 export const LISTAS = [
   {
+    chave: 'setor', grupo: 'Pessoas', titulo: 'Setores', singular: 'setor', codigo: true, comCor: true,
+    texto: 'Onde cada pessoa trabalha. Aparecem no cadastro de colaborador e nas abas do Administrativo.',
+  },
+  {
     chave: 'funcao', grupo: 'Pessoas', titulo: 'Funções', singular: 'função',
     texto: 'Aparecem no cadastro de colaborador. Renomear muda em todo mundo que tem a função.',
     comSetor: true, comMarcas: true,
+  },
+  {
+    chave: 'motivo_falta', grupo: 'Pessoas', titulo: 'Motivos de ausência', singular: 'motivo', codigo: true, comCor: true,
+    texto: 'Aparecem ao lançar uma ausência no quadro e na ficha. A cor é o contorno da pessoa na zona de Ausências.',
   },
   {
     chave: 'tipo_licenca', grupo: 'Pessoas', titulo: 'Tipos de licença', singular: 'tipo de licença',
@@ -36,7 +44,22 @@ export const LISTAS = [
     chave: 'tipo_veiculo', grupo: 'Veículos', titulo: 'Tipos de veículo', singular: 'tipo de veículo',
     texto: 'Aparecem no cadastro de veículo.',
   },
+  {
+    chave: 'situacao_veiculo', grupo: 'Veículos', titulo: 'Situações do veículo', singular: 'situação',
+    texto: 'O status de cada veículo. Renomear muda também nos veículos que já estão nela.',
+  },
 ];
+
+/* Listas com CÓDIGO fixo (setor, motivo de ausência): o que fica gravado nas
+   pessoas e nas faltas é o código (`valor`), que nunca muda; o nome que
+   aparece é dados.rotulo. Renomear é só trocar o rótulo. */
+export const rotuloItem = (it) => (it ? it.dados?.rotulo || it.valor : '');
+
+/** 'Almoxarifado Central' → 'almoxarifado_central' (código de setor/motivo). */
+export const slug = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
+export const CORES_PARAMETRO = ['#E8A317', '#6E56CF', '#0E9F8F', '#8A8F98', '#2F81F7', '#C2298A', '#E5484D', '#12A594', '#F76B15', '#D6A30A', '#8E5BD0', '#7C8790'];
 
 const it = (valor, dados = {}) => ({ valor, dados, ativo: true });
 
@@ -56,6 +79,28 @@ export const PADRAO_ITENS = {
   tipo_servico: [it('Pintura - Mecânica e Manual'), it('Implantação de Tachas'), it('Implantação de Defensa')],
   motivo_nao_realizado: [it('CHUVA'), it('MANUTENÇÃO'), it('VIAGEM'), it('INTEGRAÇÃO'), it('OUTROS')],
   tipo_veiculo: [it('Caminhão'), it('Caminhonete'), it('Carro'), it('Outro')],
+  setor: [
+    it('trecho', { rotulo: 'Trecho', cor: '#E8A317', campo: true, sistema: true }),
+    it('escritorio', { rotulo: 'Escritório', cor: '#6E56CF', campo: false }),
+    it('oficina', { rotulo: 'Oficina', cor: '#0E9F8F', campo: false }),
+    it('outros', { rotulo: 'Outros', cor: '#8A8F98', campo: false }),
+  ],
+  motivo_falta: [
+    it('falta_justificada', { rotulo: 'Falta justificada', cor: '#D6A30A', conta: true }),
+    it('falta_injustificada', { rotulo: 'Falta injustificada', cor: '#F76B15', conta: true }),
+    it('atestado_medico', { rotulo: 'Atestado médico', cor: '#E5484D', conta: true, sistema: true }),
+    it('licenca', { rotulo: 'Licença', cor: '#8E5BD0', conta: true, sistema: true }),
+    it('acidente_trabalho', { rotulo: 'Acidente de trabalho', cor: '#C2298A', conta: true }),
+    it('ferias', { rotulo: 'Férias', cor: '#2F81F7', conta: false, sistema: true }),
+    it('folga', { rotulo: 'Folga', cor: '#7C8790', conta: false }),
+    it('outro', { rotulo: 'Outro', cor: '#12A594', conta: true }),
+  ],
+  situacao_veiculo: [
+    it('Disponível', { comportamento: 'livre', sistema: 'disponivel' }),
+    it('Em uso', { comportamento: 'livre', sistema: 'em_uso' }),
+    it('Manutenção', { comportamento: 'aviso' }),
+    it('Inativo', { comportamento: 'fora', sistema: 'inativo' }),
+  ],
   tipo_licenca: [it('Maternidade'), it('Paternidade'), it('Casamento'), it('Falecimento na família'),
     it('Doação de sangue'), it('Serviço militar / Justiça'), it('Outra')],
 };
@@ -119,3 +164,47 @@ export function funcoesDoSetor(setor) {
   const alvo = setor === 'trecho' || !setor ? 'trecho' : 'fora';
   return itensDe('funcao').filter((x) => (x.dados?.setor || 'trecho') === alvo).map((x) => x.valor);
 }
+
+/* ------------------------------------------------------------- setores */
+function itemDe(lista, valor) {
+  return itensDe(lista, { inativos: true }).find((x) => x.valor === valor) || null;
+}
+
+/** [{ valor, rotulo, cor, campo, ativo }] na ordem de Parâmetros. */
+export function listaSetores({ inativos = false } = {}) {
+  return itensDe('setor', { inativos }).map((x) => ({
+    valor: x.valor, rotulo: rotuloItem(x), cor: x.dados?.cor || '#8A8F98',
+    campo: Boolean(x.dados?.campo), ativo: x.ativo !== false,
+  }));
+}
+/** O setor "entra na programação" (quadro, equipes, relatórios de campo)?
+    Setor fora da lista segue a regra antiga: só o trecho. Espelha
+    public.setor_eh_campo (30-setores-motivos-documentos.sql). */
+export function setorEhCampo(codigo) {
+  const c = codigo || 'trecho';
+  const i = itemDe('setor', c);
+  return i ? Boolean(i.dados?.campo) : c === 'trecho';
+}
+export const rotuloDoSetor = (codigo) => {
+  const i = itemDe('setor', codigo || 'trecho');
+  return i ? rotuloItem(i) : String(codigo || '').replace(/_/g, ' ');
+};
+export const corDoSetor = (codigo) => itemDe('setor', codigo || 'trecho')?.dados?.cor || '#8A8F98';
+
+/* ------------------------------------------------------ motivos de ausência */
+export const itemMotivo = (codigo) => itemDe('motivo_falta', codigo);
+
+/* ---------------------------------------------------- situações do veículo */
+const COMPORTAMENTO_ANTIGO = { Inativo: 'fora', 'Manutenção': 'aviso' };
+/** 'livre' (usa normal) · 'aviso' (pode usar, com alerta) · 'fora' (não aparece para escalar). */
+export function comportamentoVeiculo(status) {
+  const i = itemDe('situacao_veiculo', status);
+  return i ? i.dados?.comportamento || 'livre' : COMPORTAMENTO_ANTIGO[status] || 'livre';
+}
+const SITUACAO_ANTIGA = { disponivel: 'Disponível', em_uso: 'Em uso', inativo: 'Inativo' };
+/** O nome atual das situações que o app usa sozinho (inativar, reativar, em uso). */
+export function situacaoDoSistema(papel) {
+  const i = itensDe('situacao_veiculo', { inativos: true }).find((x) => x.dados?.sistema === papel);
+  return i ? i.valor : SITUACAO_ANTIGA[papel];
+}
+export const veiculoFora = (v) => comportamentoVeiculo(v?.status) === 'fora';

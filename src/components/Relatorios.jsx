@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
-import { MOTIVOS_FORA_DA_CONTA, rotuloMotivo } from '../lib/motivos';
+import { contaNoAbsenteismo, rotuloMotivo } from '../lib/motivos';
 import { duracaoTexto, ehParcial, resumoDaFalta } from '../lib/faltaParcial';
 import { baixarControle, montarLinhasControle, opcoesControle } from '../lib/controleContratante';
 import {
@@ -979,7 +979,7 @@ export function Relatorios({
   const diasEmCampo = new Set(periodos.flatMap((p) => p.datas)).size;
   const somaDiasEnc = periodos.reduce((s, p) => s + p.dias, 0);
   const faltasDoEnc = encAtual
-    ? faltas.filter((f) => f.colaboradorId === encAtual.id && !MOTIVOS_FORA_DA_CONTA.includes(f.motivo)
+    ? faltas.filter((f) => f.colaboradorId === encAtual.id && contaNoAbsenteismo(f.motivo)
         && !ehParcial(f) && f.data >= de && f.data <= ate).length
     : 0;
 

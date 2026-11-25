@@ -24,14 +24,17 @@ import { FichaVeiculo } from './components/FichaVeiculo';
 import { iconeVeiculo } from './components/IconeVeiculo';
 import { derivarDia, disponivelEm, primeirasAtividades } from './lib/dia';
 import {
-  SETORES, ehTrecho, setorDe, soTrecho,
+  ehTrecho, setorDe, soTrecho, setorEhCampo,
 } from './lib/setor';
-import { definirParametros, valoresDe, regra, funcoesDoSetor, funcaoLidera, itensDe } from './lib/parametros';
+import {
+  definirParametros, valoresDe, regra, funcoesDoSetor, funcaoLidera, itensDe,
+  comportamentoVeiculo, situacaoDoSistema, veiculoFora, listaSetores,
+} from './lib/parametros';
 import { Parametros } from './components/Parametros';
 import {
   duracaoTexto, resumoParcial, ehParcial, ehHoras, resumoDaFalta, resumoHoras, horaCurta,
 } from './lib/faltaParcial';
-import { MOTIVOS_FALTA, rotuloMotivo } from './lib/motivos';
+import { motivosFalta, rotuloMotivo } from './lib/motivos';
 import { prepararFoto, enviarFoto, assinarFotos, assinarFotosEmCache } from './lib/fotos';
 import { salvarAtestado, abrirArquivo as abrirArquivoDoc } from './lib/arquivosDoc';
 import { salvarFerias, excluirFerias as apagarFerias, abrirArquivoFerias } from './lib/ferias';
@@ -52,7 +55,6 @@ import { exportProgramacaoPdfModelo03 } from './exportProgramacaoPdf';
    saíram daqui: agora são Parâmetros (lib/parametros.js), editáveis na tela
    Sistema → Parâmetros. A situação do veículo continua fixa — o banco trava
    estes quatro valores e a tela de veículos depende deles. */
-const VEHICLE_STATUS = ['Disponível', 'Em uso', 'Manutenção', 'Inativo'];
 
 function pad(v) {
   return String(v).padStart(2, '0');
@@ -168,17 +170,21 @@ function funcaoPadraoTrecho() {
   return lista.find((f) => !funcaoLidera(f)) || lista[0] || '';
 }
 
+/* A cor do status do veículo vem do comportamento da situação em
+   Parâmetros (livre / aviso / fora) — "Em uso" tem a cor da obra. */
 function statusVeiculoClasse(status) {
-  if (status === 'Disponível') return 'st-ok';
-  if (status === 'Em uso') return 'st-obra';
-  if (status === 'Manutenção') return 'st-aten';
+  if (status === situacaoDoSistema('em_uso')) return 'st-obra';
+  const c = comportamentoVeiculo(status);
+  if (c === 'livre') return 'st-ok';
+  if (c === 'aviso') return 'st-aten';
   return '';
 }
 
 function tagVeiculo(status) {
-  if (status === 'Disponível') return 'success';
-  if (status === 'Em uso') return 'obra';
-  if (status === 'Manutenção') return 'aten';
+  if (status === situacaoDoSistema('em_uso')) return 'obra';
+  const c = comportamentoVeiculo(status);
+  if (c === 'livre') return 'success';
+  if (c === 'aviso') return 'aten';
   return '';
 }
 
@@ -192,7 +198,7 @@ function emptyColaborador() {
 }
 
 function emptyVeiculo() {
-  return { id: '', placa: '', modelo: '', ano: new Date().getFullYear(), tipo: 'Caminhão', status: 'Disponível' };
+  return { id: '', placa: '', modelo: '', ano: new Date().getFullYear(), tipo: 'Caminhão', status: situacaoDoSistema('disponivel') };
 }
 
 function emptyFalta() {
@@ -1379,7 +1385,9 @@ function AppInner() {
   // Programação, o Calendário, as Integrações, os Relatórios e os exports da
   // programação enxergam. Escritório, oficina etc. ficam só no cadastro e
   // em Documentos (lib/setor.js).
-  const dbTrecho = useMemo(() => soTrecho(db), [db]);
+  // parametros nas dependências: mudar "entra na programação" de um setor
+  // muda quem é do trecho.
+  const dbTrecho = useMemo(() => soTrecho(db), [db, parametros]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Primeira escala/falta/pátio de cada pessoa — decide quem estava na
   // empresa nos dias que o histórico de status não cobre (lib/dia.js).
@@ -1459,7 +1467,7 @@ function AppInner() {
   /* Pendências de documento separadas: o app principal (menu, faixa da
      Programação, tela Documentos) fala só do trecho; o /administrativo, só de
      quem é de fora. */
-  const colaboradoresFora = useMemo(() => db.colaboradores.filter((c) => !ehTrecho(c)), [db.colaboradores]);
+  const colaboradoresFora = useMemo(() => db.colaboradores.filter((c) => !ehTrecho(c)), [db.colaboradores, parametros]); // eslint-disable-line react-hooks/exhaustive-deps
   const idsFora = useMemo(() => new Set(colaboradoresFora.map((c) => c.id)), [colaboradoresFora]);
   const pendenciasTrecho = useMemo(
     () => docs.pendencias.filter((p) => !idsFora.has(p.colaborador_id)),
@@ -1537,7 +1545,7 @@ function AppInner() {
   });
 
   const veicsMarcados = filteredVeiculos.filter((v) => veicsSel[v.id]);
-  const veicsAtivosMarcados = veicsMarcados.filter((v) => v.status !== 'Inativo');
+  const veicsAtivosMarcados = veicsMarcados.filter((v) => !veiculoFora(v));
 
 
   const historyItems = colaboradoresComStats.filter((c) => c.nome.toLowerCase().includes(search.toLowerCase()));
@@ -1955,7 +1963,7 @@ function AppInner() {
   }
 
   function openColaboradorModal(item = null, setorNovo = 'trecho') {
-    setColaboradorForm(item ? { ...item, setor: setorDe(item) } : { ...emptyColaborador(), setor: setorNovo, funcao: setorNovo === 'trecho' ? funcaoPadraoTrecho() : '' });
+    setColaboradorForm(item ? { ...item, setor: setorDe(item) } : { ...emptyColaborador(), setor: setorNovo, funcao: setorEhCampo(setorNovo) ? funcaoPadraoTrecho() : '' });
     setModal('colaborador');
   }
 
@@ -2117,6 +2125,16 @@ function AppInner() {
     // Banco ainda sem a coluna (21-setor.sql não rodou): quem é do trecho
     // salva normalmente sem ela; quem não é, avisa — senão a pessoa entraria
     // na Programação como se fosse de campo.
+    // Setor novo com o banco ainda travado na lista antiga de quatro.
+    if (res.error && /colaboradores_setor_check/i.test(res.error.message || '')) {
+      setSalvandoFoto(false);
+      notificar({
+        titulo: 'Falta um passo no banco',
+        mensagem: 'Para usar setores novos, rode o arquivo supabase/30-setores-motivos-documentos.sql no SQL Editor do Supabase.',
+        variante: 'erro',
+      });
+      return;
+    }
     if (res.error && /setor/i.test(res.error.message || '')) {
       if (payload.setor !== 'trecho') {
         setSalvandoFoto(false);
@@ -2748,22 +2766,23 @@ function AppInner() {
    else notificar({ mensagem: 'E-mail de recuperação enviado com sucesso para ' + email, variante: 'sucesso' });
   }
 
-  /* Veículo não é liga-desliga: são quatro status. Reativar devolve para
-     'Disponível' — nunca para 'Em uso', que quem define é a programação. */
+  /* Veículo não é liga-desliga: as situações estão em Parâmetros. Reativar
+     devolve para "Disponível" — nunca para "Em uso", que quem define é a
+     programação. Qualquer situação que tira de circulação conta como inativo. */
   async function alternarAtivoVeiculo(item) {
-    const novo = item.status === 'Inativo' ? 'Disponível' : 'Inativo';
+    const novo = veiculoFora(item) ? situacaoDoSistema('disponivel') : situacaoDoSistema('inativo');
     return atualizarOtimista(
       'veiculos', item.id, { status: novo }, 'mudar o status do veículo'
     );
   }
 
   async function inativarVeiculos(lista) {
-    const alvos = lista.filter((v) => v.status !== 'Inativo');
+    const alvos = lista.filter((v) => !veiculoFora(v));
     if (!alvos.length) return false;
 
     // Tirar de circulação um veículo que está numa equipe hoje é o erro caro
     // aqui: a programação continuaria apontando para ele. Avisamos com nome.
-    const emUso = alvos.filter((v) => v.status === 'Em uso');
+    const emUso = alvos.filter((v) => v.status === situacaoDoSistema('em_uso'));
     const nomes = alvos.slice(0, 6).map((v) => `· ${v.placa} — ${v.modelo}`).join('\n');
     const resto = alvos.length > 6 ? `\n· e mais ${alvos.length - 6}` : '';
     const jaInativos = lista.length - alvos.length;
@@ -2780,7 +2799,7 @@ function AppInner() {
     if (!ok) return false;
 
     const res = await supabase.from('veiculos')
-      .update({ status: 'Inativo' }).in('id', alvos.map((v) => v.id)).select();
+      .update({ status: situacaoDoSistema('inativo') }).in('id', alvos.map((v) => v.id)).select();
     if (res.error) { reportarErro('Erro ao inativar', res.error); return false; }
     if (!res.data?.length) { semPermissao('inativar veículos'); return false; }
     agendarFetch();
@@ -3046,22 +3065,25 @@ function AppInner() {
             {modal === 'colaborador' && (
               <div className="form-grid two">
                 <Input label="Nome" value={colaboradorForm.nome} onChange={(v) => setColaboradorForm({ ...colaboradorForm, nome: v })} />
-                {/* Setor decide onde a pessoa aparece: Trecho entra na
-                    Programação; os outros só em cadastro, Documentos, faltas e
-                    férias. O trecho escolhe entre as quatro funções de sempre;
-                    fora dele a função é livre, com sugestões. */}
+                {/* Setor decide onde a pessoa aparece: setor que "entra na
+                    programação" (Parâmetros → Setores) vai para o quadro; os
+                    outros só cadastro, Documentos, faltas e férias. Quem vai a
+                    campo escolhe entre as funções de campo; fora, a função é
+                    livre, com sugestões. */}
                 <Select
                   label="Setor"
                   value={setorDe(colaboradorForm)}
                   onChange={(v) => setColaboradorForm((f) => ({
                     ...f,
                     setor: v,
-                    funcao: v === 'trecho'
+                    funcao: setorEhCampo(v)
                       ? (funcoesDoSetor('trecho').includes(f.funcao) ? f.funcao : funcaoPadraoTrecho())
                       : (funcoesDoSetor('trecho').includes(f.funcao) ? '' : f.funcao),
                   }))}
-                  // RH não cadastra nem move ninguém para o trecho (o banco recusa).
-                  options={SETORES.filter((x) => !(ehRH && x.valor === 'trecho'))
+                  // RH não cadastra nem move ninguém para setor de campo (o banco
+                  // recusa). Setor desativado só aparece para quem já está nele.
+                  options={listaSetores({ inativos: true })
+                    .filter((x) => (x.ativo || x.valor === setorDe(colaboradorForm)) && !(ehRH && x.campo))
                     .map((x) => ({ value: x.valor, label: x.rotulo }))}
                 />
                 {ehTrecho(colaboradorForm) ? (
@@ -3182,7 +3204,7 @@ function AppInner() {
                   label="Status"
                   value={veiculoForm.status}
                   onChange={(v) => setVeiculoForm({ ...veiculoForm, status: v })}
-                  options={VEHICLE_STATUS.map((x) => ({ value: x, label: x }))}
+                  options={[...new Set([...valoresDe('situacao_veiculo'), veiculoForm.status].filter(Boolean))].map((x) => ({ value: x, label: x }))}
                 />
                 <div className="modal-actions full">
                   <button className="ghost-btn" onClick={() => setModal(null)}>Cancelar</button>
@@ -3214,7 +3236,7 @@ function AppInner() {
                   /* Mesma lista do quadro (lib/motivos.js) — antes era uma cópia à
                      parte, e motivo novo aparecia num lugar e não no outro.
                      Férias fica de fora: tem cadastro próprio ("Registrar férias"). */
-                  options={MOTIVOS_FALTA
+                  options={motivosFalta()
                     .filter(([v]) => v !== 'ferias' && v !== 'atestado_medico')
                     .map(([value, label]) => ({ value, label }))}
                 />
@@ -3446,7 +3468,7 @@ function AppInner() {
           podeEditar={podeDocs}
           gaveta={drawerJsx}
           gavetaAberta={Boolean(activeDrawer)}
-          onNovaPessoa={() => openColaboradorModal(null, 'escritorio')}
+          onNovaPessoa={(s) => openColaboradorModal(null, s && !setorEhCampo(s) ? s : (listaSetores().find((x) => !x.campo)?.valor || 'escritorio'))}
           onEditar={(p) => openColaboradorModal(p)}
           onVerFicha={(p) => setActiveDrawer({ type: 'colaborador', item: p })}
           onRegistrarFalta={() => openFaltaModal()}
@@ -3849,6 +3871,8 @@ function AppInner() {
                   linhas={parametros}
                   db={db}
                   documentos={docs.documentos}
+                  tipos={docs.tipos}
+                  onDocsMudaram={agendarFetchDocs}
                   onRecarregar={carregarParametros}
                   onDadosMudaram={() => { agendarFetch(null, { completa: true }); if (podeDocs) agendarFetchDocs(); }}
                 />

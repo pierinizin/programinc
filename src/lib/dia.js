@@ -1,3 +1,5 @@
+import { veiculoFora } from './parametros';
+
 /**
  * Um colaborador está disponível na data D se o HISTÓRICO tem, para ele, um
  * período com status 'ativo' cobrindo essa data — nunca só o status de agora.
@@ -147,7 +149,7 @@ export function derivarDia(db, data) {
   );
 
   const veiculosLivres = (db.veiculos || []).filter(
-    (v) => v.status !== 'Inativo' && !equipesDoVeiculo[v.id]
+    (v) => !veiculoFora(v) && !equipesDoVeiculo[v.id]
   );
 
   const pessoasEscaladas = Object.keys(equipesDaPessoa).length;

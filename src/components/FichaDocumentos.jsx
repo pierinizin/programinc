@@ -32,11 +32,6 @@ export function FichaDocumentos({
   const contadorArrasto = useRef({});   // dragenter/dragleave disparam nos filhos também
   const hoje = new Date().toISOString().slice(0, 10);
 
-  const linhas = useMemo(
-    () => tiposDaPessoa(tipos, colaborador),
-    [tipos, colaborador]
-  );
-
   const docs = useMemo(() => {
     const m = {};
     (documentos || []).forEach((d) => {
@@ -45,8 +40,20 @@ export function FichaDocumentos({
     return m;
   }, [documentos, colaborador.id]);
 
-  const comArquivo = linhas.filter((t) => docs[t.id]?.caminho).length;
-  const dispensados = linhas.filter((t) => docs[t.id]?.dispensado).length;
+  // O que a pessoa precisa entregar, mais o que ela JÁ entregou de um tipo que
+  // deixou de ser cobrado (desativado em Parâmetros, ou ela mudou de setor):
+  // o arquivo continua aqui, só não conta como pendência.
+  const linhas = useMemo(() => {
+    const precisa = tiposDaPessoa(tipos, colaborador);
+    const ids = new Set(precisa.map((t) => t.id));
+    const jaTem = (tipos || []).filter((t) => !ids.has(t.id) && docs[t.id]
+      && t.codigo !== 'atestado' && t.codigo !== 'licenca');
+    return [...precisa, ...jaTem.map((t) => ({ ...t, naoCobrado: true }))];
+  }, [tipos, colaborador, docs]);
+
+  const cobrados = linhas.filter((t) => !t.naoCobrado);
+  const comArquivo = cobrados.filter((t) => docs[t.id]?.caminho).length;
+  const dispensados = cobrados.filter((t) => docs[t.id]?.dispensado).length;
   const resolvidos = comArquivo + dispensados;
 
   async function anexar(tipo, arquivo) {
@@ -151,7 +158,7 @@ export function FichaDocumentos({
           <i>{colaborador.funcao}</i>
         </span>
         <span className="mut-contador">
-          <b>{resolvidos} / {linhas.length}</b>
+          <b>{resolvidos} / {cobrados.length}</b>
           <i>
             resolvidos
             {dispensados ? ` · ${dispensados} não ${dispensados === 1 ? 'se aplica' : 'se aplicam'}` : ''}
@@ -186,7 +193,7 @@ export function FichaDocumentos({
             >
               <span className="pnome">
                 {sobre ? 'Solte para anexar' : t.nome}
-                <i className={`psit s-${classe}`}>{texto}</i>
+                <i className={`psit s-${classe}`}>{t.naoCobrado ? 'não é mais cobrado' : texto}</i>
               </span>
 
               <input
