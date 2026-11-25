@@ -4,7 +4,7 @@ import { FichaDocumentos } from './FichaDocumentos';
 import { ImportacaoEmMassa } from './ImportacaoEmMassa';
 import { BarraFiltros, FiltroMenu, FiltroSim, Segmentos } from './FiltrosAdm';
 import { tiposDaPessoa, statusPasta, dataBR } from '../lib/documentos';
-import { listaSetores, setorDe, rotuloSetor, corSetor, ehTrecho, setorEhCampo } from '../lib/setor';
+import { listaSetores, setorDe, rotuloSetor, corSetor } from '../lib/setor';
 import {
   agruparAusencias, cruza, foraNoDia, diaDaVolta, segundaDa, gradeDoMes, mesVizinho, DIAS_SEMANA, MESES,
   TIPOS_AUSENCIA, TIPO_AUSENCIA, isoLocal, somaDias, diasEntre, curta, fimDeSemana, diaDaSemana,
@@ -158,7 +158,7 @@ function contar(lista, chave) {
 }
 
 /* ===================================================================== Pessoas */
-function AbaPessoas({ pessoas, resumos, situacoes, ausenciaDe, pendencias, f, mudar, hoje, podeEditar, onNova, onAbrirPasta, onVerFicha, onEditar, setor }) {
+function AbaPessoas({ pessoas, resumos, situacoes, ausenciaDe, pendencias, f, mudar, hoje, podeEditar, onNova, onAbrirPasta, onVerFicha, onEditar }) {
   const ativos = pessoas.filter((p) => p.status !== 'inativo');
   const porStatus = f.st === 'todos' ? pessoas : f.st === 'inativos' ? pessoas.filter((p) => p.status === 'inativo') : ativos;
 
@@ -194,7 +194,7 @@ function AbaPessoas({ pessoas, resumos, situacoes, ausenciaDe, pendencias, f, mu
           <h1>Pessoas</h1>
           <p>{plural(ativos.length, 'ativo', 'ativos')} · documentos, situação e ausências de cada um num lugar só</p>
         </div>
-        {podeEditar && (!setor || !setorEhCampo(setor)) && (
+        {podeEditar && (
           <div className="acoes"><button type="button" className="primary-btn" onClick={onNova}>+ Nova pessoa</button></div>
         )}
       </div>
@@ -278,7 +278,7 @@ function AbaPessoas({ pessoas, resumos, situacoes, ausenciaDe, pendencias, f, mu
                       )}
                     </td>
                     <td className="adm-acoes">
-                      {podeEditar && !ehTrecho(p) && (
+                      {podeEditar && (
                         <button type="button" className="adm-ib" onClick={() => onEditar(p)} title="Editar cadastro" aria-label={`Editar cadastro de ${p.nome}`}>{Ico.lapis}</button>
                       )}
                       <button type="button" className="adm-ib" onClick={() => onAbrirPasta(p.id)} title="Abrir pasta de documentos" aria-label={`Abrir pasta de ${p.nome}`}>{Ico.pasta}</button>
@@ -774,13 +774,13 @@ export function Administrativo({
   } else if (f.aba === 'ausencias') {
     corpo = (
       <AbaAusencias pessoas={noSetor} pessoasPorId={noSetorPorId} periodos={periodos} f={f} mudar={mudar} hoje={hoje}
-        podeLancarFalta={podeEditar && (!f.setor || !setorEhCampo(f.setor))} podeLancarAtestado={podeEditar && Boolean(onRegistrarAtestado)}
+        podeLancarFalta={podeEditar} podeLancarAtestado={podeEditar && Boolean(onRegistrarAtestado)}
         onRegistrarFalta={onRegistrarFalta} onRegistrarAtestado={onRegistrarAtestado} onVerFicha={onVerFicha} />
     );
   } else {
     corpo = (
       <AbaPessoas pessoas={noSetor} resumos={resumos} situacoes={situacoes} ausenciaDe={ausenciaDe} pendencias={pendencias}
-        f={f} mudar={mudar} hoje={hoje} podeEditar={podeEditar} setor={f.setor}
+        f={f} mudar={mudar} hoje={hoje} podeEditar={podeEditar}
         onNova={() => onNovaPessoa(f.setor)} onAbrirPasta={setPastaDe} onVerFicha={onVerFicha} onEditar={onEditar} />
     );
   }

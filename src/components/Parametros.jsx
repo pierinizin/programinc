@@ -22,6 +22,8 @@ import {
 const SETOR_ROT = { trecho: 'Trecho', fora: 'Fora do trecho' };
 /* Listas que só existem depois do 30-setores-motivos-documentos.sql. */
 const DO_30 = ['setor', 'motivo_falta', 'situacao_veiculo'];
+/* O que o RH edita (31-rh-acesso.sql): só a parte de pessoal. */
+const DO_RH = ['documentos', 'tipo_licenca', 'motivo_falta'];
 
 const CATEGORIAS = [['identificacao', 'Identificação'], ['contrato', 'Contrato'], ['ctps', 'CTPS'],
   ['saude', 'Saúde'], ['treinamento', 'Treinamentos'], ['outro', 'Outros']];
@@ -81,7 +83,14 @@ function codigoLivre(nome, usados) {
 
 function erroOuNada(res, titulo) {
   if (res.error) {
-    notificar({ titulo, mensagem: res.error.message || 'Não deu certo. Tente de novo.', variante: 'erro' });
+    const semPermissao = /row-level security|42501|permission/i.test(`${res.error.code} ${res.error.message}`);
+    notificar({
+      titulo,
+      mensagem: semPermissao
+        ? 'O banco recusou por permissão. Se você é do RH, falta rodar o arquivo supabase/31-rh-acesso.sql no SQL Editor do Supabase.'
+        : res.error.message || 'Não deu certo. Tente de novo.',
+      variante: 'erro',
+    });
     return true;
   }
   return false;
@@ -800,14 +809,15 @@ function EditorRegras({ bloqueado, onRecarregar }) {
 }
 
 /* ------------------------------------------------------------ a tela */
-export function Parametros({ status, linhas, db, documentos = [], tipos = [], onRecarregar, onDadosMudaram, onDocsMudaram }) {
-  const [aba, setAba] = useState('setor');
+export function Parametros({ status, linhas, db, documentos = [], tipos = [], soPessoal = false, onRecarregar, onDadosMudaram, onDocsMudaram }) {
+  const [aba, setAba] = useState(soPessoal ? 'documentos' : 'setor');
+  const pode = (chave) => !soPessoal || DO_RH.includes(chave);
   const contagem = useMemo(() => usos(db, documentos), [db, documentos]);
   const bloqueado = status !== 'ok';
   // Setores, motivos, situações e documentos por setor precisam do 30.
   const tem30 = !bloqueado && (linhas.itens || []).some((x) => x.lista === 'setor');
   const bloqueadoAqui = bloqueado || ((DO_30.includes(aba) || aba === 'documentos') && !tem30);
-  const grupos = [...new Set(LISTAS.map((l) => l.grupo))];
+  const grupos = [...new Set(LISTAS.filter((l) => pode(l.chave)).map((l) => l.grupo))];
   const nDe = (chave) => (bloqueado || (DO_30.includes(chave) && !tem30)
     ? itensDe(chave)
     : (linhas.itens || []).filter((x) => x.lista === chave && x.ativo !== false)).length;
@@ -833,11 +843,13 @@ export function Parametros({ status, linhas, db, documentos = [], tipos = [], on
       <div className="page-head">
         <div>
           <h2>Parâmetros</h2>
-          <p>As listas e regras que o app usa — antes fixas no código, agora você muda aqui</p>
+          <p>{soPessoal
+            ? 'A parte de pessoal: documentos que a pasta cobra, tipos de licença e motivos de ausência'
+            : 'As listas e regras que o app usa — antes fixas no código, agora você muda aqui'}</p>
         </div>
       </div>
 
-      {status === 'sem-tabela' && (
+      {status === 'sem-tabela' && !soPessoal && (
         <div className="aviso-faixa">
           Falta um passo no banco: rode o arquivo <b>supabase/28-parametros.sql</b> no SQL Editor do Supabase.
           Até lá o app usa os valores de sempre e esta tela fica só para ver.
@@ -859,17 +871,17 @@ export function Parametros({ status, linhas, db, documentos = [], tipos = [], on
           {grupos.map((g) => (
             <div key={g}>
               <h5>{g}</h5>
-              {LISTAS.filter((l) => l.grupo === g).map((l) => (
+              {LISTAS.filter((l) => l.grupo === g && pode(l.chave)).map((l) => (
                 <button key={l.chave} type="button" className={`par-it${aba === l.chave ? ' on' : ''}`} onClick={() => setAba(l.chave)}>
                   <b>{l.titulo}</b><i>{nDe(l.chave)}</i>
                 </button>
               ))}
-              {g === 'Pessoas' && (
+              {g === 'Pessoas' && pode('documentos') && (
                 <button type="button" className={`par-it${aba === 'documentos' ? ' on' : ''}`} onClick={() => setAba('documentos')}>
                   <b>Documentos exigidos</b><i>{nDocs}</i>
                 </button>
               )}
-              {g === 'Programação' && (
+              {g === 'Programação' && !soPessoal && (
                 <button type="button" className={`par-it${aba === 'regras' ? ' on' : ''}`} onClick={() => setAba('regras')}>
                   <b>Horários e regras da equipe</b><i />
                 </button>

@@ -13,6 +13,7 @@ import { AcoesFicha } from './AcoesFicha';
 export function FichaColaborador({
   item,
   ehAdmin,
+  podeCadastro = ehAdmin,
   selecionado,
   onSelecionar,
   onVer,
@@ -35,14 +36,14 @@ export function FichaColaborador({
           { rotulo: 'Ver ficha completa', onClick: () => onVer(item) },
           // Só aparece para quem tem pendência: um item que diz "0 pendências"
           // em 40 fichas ensina a ignorar o menu inteiro.
-          ehAdmin && onDocumentos && pendencias > 0 && {
+          podeCadastro && onDocumentos && pendencias > 0 && {
             rotulo: `Documentos · ${pendencias} ${pendencias === 1 ? 'pendência' : 'pendências'}`,
             onClick: () => onDocumentos(item),
           },
-          ehAdmin && { rotulo: 'Editar', onClick: () => onEditar(item) },
+          podeCadastro && { rotulo: 'Editar', onClick: () => onEditar(item) },
           // O rótulo acompanha o estado: para quem já está inativo a opção vira
           // Reativar, em vez de um "Inativar" que não faria nada.
-          ehAdmin && {
+          podeCadastro && {
             rotulo: ativo ? 'Inativar' : 'Reativar',
             onClick: () => onAlternarAtivo(item),
           },

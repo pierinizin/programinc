@@ -3080,10 +3080,9 @@ function AppInner() {
                       ? (funcoesDoSetor('trecho').includes(f.funcao) ? f.funcao : funcaoPadraoTrecho())
                       : (funcoesDoSetor('trecho').includes(f.funcao) ? '' : f.funcao),
                   }))}
-                  // RH não cadastra nem move ninguém para setor de campo (o banco
-                  // recusa). Setor desativado só aparece para quem já está nele.
+                  // Setor desativado só aparece para quem já está nele.
                   options={listaSetores({ inativos: true })
-                    .filter((x) => (x.ativo || x.valor === setorDe(colaboradorForm)) && !(ehRH && x.campo))
+                    .filter((x) => x.ativo || x.valor === setorDe(colaboradorForm))
                     .map((x) => ({ value: x.valor, label: x.rotulo }))}
                 />
                 {ehTrecho(colaboradorForm) ? (
@@ -3468,7 +3467,7 @@ function AppInner() {
           podeEditar={podeDocs}
           gaveta={drawerJsx}
           gavetaAberta={Boolean(activeDrawer)}
-          onNovaPessoa={(s) => openColaboradorModal(null, s && !setorEhCampo(s) ? s : (listaSetores().find((x) => !x.campo)?.valor || 'escritorio'))}
+          onNovaPessoa={(s) => openColaboradorModal(null, s || listaSetores().find((x) => !x.campo)?.valor || 'escritorio')}
           onEditar={(p) => openColaboradorModal(p)}
           onVerFicha={(p) => setActiveDrawer({ type: 'colaborador', item: p })}
           onRegistrarFalta={() => openFaltaModal()}
@@ -3559,18 +3558,22 @@ function AppInner() {
             </GrupoMenu>
           )}
 
-          {userRole === 'admin' && (
+          {/* RH entra em Parâmetros só para a parte de pessoal (documentos
+              exigidos, tipos de licença, motivos de ausência). */}
+          {(userRole === 'admin' || ehRH) && (
             <GrupoMenu
               id="sistema"
               titulo="Sistema"
               ativo={['parametros', 'acessos'].includes(page)}
-              selo={parametros.status === 'sem-tabela' ? 1 : 0}
+              selo={ehAdmin && parametros.status === 'sem-tabela' ? 1 : 0}
             >
               <NavButton active={page === 'parametros'} onClick={() => changePage('parametros')}>
                 Parâmetros
                 {parametros.status === 'sem-tabela' && <span className="nav-selo" title="Falta rodar o 28-parametros.sql">!</span>}
               </NavButton>
-              <NavButton active={page === 'acessos'} onClick={() => changePage('acessos')}>Aprovações</NavButton>
+              {userRole === 'admin' && (
+                <NavButton active={page === 'acessos'} onClick={() => changePage('acessos')}>Aprovações</NavButton>
+              )}
             </GrupoMenu>
           )}
         </nav>
@@ -3632,7 +3635,7 @@ function AppInner() {
             <button className="ghost-btn" onClick={() => exportPessoasXlsx(db)}>
               Exportar Colaboradores
             </button>
-            {(userRole === 'admin' || userRole === 'editor') && (
+            {(userRole === 'admin' || userRole === 'editor' || ehRH) && (
               <>
                 <button className="ghost-btn" onClick={() => openFaltaModal()}>
                   Registrar Falta
@@ -3865,13 +3868,14 @@ function AppInner() {
                 </div>
               </>
             )}
-              {page === 'parametros' && userRole === 'admin' && (
+              {page === 'parametros' && (userRole === 'admin' || ehRH) && (
                 <Parametros
                   status={parametros.status}
                   linhas={parametros}
                   db={db}
                   documentos={docs.documentos}
                   tipos={docs.tipos}
+                  soPessoal={!ehAdmin}
                   onDocsMudaram={agendarFetchDocs}
                   onRecarregar={carregarParametros}
                   onDadosMudaram={() => { agendarFetch(null, { completa: true }); if (podeDocs) agendarFetchDocs(); }}
@@ -4161,6 +4165,7 @@ function AppInner() {
                       key={item.id}
                       item={item}
                       ehAdmin={userRole === 'admin'}
+                      podeCadastro={userRole === 'admin' || ehRH}
                       selecionado={Boolean(colabsSel[item.id])}
                       onSelecionar={(id) => setColabsSel((s) => ({ ...s, [id]: !s[id] }))}
                       onVer={(c) => setActiveDrawer({ type: 'colaborador', item: c })}
@@ -4634,12 +4639,10 @@ function ColaboradorDrawer({
   item, db, docs, userRole, podeDocs, openEdit, openFalta, openAtestado, openFerias,
   deleteFalta, deleteFerias, abrirAtestadoArquivo, abrirFeriasArquivo, salvarObservacaoFalta,
 }) {
-  // Admin faz tudo; RH faz o que é dele: atestado e férias de todos, cadastro
-  // e falta só de quem é de fora do trecho (a mesma regra do banco).
-  const ehAdminAqui = userRole === 'admin';
-  const rhNestaPessoa = userRole === 'rh' && !ehTrecho(item);
-  const podeCadastro = ehAdminAqui || rhNestaPessoa;
-  const podeApagarFalta = (f) => ehAdminAqui || rhNestaPessoa || (userRole === 'rh' && f.origem_documento_id);
+  // Admin e RH cuidam do pessoal de todo mundo, trecho incluído: cadastro,
+  // faltas, atestados e férias (a mesma regra do banco, 31-rh-acesso.sql).
+  const podeCadastro = userRole === 'admin' || userRole === 'rh';
+  const podeApagarFalta = () => podeCadastro;
   const escalas = db.programacoes
     .filter((p) => p.membroIds.includes(item.id))
     .sort((a, b) => b.data.localeCompare(a.data));
